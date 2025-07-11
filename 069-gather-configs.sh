@@ -50,7 +50,7 @@ show jndi connection-factory * detail > configs/.out/show-jndi-cf.out
 show jndi queue * detail > configs/.out/show-jndi-queues.out
 show jndi topic * detail > configs/.out/show-jndi-topics.out
 show product-key > configs/.out/show-product-key.out
-show interface detail > configs/.out/show-interface.out
+show interface detail > configs/.out/show-interface-detail.out
 show ip vrf management > configs/.out/show-vrf-mgmt.out
 show ip vrf msg-backbone > configs/.out/show-vrf-msg-backbone.out
 show routing > configs/.out/show-routing.out
