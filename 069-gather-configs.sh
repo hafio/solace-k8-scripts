@@ -41,10 +41,10 @@ show cluster * link * detail > configs/.out/show-cluster-link-detail.out
 show cache-instance * detail > configs/.out/show-cacheinstance.out
 show distributed-cache * detail > configs/.out/show-distributedcache.out
 show cache-cluster * detail > configs/.out/show-cachecluster.out
-show client-username * > /configs/healthcheck/show-client-username.out
-show client-username * detail > /configs/healthcheck/show-client-username-detail.out
+show client-username * > configs/.out//show-client-username.out
+show client-username * detail > configs/.out//show-client-username-detail.out
 show client-profile * detail > configs/.out/show-clientprofile-all.out
-show acl-profile * > /configs/healthcheck/show-aclprofiles.out
+show acl-profile * > configs/.out/show-aclprofiles.out
 show acl-profile * detail > configs/.out/show-aclprofiles-detail.out
 show jndi connection-factory * detail > configs/.out/show-jndi-cf.out
 show jndi queue * detail > configs/.out/show-jndi-queues.out
@@ -93,7 +93,7 @@ show client * detail > configs/.out/show-clients.out
 show queue * detail > configs/.out/show-queues-details.out
 show queue * > configs/.out/show-queues.out
 show topic-endpoint * detail > configs/.out/show-topicendpoints.out
-show bridge * > /configs/healthcheck/show-bridges.out
+show bridge * > configs/.out/show-bridges.out
 show bridge * detail > configs/.out/show-bridges-detail.out
 show cspf stats > configs/.out/show-cspf-stats.out
 show ldap-profile * detail > configs/.out/show-ldap-profile-detail.out
