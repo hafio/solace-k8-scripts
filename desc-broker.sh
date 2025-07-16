@@ -8,6 +8,13 @@ else
 	exit 1
 fi
 
-[[ "$1" =~ (p|b|m) ]] && pod=$1 || pod=p
+if [[ "$1" =~ (p|b|m) ]]; then 
+  pod=$1
+elif [[ -n "$1" ]]; then
+  echo "Invalid node: $1"
+  exit 1
+else
+  pod=p
+fi
 
 ${KUBE} describe pod -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0

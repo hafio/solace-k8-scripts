@@ -8,10 +8,30 @@ else
 	exit 1
 fi
 
+pod=p
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pod)
+      if [[ "$2" =~ (p|b|m) ]]; then 
+        pod=$2
+      elif [[ -n "$2" ]]; then
+        echo "Invalid node: $1"
+        exit 1
+      fi
+      shift 2
+      ;;
+    *)
+      PARAMS="${PARAMS} $1"
+      shift
+      ;;
+  esac
+done
+
 if [[ ! -r "${SOLBK_CLISCRIPTS_FOLDER}" ]]; then
   echo  "[Error] ${SOLBK_CLISCRIPTS_FOLDER} is not accessible or valid."
   exit 1
 fi
+
 
 if [[ -z "$1" ]]; then
   CLI_FILES=(`ls ${SOLBK_CLISCRIPTS_FOLDER}`)
@@ -32,10 +52,12 @@ if [[ ! -f "${SOLBK_CLISCRIPTS_FOLDER}/${CLI}" ]]; then
 	echo "Usage: $0 <script filename in '"'$SOLBK_CLISCRIPTS_FOLDER'"' folder>"
 	exit 1
 else
-	${KUBE} cp -n ${SOLBK_NS} "${SOLBK_CLISCRIPTS_FOLDER}/${CLI}" "${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.${CLI}"
+	${KUBE} cp -n ${SOLBK_NS} "${SOLBK_CLISCRIPTS_FOLDER}/${CLI}" "${SOLBK_NAME}-pubsubplus-${pod}-0:/usr/sw/jail/cliscripts/.${CLI}"
   if [[ $? -eq 0 ]]; then
-	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes ".${CLI}"
-	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- rm -f "/usr/sw/jail/cliscripts/.${CLI}"
+	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- /usr/sw/loads/currentload/bin/cli -Apes ".${CLI}" | tee cli.out
+	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- rm -f "/usr/sw/jail/cliscripts/.${CLI}"
+    [[ `egrep -i '(invalid|error|busy)' cli.out | wc -l` -gt 0 ]] && echo "[Error] Errors detected in output!"
+    echo "Output is available in cli.out"
   else
     echo "[Error] Unable to copy script"
   fi

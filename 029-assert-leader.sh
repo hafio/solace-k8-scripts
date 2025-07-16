@@ -52,9 +52,13 @@ show config-sync database
       rm .tmp
       exit 0
     fi
-    sleep 1
+    sleep 2
   done
   echo "[Error] Timeout!"
+  echo 'no paging
+show redundancy detail' > .tmp
+  ${KUBE} cp -n ${SOLBK_NS} .tmp ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-redundancy-detail.cli
+  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-redundancy-detail.cli
   rm .tmp
 else
   echo "Standalone Broker Deployment Mode detected!"

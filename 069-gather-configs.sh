@@ -8,7 +8,7 @@ else
 	exit 1
 fi
 
-if [[ "$1" == "?"* ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--h"* ]];
+if [[ "$1" == "?"* ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--h"* ]]; then
   echo "Usage: $0
   
   Description:
@@ -147,7 +147,7 @@ chmod 777 .tmp.sh
 declare nodes=("p" "b" "m")
 [[ "${SOLBK_REDUNDANCY}" != "true" ]] && nodes=("p")
 
-mkdir -p ../diag-configs
+mkdir -p ${SOLBK_DIAG_DIR}
 
 for node in "${nodes[@]}"; do
 	echo "Gathering Diagnostics for '${node}' node..."
