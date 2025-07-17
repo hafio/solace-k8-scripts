@@ -1,0 +1,23 @@
+home
+enable
+configure
+
+message-vpn <VPN-NAME>
+  replication
+    no ack-propagation shutdown
+    transaction-replication-mode <ASYNC/SYNC>
+    bridge authentication auth-scheme "Basic"
+    bridge authentication basic client-username <REMOTE USERNAME> password <REMOTE PASSWORD>
+    bridge ssl
+    bridge unidirectional client-profile "#client-profile"
+    queue max-spool-usage <MAX SPOOL USAGE>
+    queue reject-msg-to-sender-on-discard
+    
+    ! REPEAT FOR EACH REPLICATED TOPIC
+    create replicated-topic <TOPIC>
+      replication-mode <ASYNC/SYNC>
+      exit
+    state <ACTIVE/STANDBY>
+    no shutdown
+    exit
+  exit
