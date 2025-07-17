@@ -11,7 +11,8 @@ fi
 if [[ "${1:0:1}" == "?" ]] || [[ "${1:0:2}" == "-h" ]] || [[ "${1:0:3}" == "--h" ]]; then
 	echo "Usage: $0 [OPTIONS]"
 	echo "	OPTIONS:"
-	echo "	  --keep-yaml: does not remove the generated yaml file '.broker.yaml'"
+	echo "    --only-gen-yaml: generates the yaml file but does not deploy"
+    echo "	  --keep-yaml: does not remove the generated yaml file '.broker.yaml'"
 	exit
 fi
 
@@ -152,8 +153,24 @@ spec:
       servicePort: 8443"
 }
 
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--keep-yaml)
+			KEEP=true
+			shift 1
+			;;
+    --only-gen-yaml)
+       GENONLY=true
+       shift 1
+       ;;
+		*)
+			shift
+			;;
+	esac
+done
+
 gen_yaml > .broker.yaml
 
-${KUBE} apply -f .broker.yaml
+[[ "${GENONLY}" != "true" ]] && ${KUBE} apply -f .broker.yaml
 
-[[ "$1" != "--keep-yaml" ]] && rm .broker.yaml
+[[ "${GENONLY}" != "true" ]] && [[ "${KEEP}" != "true" ]] && rm .broker.yaml
