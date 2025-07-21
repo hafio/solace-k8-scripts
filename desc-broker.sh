@@ -10,6 +10,7 @@ fi
 
 if [[ "$1" =~ (p|b|m) ]]; then 
   pod=$1
+  shift
 elif [[ -n "$1" ]]; then
   echo "Invalid node: $1"
   exit 1
