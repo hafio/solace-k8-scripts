@@ -8,14 +8,4 @@ else
 	exit 1
 fi
 
-if [[ "$1" =~ (p|b|m) ]]; then 
-  pod=$1
-elif [[ -n "$1" ]]; then
-  echo "Invalid node: $1"
-  exit 1
-else
-  pod=p
-fi
-
-
 ${KUBE} logs -n ${SOLOP_DERIVED_NS} pod/${SOLOP_DERIVED_POD} $@
