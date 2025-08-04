@@ -14,7 +14,7 @@ Scripts are prefixed with a 3-digit number system:
 
 | Headers: | Category | Action | Sequence Number | 
 | --------: | -------- | -------| --------------- |
-| Explanation: | `0` Create/Deploy <br> `1` Delete/Remove | `0` Pre-deployment checks <br> `1` Pre-deployment actions <br> `2` Deployment actions <br> `3` Post-deployment checks <br> `5` Post-deployment configurations/steps <br> `6` Post-deployment verification/diagnostics | This represents (but not necessary always true) the general sequence of steps to execute. Some steps might be optional depending on environment |
+| Explanation: | `0` Create/Deploy <br> `1` Delete/Remove | `0` Pre-deployment checks <br> `1` Pre-deployment actions <br> `2` Deployment actions <br> `5` Post-deployment configurations/steps <br> `6` Post-deployment checks/verification | This represents (but not necessary always true) the general sequence of steps to execute. Some steps might be optional depending on environment |
 
 > [!NOTE]
 > Delete/Remove Category will have Action in reversed order
@@ -31,17 +31,17 @@ Scripts are prefixed with a 3-digit number system:
 
 1. Run `001-check-env.sh` to ensure all mandatory variables are filled, and the values are expected (some variables have default values to make things work)
 2. Run the scripts in this order - omit steps where not required:
+   - `009-check-storage-class.sh`
    - `011-create-namespace.sh`
    - `012-create-secrets.sh`
    - (TODO include operator scripts)
-   - `019-check-storage-class.sh`
    - `020-deploy-broker.sh`
-   - `029-assert-leader.sh` (if HA deployment. Script will prompt either ways)
-   - `050-load-server-cert.sh` (if SSL/TLS Certificates are not specified as part of deployment yaml)
-   - `051-load-domain-certs.sh` (if required)
+   - `050-assert-leader.sh` (if HA deployment. Script will prompt either ways)
+   - `051-load-server-cert.sh` (if SSL/TLS Certificates are not specified as part of deployment yaml)
+   - `052-load-domain-certs.sh` (if required)
    - `059-execute-cli.sh`
    - `060-test-semp-login.sh`
-   - `061-gather-configs.sh` (if you want to collect broker information and gather diagnostics)
+   - `069-gather-configs.sh` (if you want to collect broker information and gather diagnostics)
   
 ## Redeployment / Delete Deployment
 
