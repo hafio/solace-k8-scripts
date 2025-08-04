@@ -24,8 +24,8 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   # DERIVED VALUES                                                     #
   ######################################################################
   
-  SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
-  [[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+  #SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
+  #[[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
   
   ######################################################################
   # DEFAULT VALUES                                                     #

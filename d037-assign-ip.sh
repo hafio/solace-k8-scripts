@@ -8,6 +8,4 @@ else
 	exit 1
 fi
 
-${KUBE} get deployment -n ${SOLOP_DERIVED_NS}
-echo
-${KUBE} get pods -n ${SOLOP_DERIVED_NS}
+${KUBE} patch -n ${SOLBK_NS} service/${SOLBK_NAME}-pubsubplus -p '{"spec": { "loadBalancerIP": "'${SOLBK_LOADBALANCER_IP}'" }}'

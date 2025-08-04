@@ -8,6 +8,4 @@ else
 	exit 1
 fi
 
-${KUBE} get deployment -n ${SOLOP_DERIVED_NS}
-echo
-${KUBE} get pods -n ${SOLOP_DERIVED_NS}
+${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes ${sol_ldap_add}

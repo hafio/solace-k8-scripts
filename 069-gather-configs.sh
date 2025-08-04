@@ -133,7 +133,7 @@ end
 home
 enable
 admin
-gather-diagnostics days-of-history 3 no-encrypt' > .tmp.cli
+gather-diagnostics days-of-history 3 no-encrypt' > .tmp.cli-${BASHPID}
 
 echo '#!/bin/bash
 
@@ -141,8 +141,8 @@ cd /usr/sw/jail
 rm -f gather-configs.zip
 mv configs/.out cli-out
 zip gather-configs.zip -q -r cli-out/*
-' > .tmp.sh
-chmod 777 .tmp.sh
+' > .tmp.sh-${BASHPID}
+chmod 777 .tmp.sh-${BASHPID}
 
 declare nodes=("p" "b" "m")
 [[ "${SOLBK_REDUNDANCY}" != "true" ]] && nodes=("p")
@@ -157,12 +157,12 @@ for node in "${nodes[@]}"; do
   
   # copy files
   echo " - Copy Files..."
-	${KUBE} cp -n ${SOLBK_NS} .tmp.cli ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/cliscripts/.gather-configs.cli
-	${KUBE} cp -n ${SOLBK_NS} .tmp.sh ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/zip-configs.sh
+	${KUBE} cp -n ${SOLBK_NS} .tmp.cli-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/cliscripts/.gather-configs.cli
+	${KUBE} cp -n ${SOLBK_NS} .tmp.sh-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/zip-configs.sh
   
   # run diagnostics and config retrieval
   echo " - Running CLI scripts..."
-	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .gather-configs.cli > .tmp
+	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .gather-configs.cli > .tmp-${BASHPID}
   
   # zip all cli outputs and copy over
   echo " - Zipping ouputs..."
@@ -176,9 +176,9 @@ for node in "${nodes[@]}"; do
   
   #get filename for gather-diagnostics
   echo " - Retrieving gather-diagnostics..."
-	grep "Diagnostics saved" .tmp > .tmp2
-	if [[ `cat .tmp2 | wc -l` -eq 1 ]]; then
-    DIAG_FILE=`cat .tmp2`
+	grep "Diagnostics saved" .tmp-${BASHPID} > .tmp2-${BASHPID}
+	if [[ `cat .tmp2-${BASHPID} | wc -l` -eq 1 ]]; then
+    DIAG_FILE=`cat .tmp2-${BASHPID}`
     DIAG_FILE=${DIAG_FILE#*: }
     
     # copy file and delete
@@ -190,4 +190,4 @@ done
 echo -e "\nListing files in ${SOLBK_DIAG_DIR}"
 ls ${SOLBK_DIAG_DIR}/*
 
-rm -f .tmp .tmp2 .tmp.cli .tmp.sh
+rm -f .tmp-${BASHPID} .tmp2-${BASHPID} .tmp.cli-${BASHPID} .tmp.sh-${BASHPID}

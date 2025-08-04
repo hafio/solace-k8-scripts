@@ -25,6 +25,9 @@ IMAGEREPO_PASS="docker-pass"
 SOLOP_IMAGE="pubsubplus-eventbroker-operator:1.2.0"
 SOLOP_WATCH_NS="solace-namespace"
 
+SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
+SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+
 SOLOP_CPU="500m"
 SOLOP_MEM="512Mi"
 
@@ -76,3 +79,7 @@ declare -A SOLBK_DOMAINCERT_FILES=(
 )
 
 SOLBK_CLISCRIPTS_FOLDER="cliscripts"
+
+REPL_MATE=mate-virtual-router-name # script detects if "v:" is present, adding it here is optional.
+REPL_CONN_SSL=("host:port" "host1:port1" "host2:port2")
+REPL_PSK="" # script will generate if left blank

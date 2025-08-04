@@ -32,7 +32,6 @@ Scripts are prefixed with a 3-digit number system:
 1. Run `001-check-env.sh` to ensure all mandatory variables are filled, and the values are expected (some variables have default values to make things work)
 2. Run `009-check-storage-class.sh` to ensure storage class satisfy Solace storage requirements.
 3. Run the scripts in this order - omit steps where not required:
-   - `009-check-storage-class.sh`
    - `011-create-namespace.sh`
    - `012-create-secrets.sh`
    - (TODO include operator scripts)
@@ -42,6 +41,7 @@ Scripts are prefixed with a 3-digit number system:
    - `052-load-domain-certs.sh` (if required)
    - `059-execute-cli.sh`
    - `060-test-semp-login.sh`
+   - `061-test-redundancy.sh`
    - `069-gather-configs.sh` (if you want to collect broker information and gather diagnostics)
   
 ## Redeployment / Delete Deployment

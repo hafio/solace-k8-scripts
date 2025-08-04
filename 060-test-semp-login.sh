@@ -31,12 +31,12 @@ else
 	grep HTTP .http.out
 	rm .http.out
 	exit 1
-fi' > .tmp
-chmod +x .tmp
+fi' > .tmp-${BASHPID}
+chmod +x .tmp-${BASHPID}
 
-  ${KUBE} cp -n ${SOLBK_NS} .tmp ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
+  ${KUBE} cp -n ${SOLBK_NS} .tmp-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
 if [[ $? -eq 0 ]]; then
-	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee .semp.out
+	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee .semp.out-${BASHPID}
 	if [[ `grep failed .semp.out | wc -l` -gt 0 ]]; then
 		echo -n "Do you want to display the username & password? [y/n] "
 		read -n 1 display
@@ -50,4 +50,4 @@ if [[ $? -eq 0 ]]; then
 fi
 
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm /usr/sw/jail/test-semp.sh
-rm -f .tmp .semp.out
+rm -f .tmp-${BASHPID} .semp.out-${BASHPID}

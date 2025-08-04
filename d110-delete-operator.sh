@@ -8,8 +8,7 @@ else
 	exit 1
 fi
 
-gen_yaml() {
-  echo 'apiVersion: v1
+echo 'apiVersion: v1
 kind: Namespace
 metadata:
   labels:
@@ -69,12 +68,6 @@ spec:
                 description: ContainerSecurityContext defines the container security
                   context for the PubSubPlusEventBroker.
                 properties:
-                  readOnlyRootFilesystem:
-                    default: false
-                    description: '"'"'Specifies if the root filesystem of the PubSubPlusEventBroker
-                      should be read-only. Note: This will only work for versions
-                      10.9 and above.'"'"'
-                    type: boolean
                   runAsGroup:
                     description: Specifies runAsGroup in container security context.
                       0 or unset defaults either to 1000002, or if OpenShift detected
@@ -1331,56 +1324,6 @@ spec:
                       unspecified (see documentation)
                     format: int64
                     type: number
-                  seLinuxOptions:
-                    description: SELinuxOptions defines the SELinux context to be
-                      applied to the container.
-                    properties:
-                      level:
-                        description: Level is SELinux level label that applies to
-                          the container.
-                        type: string
-                      role:
-                        description: Role is a SELinux role label that applies to
-                          the container.
-                        type: string
-                      type:
-                        description: Type is a SELinux type label that applies to
-                          the container.
-                        type: string
-                      user:
-                        description: User is a SELinux user label that applies to
-                          the container.
-                        type: string
-                    type: object
-                  windowsOptions:
-                    description: WindowsOptions defines the Windows-specific options
-                      to be applied to the container.
-                    properties:
-                      gmsaCredentialSpec:
-                        description: |-
-                          GMSACredentialSpec is where the GMSA admission webhook
-                          (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
-                          GMSA credential spec named by the GMSACredentialSpecName field.
-                        type: string
-                      gmsaCredentialSpecName:
-                        description: GMSACredentialSpecName is the name of the GMSA
-                          credential spec to use.
-                        type: string
-                      hostProcess:
-                        description: |-
-                          HostProcess determines if a container should be run as a '"'"'Host Process'"'"' container.
-                          All of a Pod'"'"'s containers must have the same effective HostProcess value
-                          (it is not allowed to have a mix of HostProcess containers and non-HostProcess containers).
-                          In addition, if HostProcess is true then HostNetwork must also be set to true.
-                        type: boolean
-                      runAsUserName:
-                        description: |-
-                          The UserName in Windows to run the entrypoint of the container process.
-                          Defaults to the user specified in image metadata if unspecified.
-                          May also be set in PodSecurityContext. If set in both SecurityContext and
-                          PodSecurityContext, the value specified in SecurityContext takes precedence.
-                        type: string
-                    type: object
                 type: object
               service:
                 description: Service defines broker service details.
@@ -1998,7 +1941,7 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: "'${SOLOP_WATCH_NS}'"
-        image: docker.io/solace/pubsubplus-eventbroker-operator:1.3.0
+        image: '${SOLOP_IMAGE}'
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
@@ -2032,11 +1975,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: pubsubplus-eventbroker-operator
-      terminationGracePeriodSeconds: 10'
-}
+      terminationGracePeriodSeconds: 10
+' > .tmp
 
-gen_yaml > .tmp-${BASHPID}
+${KUBE} delete -f .tmp
 
-${KUBE} apply -f .tmp-${BASHPID}
-
-rm .tmp-${BASHPID}
+rm .tmp
