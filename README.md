@@ -30,7 +30,8 @@ Scripts are prefixed with a 3-digit number system:
 ## New Deployment
 
 1. Run `001-check-env.sh` to ensure all mandatory variables are filled, and the values are expected (some variables have default values to make things work)
-2. Run the scripts in this order - omit steps where not required:
+2. Run `009-check-storage-class.sh` to ensure storage class satisfy Solace storage requirements.
+3. Run the scripts in this order - omit steps where not required:
    - `009-check-storage-class.sh`
    - `011-create-namespace.sh`
    - `012-create-secrets.sh`
