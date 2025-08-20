@@ -26,7 +26,7 @@ SOLOP_IMAGE="pubsubplus-eventbroker-operator:1.2.0"
 SOLOP_WATCH_NS="solace-namespace"
 
 SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
-SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+[[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
 
 SOLOP_CPU="500m"
 SOLOP_MEM="512Mi"
