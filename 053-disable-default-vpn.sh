@@ -59,36 +59,18 @@ message-vpn "default"
 ' > ${TMPFILE}
   
   # copy revert activity cli and execute
-  echo ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-b-0:/usr/sw/jail/cliscripts/.revert-activity.cli
-  echo ${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .revert-activity.cli > /dev/null
+  ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.disable-default-vpn.cli
+  ${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .disable-default-vpn.cli > /dev/null
 
-  # create show redundancy cli and copy
-  echo 'show redundancy'  ${TMPFILE}
-  echo ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-redundancy.cli
+echo "home
+enable
+configure
 
-  echo ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.assert-leader.cli
+show message-vpn *" > ${TMPFILE}
+
+# create show redundancy cli and copy
+${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-vpn.cli
+${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-vpn.cli | head -6
+${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- rm -f /usr/sw/jail/cliscripts/.disable-default-vpn.cli /usr/sw/jail/cliscripts/.show-vpn.cli
   
-  
-  echo "Waiting for redundancy state to be restored fully..."
-  for i in {0..10}; do
-    echo -ne `date`'\r'
-	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-redundancy.cli > ${TMPFILE}
-    CFG_ST=`grep "Configuration Status" ${TMPFILE}`
-    RDC_ST=`grep "Redundancy Status" ${TMPFILE}`
-    RDC_RL=`grep "Active-Standby Role" ${TMPFILE}`
-    ADB_LK=`grep "ADB Link To Mate" ${TMPFILE}`
-    ADB_MT=`grep "ADB Hello To Mate" ${TMPFILE}`
-    if [[ "${CFG_ST#*: }" == "Enabled" ]] && [[ "${RDC_ST#*: }" == "Up" ]] && [[ "${RDC_RL#*: }" == "Primary" ]] && [[ "${ADB_LK#*: }" == "Up" ]] && [[ "${ADB_MT#*: }" == "Up" ]]; then
-      echo ""
-      ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .assert-leader.cli | tail -12
-      rm ${TMPFILE}
-      exit 0
-    fi
-    sleep 2
-  done
-  echo "[Error] Timeout!"
-  echo 'no paging
-show redundancy detail' > ${TMPFILE}
-  ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-redundancy-detail.cli
-  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-redundancy-detail.cli
-  rm ${TMPFILE}
+rm -f ${TMPFILE}
