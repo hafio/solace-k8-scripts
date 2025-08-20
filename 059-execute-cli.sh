@@ -54,6 +54,7 @@ if [[ ! -f "${SOLBK_CLISCRIPTS_FOLDER}/${CLI}" ]]; then
 else
 	${KUBE} cp -n ${SOLBK_NS} "${SOLBK_CLISCRIPTS_FOLDER}/${CLI}" "${SOLBK_NAME}-pubsubplus-${pod}-0:/usr/sw/jail/cliscripts/.${CLI}"
   if [[ $? -eq 0 ]]; then
+    rm -f cli.out
 	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- /usr/sw/loads/currentload/bin/cli -Apes ".${CLI}" | tee cli.out
 	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- rm -f "/usr/sw/jail/cliscripts/.${CLI}"
     [[ `egrep -i '(invalid|error|busy)' cli.out | wc -l` -gt 0 ]] && echo "[Error] Errors detected in output!"

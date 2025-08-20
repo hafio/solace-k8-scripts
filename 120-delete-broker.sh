@@ -8,14 +8,16 @@ else
 	exit 1
 fi
 
+TMPFILE=.tmp-${BASHPID}
+
 echo "apiVersion: pubsubplus.solace.com/v1beta1
 kind: PubSubPlusEventBroker
 metadata:
   namespace: ${SOLBK_NS:-solace-namespace}
   name: ${SOLBK_NAME:-solace-event-broker}
-" > .tmp-${BASHPID}
+" > ${TMPFILE}
 
-${KUBE} delete -f .tmp-${BASHPID}
+${KUBE} delete -f ${TMPFILE}
 
 echo "Deleting PVCs..."
 ${KUBE} delete pvc -n ${SOLBK_NS} data-${SOLBK_NAME}-pubsubplus-p-0 2> /dev/null
@@ -23,4 +25,4 @@ ${KUBE} delete pvc -n ${SOLBK_NS} data-${SOLBK_NAME}-pubsubplus-p-0 2> /dev/null
 	${KUBE} delete pvc -n ${SOLBK_NS} data-${SOLBK_NAME}-pubsubplus-b-0 2> /dev/null
 	${KUBE} delete pvc -n ${SOLBK_NS} data-${SOLBK_NAME}-pubsubplus-m-0 2> /dev/null
 )
-rm .tmp-${BASHPID}
+rm ${TMPFILE}

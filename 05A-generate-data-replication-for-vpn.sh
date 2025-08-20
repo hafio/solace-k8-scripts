@@ -25,6 +25,8 @@ read -s BASICPASS
 
 echo 
 
+TMPFILE=.tmp-${BASHPID}
+
 gen_yaml() {
     echo 'home
 enable
@@ -39,7 +41,7 @@ message-vpn '${VPN}'
     queue reject-msg-to-sender-on-discard'
 }
 
-gen_yaml > .tmp.cli-${BASHPID}
+gen_yaml > ${TMPFILE}
 
 # TODO ACTIVE STATE + SHUTDOWN REPLCATION
 REPL_TOPIC="<topic>"
@@ -48,24 +50,24 @@ while [[ "${#REPL_TOPIC}" -gt 0 ]]; do
     echo -n "Enter replicated topic (leave blank to exit script): "
     read REPL_TOPIC
     if [[ -n "${REPL_TOPIC}" ]]; then
-        echo "    create replicated-topic ${REPL_TOPIC}" >> .tmp.cli-${BASHPID}
+        echo "    create replicated-topic ${REPL_TOPIC}" >> ${TMPFILE}
         echo -n "[ 1 ] Asynchronous
 [ 2 ] Synchronous
 Please choose the replication mode of the topic: "
         read REPL_TOPIC_MODE
         echo ${REPL_TOPIC_MODE}
         echo ${REPL_MODES[@]}
-        echo "      replication-mode "${REPL_MODES[$REPL_TOPIC_MODE]}  >> .tmp.cli-${BASHPID}
-        echo "      exit" >> .tmp.cli-${BASHPID}
+        echo "      replication-mode "${REPL_MODES[$REPL_TOPIC_MODE]}  >> ${TMPFILE}
+        echo "      exit" >> ${TMPFILE}
     fi
 done
 
 # copy files
 echo " - Copy Files..."
-${KUBE} cp -n ${SOLBK_NS} .tmp.cli-${BASHPID} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.replication.cli
+${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.replication.cli
 
 # execute cli
 echo " - Running CLI scripts..."
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .replication.cli
 
-rm -f .tmp.cli-${BASHPID}
+rm -f ${TMPFILE}

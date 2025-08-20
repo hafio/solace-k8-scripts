@@ -8,6 +8,8 @@ else
 	exit 1
 fi
 
+TMPFILE=.tmp-${BASHPID}
+
 [[ -z "$1" ]] && node=p || node=$1
 
 HEADLINES=16
@@ -31,10 +33,10 @@ else
 	grep HTTP .http.out
 	rm .http.out
 	exit 1
-fi' > .tmp-${BASHPID}
-chmod +x .tmp-${BASHPID}
+fi' > ${TMPFILE}
+chmod +x ${TMPFILE}
 
-  ${KUBE} cp -n ${SOLBK_NS} .tmp-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
+  ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
 if [[ $? -eq 0 ]]; then
 	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee .semp.out-${BASHPID}
 	if [[ `grep failed .semp.out | wc -l` -gt 0 ]]; then
@@ -50,4 +52,4 @@ if [[ $? -eq 0 ]]; then
 fi
 
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm /usr/sw/jail/test-semp.sh
-rm -f .tmp-${BASHPID} .semp.out-${BASHPID}
+rm -f ${TMPFILE} .semp.out-${BASHPID}

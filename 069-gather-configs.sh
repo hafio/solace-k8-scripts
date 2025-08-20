@@ -22,6 +22,11 @@ if [[ "$1" == "?"* ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--h"* ]]; then
   exit
 fi
 
+TMPFILE=.tmp-${BASHPID}
+TMPFILE2=.tmp2-${BASHPID}
+CLITMPFILE=.tmp.cli-${BASHPID}
+SHTMPFILE=.tmp.sh-${BASHPID}
+
 echo 'end
 home
 no paging
@@ -133,7 +138,7 @@ end
 home
 enable
 admin
-gather-diagnostics days-of-history 3 no-encrypt' > .tmp.cli-${BASHPID}
+gather-diagnostics days-of-history 3 no-encrypt' > ${CLITMPFILE}
 
 echo '#!/bin/bash
 
@@ -141,8 +146,8 @@ cd /usr/sw/jail
 rm -f gather-configs.zip
 mv configs/.out cli-out
 zip gather-configs.zip -q -r cli-out/*
-' > .tmp.sh-${BASHPID}
-chmod 777 .tmp.sh-${BASHPID}
+' > ${SHTMPFILE}
+chmod 777 ${SHTMPFILE}
 
 declare nodes=("p" "b" "m")
 [[ "${SOLBK_REDUNDANCY}" != "true" ]] && nodes=("p")
@@ -157,12 +162,12 @@ for node in "${nodes[@]}"; do
   
   # copy files
   echo " - Copy Files..."
-	${KUBE} cp -n ${SOLBK_NS} .tmp.cli-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/cliscripts/.gather-configs.cli
-	${KUBE} cp -n ${SOLBK_NS} .tmp.sh-${BASHPID} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/zip-configs.sh
+	${KUBE} cp -n ${SOLBK_NS} ${CLITMPFILE} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/cliscripts/.gather-configs.cli
+	${KUBE} cp -n ${SOLBK_NS} ${SHTMPFILE} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/zip-configs.sh
   
   # run diagnostics and config retrieval
   echo " - Running CLI scripts..."
-	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .gather-configs.cli > .tmp-${BASHPID}
+	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .gather-configs.cli > ${TMPFILE}
   
   # zip all cli outputs and copy over
   echo " - Zipping ouputs..."
@@ -176,9 +181,9 @@ for node in "${nodes[@]}"; do
   
   #get filename for gather-diagnostics
   echo " - Retrieving gather-diagnostics..."
-	grep "Diagnostics saved" .tmp-${BASHPID} > .tmp2-${BASHPID}
-	if [[ `cat .tmp2-${BASHPID} | wc -l` -eq 1 ]]; then
-    DIAG_FILE=`cat .tmp2-${BASHPID}`
+	grep "Diagnostics saved" ${TMPFILE} > ${TMPFILE2}
+	if [[ `cat ${TMPFILE2} | wc -l` -eq 1 ]]; then
+    DIAG_FILE=`cat ${TMPFILE2}`
     DIAG_FILE=${DIAG_FILE#*: }
     
     # copy file and delete
@@ -190,4 +195,4 @@ done
 echo -e "\nListing files in ${SOLBK_DIAG_DIR}"
 ls ${SOLBK_DIAG_DIR}/*
 
-rm -f .tmp-${BASHPID} .tmp2-${BASHPID} .tmp.cli-${BASHPID} .tmp.sh-${BASHPID}
+rm -f ${TMPFILE} ${TMPFILE2} ${CLITMPFILE} ${SHTMPFILE}

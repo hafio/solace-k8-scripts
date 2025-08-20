@@ -8,6 +8,8 @@ else
 	exit 1
 fi
 
+TMPFILE=.tmp-${BASHPID}
+
 gen_yaml() {
   echo 'apiVersion: v1
 kind: Namespace
@@ -2035,8 +2037,8 @@ spec:
       terminationGracePeriodSeconds: 10'
 }
 
-gen_yaml > .tmp-${BASHPID}
+gen_yaml > ${TMPFILE}
 
-${KUBE} apply -f .tmp-${BASHPID}
+${KUBE} apply -f ${TMPFILE}
 
-rm .tmp-${BASHPID}
+rm ${TMPFILE}

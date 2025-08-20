@@ -30,6 +30,8 @@ if [[ -z "${REPL_PSK}" ]]; then
     fi
 fi
 
+TMPFILE=.tmp-${BASHPID}
+
 gen_yaml() {
     echo 'home
 enable
@@ -48,14 +50,14 @@ show replication
 '
 }
 
-gen_yaml > .tmp.cli-${BASHPID}
+gen_yaml > ${TMPFILE}
 
 # copy files
 echo " - Copy Files..."
-${KUBE} cp -n ${SOLBK_NS} .tmp.cli-${BASHPID} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.replication.cli
+${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.replication.cli
 
 # execute cli
 echo " - Running CLI scripts..."
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .replication.cli
 
-rm -f .tmp.cli-${BASHPID}
+rm -f ${TMPFILE}

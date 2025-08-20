@@ -8,6 +8,8 @@ else
 	exit 1
 fi
 
+TMPFILE=.tmp-${BASHPID}
+
 echo 'apiVersion: v1
 kind: Namespace
 metadata:
@@ -1976,8 +1978,8 @@ spec:
           type: RuntimeDefault
       serviceAccountName: pubsubplus-eventbroker-operator
       terminationGracePeriodSeconds: 10
-' > .tmp
+' > ${TMPFILE}
 
-${KUBE} delete -f .tmp
+${KUBE} delete -f ${TMPFILE}
 
-rm .tmp
+rm ${TMPFILE}
