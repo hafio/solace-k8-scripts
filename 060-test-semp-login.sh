@@ -38,18 +38,18 @@ chmod +x ${TMPFILE}
 
   ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
 if [[ $? -eq 0 ]]; then
-	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee .semp.out-${BASHPID}
-	if [[ `grep failed .semp.out | wc -l` -gt 0 ]]; then
+	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee ${TMPFILE}
+	if [[ `grep failed ${TMPFILE} | wc -l` -gt 0 ]]; then
 		echo -n "Do you want to display the username & password? [y/n] "
 		read -n 1 display
 		echo
 		if [[ "${display,,}" == "y" ]]; then
-			echo "Username: ${semp_user}"
-			echo "Password: ${semp_pass}"
-			echo "cURL Command: curl -i -f -s http://localhost:8080/SEMP/v2/monitor -u ${semp_user}:${semp_pass}"
+			echo "Username: ${SEMP_USER}"
+			echo "Password: ${SEMP_PASS}"
+			echo "cURL Command: curl -i -f -s http://localhost:8080/SEMP/v2/monitor -u ${SEMP_USER}:${SEMP_PASS}"
 		fi
 	fi
 fi
 
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm /usr/sw/jail/test-semp.sh
-rm -f ${TMPFILE} .semp.out-${BASHPID}
+rm -f ${TMPFILE}
