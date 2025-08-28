@@ -8,8 +8,8 @@ else
 	exit 1
 fi
 
-if [[ "$1" == "?"* ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--h"* ]]; then
-  echo "Usage: $0
+echoUsage() {
+  echo "Usage: $0 [OPTIONS]
   
   Description:
     
@@ -18,10 +18,29 @@ if [[ "$1" == "?"* ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--h"* ]]; then
     Execute a series of Solace CLI \"show\" commands and save their output to \"configs/.out\" folder.
     Also execute gather diagnositcs on the broker. Zips the output of \"shows\" and transfer them to
     \$SOLBK_DIAG_DIR folder.
+  
+  OPTIONS:
+  --days <days>: specify number of days for gather-diagnostic logs. Default = 3 (if not specified)
 "
   exit
-fi
+}
 
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-h|--h*|\?*)
+			echoUsage
+			;;
+		--days)
+      DAYS="$2"
+			shift 2
+			;;
+    *)
+      shift
+      ;;
+	esac
+done
+
+DAYS=${DAYS:-3}
 TMPFILE=.tmp-${BASHPID}
 TMPFILE2=.tmp2-${BASHPID}
 CLITMPFILE=.tmp.cli-${BASHPID}
@@ -133,12 +152,12 @@ show username * detail > configs/.out/show-username-detail.out
 show version > configs/.out/show-version.out
 show web-manager > configs/.out/show-web-manager.out
 
-! gather diagnostics 3 days
+! gather diagnostics '${DAYS}' days
 end
 home
 enable
 admin
-gather-diagnostics days-of-history 3 no-encrypt' > ${CLITMPFILE}
+gather-diagnostics days-of-history '${DAYS}' no-encrypt' > ${CLITMPFILE}
 
 echo '#!/bin/bash
 
