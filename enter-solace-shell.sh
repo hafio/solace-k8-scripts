@@ -17,4 +17,4 @@ else
   pod=p
 fi
 
-${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- bash
+${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- bash
