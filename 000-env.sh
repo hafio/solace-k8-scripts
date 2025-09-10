@@ -24,9 +24,6 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   # DERIVED VALUES                                                     #
   ######################################################################
   
-  #SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
-  #[[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
-  
   ######################################################################
   # DEFAULT VALUES                                                     #
   # DO NOT CHANGE THE VARIABLES AND VALUES BELOW HERE!                 #
@@ -35,8 +32,21 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
 
   KUBE=${KUBE:-kubectl}
 
-  SOLOP_IMAGE=${SOLOP_IMAGE:-pubsubplus-eventbroker-operator:1.2.0}
-  SOLOP_WATCH_NS=${SOLOP_WATCH_NS:-solace-namespace}
+  SOLOP_IMAGE=${SOLOP_IMAGE:-docker.io/solace/pubsubplus-eventbroker-operator:1.4.0}
+  
+  if [[ -n "${SOLOP_NS}" ]]; then
+    SOLOP_DERIVED_NS=${SOLOP_NS}
+  else
+    SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2> /dev/null | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
+  fi
+  SOLOP_DEF_NS=pubsubplus-operator-system
+  [[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+  
+  SOLOP_WATCH_SOLBK_NS=${SOLOP_WATCH_SOLBK_NS:-true}
+  if [[ "${SOLOP_WATCH_SOLBK_NS}" == "true" ]]; then
+    [[ -n "${SOLOP_WATCH_NS}" ]] && SOLOP_WATCH_NS+=","
+    SOLOP_WATCH_NS+=${SOLBK_NS}
+  fi 
 
   SOLOP_CPU=${SOLOP_CPU:-500m}
   SOLOP_MEM=${SOLOP_MEM:-512Mi}

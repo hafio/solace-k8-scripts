@@ -16,7 +16,7 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
-  name: pubsubplus-operator-system
+  name: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -1739,13 +1739,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: pubsubplus-eventbroker-operator
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: pubsubplus-eventbroker-operator-leader-election-role
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 rules:
 - apiGroups:
   - ""
@@ -1950,7 +1950,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: pubsubplus-eventbroker-operator-leader-election-rolebinding
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -1958,7 +1958,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: pubsubplus-eventbroker-operator
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -1971,7 +1971,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: pubsubplus-eventbroker-operator
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1982,7 +1982,7 @@ metadata:
     app.kubernetes.io/version: version
     control-plane: controller-manager
   name: pubsubplus-eventbroker-operator
-  namespace: pubsubplus-operator-system
+  namespace: '${SOLOP_DERIVED_NS:-${SOLOP_DEF_NS}}'
 spec:
   replicas: 1
   selector:
@@ -2007,7 +2007,7 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: "'${SOLOP_WATCH_NS}'"
-        image: docker.io/solace/pubsubplus-eventbroker-operator:1.3.0
+        image: docker.io/solace/pubsubplus-eventbroker-operator:1.4.0
         imagePullPolicy: Always
         livenessProbe:
           httpGet:

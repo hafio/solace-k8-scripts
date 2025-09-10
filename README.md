@@ -31,10 +31,10 @@ Scripts are prefixed with a 3-digit number system:
 
 1. Run `001-check-env.sh` to ensure all mandatory variables are filled, and the values are expected (some variables have default values to make things work)
 2. Run `009-check-storage-class.sh` to ensure storage class satisfy Solace storage requirements.
-3. Run the scripts in this order - omit steps where not required:
+3. Run `010-deploy-operator.sh` to deploy Solace Event Broker Operator
+4. Run the scripts in this order - omit steps where not required:
    - `011-create-namespace.sh`
    - `012-create-secrets.sh`
-   - (TODO include operator scripts)
    - `020-deploy-broker.sh`
    - `050-assert-leader.sh` (if HA deployment. Script will prompt either ways)
    - `051-load-server-cert.sh` (if SSL/TLS Certificates are not specified as part of deployment yaml)
@@ -66,7 +66,12 @@ Scripts are prefixed with a 3-digit number system:
 
 ## Operator
 
-(TODO)
+| Variable | Default Value | Mandatory | Description |
+| - | - | - | - |
+| `SOLOP_IMAGE` | `docker.io/solace/pubsubplus-eventbroker-operator:1.4.0` | No | Full image repo + name for Solace Operator. Specify the local repository + image name here if unable to access docker.io. |
+| `SOLOP_NS` | `pubsubplus-eventbroker-system` | No | Specify the Solace Operator's namespace, otherwise the script will try to detect the namespace the operator is running in. |
+| `SOLOP_WATCH_NS` | (none) | No | Specify the namespace(s) (comma-separated) to watch. If empty and `${SOLOP_WATCH_SOLBK_NS}` != true, all namespaces on the cluster will be watched/monitored (please use do this with caution). |
+| `SOLOP_WATCH_SOLBK_NS` | `true` | No | Include Solace Event Broker's namespace as part of `${SOLOP_WATCH_NS}`. If unspecified, default value is `true`. |
 
 ## Solace Event broker
 
@@ -91,6 +96,9 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_TLS_CERT` | `cert/tls.crt` | No | Full path + filename of SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified. |
 | `SOLBK_TLS_CERTKEY` | `cert/tls.key` | No | Full path + filename of private key used to generate SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified.  |
 | `SOLBK_TLS_CERTCAS` | (none) | No | List of "full path + filenames" of Certificate Authority root/intermediate certificates. This is recommended to include as these will be appended as part of the SSL/TLS Server Certificate that will be loaded as part of `050-load-server-cert.sh` |
+| `SOLBK_NODELABEL_PRI` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
+| `SOLBK_NODELABEL_BKP` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Backup Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODELABEL_MON` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Monitoring Node.<br>Please comment the variable if not required. |
 | `SOLBK_ANTIAFFINITY_NS` | (none) | No | List of namespace to apply Kubernete "Anti-Affinity" rules to. This script applies `preferredDuringSchedulingIgnoredDuringExecution` for pod allocation if this is specified. |
 | `SOLBK_ANTIAFFINITY_WT` | `100` | No | Weight of Anti-Affinity rule. Values range from 1-100. |
 | `SOLBK_DIAG_DIR` | `diag-configs` | No | Directory to store output of `061-gather-configs.sh`. |
