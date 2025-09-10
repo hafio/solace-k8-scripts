@@ -1,0 +1,66 @@
+home
+enable
+configure
+
+message-vpn "default"
+  no alias
+  authentication
+    basic auth-type internal
+    no basic radius-domain
+    no basic shutdown
+    oauth default-profile ""
+    no oauth default-provider
+    oauth shutdown
+    exit
+  authorization
+    ldap group-membership-attribute-name "memberOf"
+    no ldap trim-client-username-domain
+    authorization-type internal
+    exit
+  no bridging ssl server-certificate-validation enforce-trusted-common-name
+  service smf plain-text shutdown
+  service smf ssl shutdown
+  service web-transport plain-text shutdown
+  service web-transport ssl shutdown
+  service rest rest plain-text shutdown
+  no service rest incoming listen-port
+  service rest incoming plain-text shutdown
+  service rest rest ssl shutdown
+  no service rest incoming listen-port ssl
+  service rest incoming ssl shutdown
+  service service plain-text shutdown
+  no service mqtt listen-port
+  service mqtt plain-text shutdown
+  service service ssl shutdown
+  no service mqtt listen-port ssl
+  service mqtt ssl shutdown
+  service mqtt websocket shutdown
+  no service mqtt listen-port web
+  service mqtt websocket shutdown
+  service mqtt websocket-secure shutdown
+  no service mqtt listen-port ssl web
+  service mqtt websocket-secure shutdown
+  service amqp max-connections 100
+  service service plain-text shutdown
+  no service amqp listen-port
+  service amqp plain-text shutdown
+  service service ssl shutdown
+  no service amqp listen-port ssl
+  service amqp ssl shutdown
+  no ssl allow-downgrade-to-plain-text
+  max-spool-usage 0
+  shutdown
+  exit
+
+client-username "default" message-vpn "default"
+  shutdown
+  exit
+
+acl-profile "default" message-vpn "default"
+  client-connect default-action "disallow"
+  publish-topic default-action "disallow"
+  subscribe-topic default-action "disallow"
+  subscribe-share-name default-action "disallow"
+  exit
+
+! END
