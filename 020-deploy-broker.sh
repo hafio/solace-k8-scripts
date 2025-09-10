@@ -12,7 +12,7 @@ if [[ "${1:0:1}" == "?" ]] || [[ "${1:0:2}" == "-h" ]] || [[ "${1:0:3}" == "--h"
 	echo "Usage: $0 [OPTIONS]"
 	echo "	OPTIONS:"
 	echo "    --only-gen-yaml: generates the yaml file but does not deploy"
-    echo "	  --keep-yaml: does not remove the generated yaml file '.broker.yaml'"
+  echo "    --keep-yaml: does not remove the generated yaml file '.broker.yaml'"
 	exit
 fi
 
@@ -52,10 +52,31 @@ spec:
     certFilename: tls.crt
     certKeyFilename: tls.key"
     
-    if [[ -n "${SOLBK_ANTIAFFINITY_NS[@]}" ]]; then
-      # construct pod anti affinity
-      POD_ANTIAFFINITY_SPEC="    spec:
-      affinity:
+    if [[ -n "${SOLBK_ANTIAFFINITY_NS[@]}" ]] || [[ -n "${SOLBK_NODELABEL_PRI[@]}${SOLBK_NODELABEL_BKP[@]}${SOLBK_NODELABEL_MON[@]}" ]]; then
+      if [[ -n "${SOLBK_NODELABEL_PRI[@]}" ]]; then
+        POD_LABEL_PRI="      nodeSelector:"
+        for NL in "${!SOLBK_NODELABEL_PRI[@]}"; do
+          POD_LABEL_PRI+="\n        ${NL}: ${SOLBK_NODELABEL_PRI[${NL}]}"
+        done
+        POD_LABEL_PRI+="\n"
+      fi
+      if [[ -n "${SOLBK_NODELABEL_BKP[@]}" ]]; then
+        POD_LABEL_BKP="      nodeSelector:"
+        for NL in "${!SOLBK_NODELABEL_BKP[@]}"; do
+          POD_LABEL_BKP+="\n        ${NL}: ${SOLBK_NODELABEL_BKP[${NL}]}"
+        done
+        POD_LABEL_BKP+="\n"
+      fi
+      if [[ -n "${SOLBK_NODELABEL_MON[@]}" ]]; then
+        POD_LABEL_MON="      nodeSelector:"
+        for NL in "${!SOLBK_NODELABEL_MON[@]}"; do
+          POD_LABEL_MON+="\n        ${NL}: ${SOLBK_NODELABEL_MON[${NL}]}"
+        done
+        POD_LABEL_MON+="\n"
+      fi
+      if [[ -n "${SOLBK_ANTIAFFINITY_NS[@]}" ]]; then
+        # construct pod anti affinity
+        POD_ANTIAFFINITY_SPEC="      affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
           - weight: ${SOLBK_ANTIAFFINITY_WT}
@@ -65,18 +86,19 @@ spec:
                 matchLabels:
                   app.kubernetes.io/name: pubsubpluseventbroker
               namespaces:"
-      for ns in "${SOLBK_ANTIAFFINITY_NS[@]}"; do
-        POD_ANTIAFFINITY_SPEC+="\n              - ${ns}"
-      done
-
+        for ns in "${SOLBK_ANTIAFFINITY_NS[@]}"; do
+          POD_ANTIAFFINITY_SPEC+="\n              - ${ns}"
+        done
+      fi
+      
       echo "  nodeAssignment:"
       echo "  - name: Primary"
-      echo -e "${POD_ANTIAFFINITY_SPEC}"
+      echo -e "    spec:\n${POD_LABEL_PRI}${POD_ANTIAFFINITY_SPEC}"
       if [[ "${SOLBK_REDUNDANCY}" == "true" ]]; then
         echo "  - name: Backup"
-        echo -e "${POD_ANTIAFFINITY_SPEC}"
+        echo -e "    spec:\n${POD_LABEL_BKP}${POD_ANTIAFFINITY_SPEC}"
         echo "  - name: Monitor"
-        echo -e "${POD_ANTIAFFINITY_SPEC}"
+        echo -e "    spec:\n${POD_LABEL_MON}${POD_ANTIAFFINITY_SPEC}"
       fi
     fi
       

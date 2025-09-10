@@ -39,7 +39,7 @@ SOLBK_NAME="solace-broker"
 SOLBK_NS="solace-namespace"
 SOLBK_IMAGE="solace-pubsub-standard"
 SOLBK_IMG_TAG="latest"
-SOLBK_REDUNDANCY="false"
+SOLBK_REDUNDANCY="true"
 
 SOLBK_SCALING_MAXCONN="100"
 SOLBK_SCALING_MAXPOOL="10000"
@@ -62,6 +62,17 @@ SOLBK_TLS_CERTKEY="/path/to/tls.key"
 SOLBK_TLS_CERTCAS=(
   "/path/to/ca/cert"
 )
+
+# NODE LABELS TO BE ADDED TO EACH SOLACE BROKER NODE. LEAVE COMMENTED IF NOT REQUIRED.
+#declare -A SOLBK_NODELABEL_PRI=(
+#  [pri_key]="value"
+#)
+#declare -A SOLBK_NODELABEL_BKP=(
+#  [bkp_key]="value"
+#)
+#declare -A SOLBK_NODELABEL_MON=(
+#  [mon_key]="value"
+#)
 
 # add more values on top of its own namespace in case there are other brokers deployed in the same cluster but different namespace
 SOLBK_ANTIAFFINITY_NS=("${SOLBK_NS}")
