@@ -30,6 +30,7 @@ fi
 echo
 echo "##### SOLACE OPERATOR #####"
 [[ -n "${SOLOP_IMAGE}" ]] && echo "[ INFO] Solace Operator Image Name: ${SOLOP_IMAGE}" || echo "[ERROR] Empty Solace Operator image"
+echo "[ INFO] Solace Operator Namespace: ${SOLOP_DERIVED_NS}"
 [[ -n "${SOLOP_WATCH_NS}" ]] && echo "[ INFO] Namespaces watched by Operator: ${SOLOP_WATCH_NS}" || echo "[ INFO] All namespaces are watched by Operator"
 [[ -n "${SOLOP_CPU}" ]] && echo "[ INFO] Operator CPU: ${SOLOP_CPU}" || echo "[ERROR] Operator CPU not specified"
 [[ -n "${SOLOP_MEM}" ]] && echo "[ INFO] Operator Memory: ${SOLOP_MEM}" || echo "[ERROR] Operator Memory not specified"

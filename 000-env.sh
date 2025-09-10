@@ -39,8 +39,12 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   else
     SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2> /dev/null | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
   fi
-  SOLOP_DEF_NS=pubsubplus-operator-system
+  
   [[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+  
+  # IF OPERATOR IS NOT RUNNING AND ${SOLOP_NS} IS NOT SPECIFIED, DEFAULT TO 'pubsubplus-operator-system'
+  # THIS LINE NEEDS TO BE AFTER SOLOP_DERIVED_POD SO THAT POD NAME WILL NOT BE RETRIEVED IF OPERATOR IS NOT RUNNING
+  SOLOP_DERIVED_NS=${SOLOP_DERIVED_NS:-pubsubplus-operator-system}
   
   SOLOP_WATCH_SOLBK_NS=${SOLOP_WATCH_SOLBK_NS:-true}
   if [[ "${SOLOP_WATCH_SOLBK_NS}" == "true" ]]; then
