@@ -111,6 +111,7 @@ show message-spool stats > configs/cliout/show-message-spool-stats.out
 show message-vpn * > configs/cliout/show-vpns.out
 show message-vpn * authorization > configs/cliout/show-vpn-auth.out
 show message-vpn * authorization authorization-group * > configs/cliout/show-vpn-auth-authgroup.out
+show message-vpn * authorization authorization-group * detail > configs/cliout/show-vpn-auth-authgroup-detail.out
 show message-vpn * detail > configs/cliout/show-vpn-details.out
 show message-vpn * dynamic-message-routing > configs/cliout/show-vpn-dmr.out
 show message-vpn * dynamic-message-routing dmr-bridge * > configs/cliout/show-vpn-dmr-bridge.out
