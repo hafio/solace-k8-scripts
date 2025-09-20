@@ -119,6 +119,7 @@ show message-vpn * mqtt > configs/cliout/show-vpn-mqtt.out
 show message-vpn * mqtt mqtt-session * > configs/cliout/show-vpn-mqtt-session.out
 show message-vpn * mqtt retain cache * > configs/cliout/show-vpn-mqtt-retain-cache.out
 show message-vpn * replication > configs/cliout/show-vpns-replication.out
+show message-vpn * replication detail > configs/cliout/show-vpns-repl-detail.out
 show message-vpn * rest > configs/cliout/show-vpn-rest.out
 show message-vpn * rest rest-delivery-point * detail > configs/cliout/show-vpn-rdp-detail.out
 show message-vpn * service > configs/cliout/show-vpn-service.out
