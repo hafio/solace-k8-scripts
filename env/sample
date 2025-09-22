@@ -81,6 +81,7 @@ SOLBK_DIAG_DIR="/path/to/diag-configs/dir"
 
 # OPTIONAL PARAMETER, COMMENT IT OR LEAVE IT BLANK IF AUTO ASSIGNMENT IS DESIRED
 SOLBK_LOADBALANCER_IP="1.2.3.4"
+SOLBK_IPPOOL="sample-ip-pool"
 
 SOLBK_DOMAINCERT_FOLDER="/path/to/domain/ca"
 # associative array for domain certificates [CA-NAME] = 'cert filename'
