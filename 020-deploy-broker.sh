@@ -107,8 +107,10 @@ spec:
       
     if [[ -n "${SOLBK_LOADBALANCER_IP}" ]] || [[ -n "${SOLBK_IPPOOL}" ]]; then
       echo "    annotations:"
-      [[ -n "${SOLBK_LOADBALANCER_IP}" ]] && echo "      metallb.universe.tf/loadBalancerIPs: ${SOLBK_LOADBALANCER_IP}"
-      [[ -n "${SOLBK_IPPOOL}" ]] && echo "      metallb.universe.tf/address-pool: ${SOLBK_IPPOOL}"
+      [[ -n "${SOLBK_LOADBALANCER_IP}" ]] && echo "      metallb.universe.tf/loadBalancerIPs: ${SOLBK_LOADBALANCER_IP}
+      metallb.io/loadBalancerIPs: ${SOLBK_LOADBALANCER_IP}"
+      [[ -n "${SOLBK_IPPOOL}" ]] && echo "      metallb.universe.tf/address-pool: ${SOLBK_IPPOOL}
+      metallb.io/address-pool: ${SOLBK_IPPOOL}"
     fi
         
     echo "    ports:
