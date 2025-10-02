@@ -214,9 +214,9 @@ for node in "${nodes[@]}"; do
     DIAG_FILE=`cat ${TMPFILE2}`
     DIAG_FILE=${DIAG_FILE#*: }
     
-    # copy file and delete
+    # copy file and delete cli + script
 		${KUBE} cp -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/${DIAG_FILE} ${SOLBK_DIAG_DIR}/${DIAG_FILE#logs/}
-		${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm -f /usr/sw/jail/${DIAG_FILE}
+		${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm -rf /usr/sw/jail/${DIAG_FILE} /usr/sw/jail/cliscripts/.gather-configs.cli /usr/sw/jail/zip-configs.sh
  	fi
 done
 
