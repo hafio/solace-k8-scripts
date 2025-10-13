@@ -44,7 +44,7 @@ if [[ -n "${IMAGEREPO_SECRET}" ]]; then
 fi
 
 KEYVALS="--from-literal=\"k=v\""
-[[ -n "${SOLBK_PRODUCTKEY}" ]] && KEYVALS+=" --from-literal=\"productkey=\${SOLBK_PRODUCTKEY} "
+[[ -n "${SOLBK_PRODUCTKEY}" ]] && KEYVALS+=" --from-literal=\"productkey=${SOLBK_PRODUCTKEY}\" "
 
 ${KUBE} create secret generic ${SOLBK_CONFIGMAP} -n ${SOLBK_NS} ${KEYVALS}
 if [[ $? -eq 0 ]]; then

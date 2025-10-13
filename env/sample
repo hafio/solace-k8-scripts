@@ -46,7 +46,7 @@ SOLBK_SCALING_MAXQMSG="100"
 
 # LEAVE COMMENTED IF NOT REQUIRED
 SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
-SOLBK_PRODUCT_KEY=testkey
+SOLBK_PRODUCTKEY=testkey
 #  "productkey1"
 #  "productkey2"
 #
@@ -62,7 +62,7 @@ SOLBK_ADM_PASS="adminpassword123"
 SOLBK_ADM_SECRET="solace-admin-secret"
 
 # TO CREATE A SECRET CONTAINING SSL/TLS CERTIFICATES, ${SOLBK_SVR_SECRET} MUST HAVE A VALUE
-SOLBK_SVR_SECRET="solace-server-secret"
+#SOLBK_SVR_SECRET="solace-server-secret"
 SOLBK_TLS_CERT="/path/to/tls.crt"
 SOLBK_TLS_CERTKEY="/path/to/tls.key"
 SOLBK_TLS_CERTCAS=(

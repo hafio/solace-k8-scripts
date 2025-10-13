@@ -12,8 +12,8 @@ spec:
     - name: registry-pull-secret
   adminCredentialsSecret: solace-admin-secret
   redundancy: true
-  extraEnvVarsSecret: solace-secret-envs
   podDisruptionBudgetForHA: true
+  extraEnvVarsSecret: solace-secret-configmap-env
   systemScaling:
     maxConnections: 100
     maxQueueMessages: 100
