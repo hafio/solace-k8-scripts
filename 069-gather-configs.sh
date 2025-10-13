@@ -103,6 +103,10 @@ show jndi topic * detail > configs/cliout/show-jndi-topics.out
 show kerberos keytab > configs/cliout/show-kerberose-keytab.out
 show kerberos keytab detail > configs/cliout/show-kerberose-keytab-details.out
 show ldap-profile * detail > configs/cliout/show-ldap-profile-detail.out
+show logging command > configs/cliout/show-logging-command.out
+show logging config > configs/cliout/show-logging-config.out
+show logging debug > configs/cliout/show-logging-debug.out
+show logging event > configs/cliout/show-logging-event.out
 show memory > configs/cliout/show-memory.out
 show message-spool detail > configs/cliout/show-message-spool-detail.out
 show message-spool message-vpn * detail > configs/cliout/show-message-spool-vpn-detail.out
