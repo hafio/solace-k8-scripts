@@ -98,9 +98,9 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_TLS_CERT` | `cert/tls.crt` | No | Full path + filename of SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified. |
 | `SOLBK_TLS_CERTKEY` | `cert/tls.key` | No | Full path + filename of private key used to generate SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified.  |
 | `SOLBK_TLS_CERTCAS` | (none) | No | List of "full path + filenames" of Certificate Authority root/intermediate certificates. This is recommended to include as these will be appended as part of the SSL/TLS Server Certificate that will be loaded as part of `050-load-server-cert.sh` |
-| `SOLBK_NODETOL_PRI` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
-| `SOLBK_NODETOL_BKP` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
-| `SOLBK_NODETOL_MON` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_PRI` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_BKP` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_MON` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
 | `SOLBK_NODELABEL_PRI` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
 | `SOLBK_NODELABEL_BKP` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
 | `SOLBK_NODELABEL_MON` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
