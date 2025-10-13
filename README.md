@@ -82,7 +82,7 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_IMAGE` | (none) | Yes | Solace Event Broker Image Name. |
 | `SOLBK_IMG_TAG` | (none) | Yes | Solace Event Broker Image Tag. e.g. 10.25.0.24 |
 | `SOLBK_REDUNDANCY` | `false` | Yes | Solace Event Broker Redundancy Mode. true or false |
-| `SOLBK_PRODUCT_KEY` | (none) | No | Solace Product Key to be applied during initialization. This is added as an key-value pair in `$SOLBK_CONFIGMAP`. |
+| `SOLBK_PRODUCTKEY` | (none) | No | Solace Product Key to be applied during initialization. This is added as an key-value pair in `$SOLBK_CONFIGMAP`. |
 | `SOLBK_CONFIGMAP` | `solace-secret-configmap-env` | No | Name of secret to store environment variables to be applied during initialization. |
 | `SOLBK_SCALING_MAXCONN`| `100` | No | Solace Event Broker Scaling Tier Parameter - Max Client Connections. |
 | `SOLBK_SCALING_MAXPOOL` | `10000` | No | Solace Event Broker Scaling Tier Parameter - Max Spool Size (in MB). |
