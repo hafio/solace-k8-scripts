@@ -4,7 +4,7 @@
 ############################### COMMON ###############################
 ######################################################################
 
-KUBE="oc"
+KUBE="echo"
 
 ######################################################################
 ########################## IMAGE REPOSITORY ##########################
@@ -44,6 +44,13 @@ SOLBK_SCALING_MAXCONN="100"
 SOLBK_SCALING_MAXPOOL="10000"
 SOLBK_SCALING_MAXQMSG="100"
 
+# LEAVE COMMENTED IF NOT REQUIRED
+SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
+SOLBK_PRODUCT_KEY=testkey
+#  "productkey1"
+#  "productkey2"
+#
+
 SOLBK_MSGNODE_CPU="2"
 SOLBK_MSGNODE_MEM="3410Mi"
 
@@ -62,16 +69,37 @@ SOLBK_TLS_CERTCAS=(
   "/path/to/ca/cert"
 )
 
-# NODE LABELS TO BE ADDED TO EACH SOLACE BROKER NODE. LEAVE COMMENTED IF NOT REQUIRED.
-#declare -A SOLBK_NODELABEL_PRI=(
-#  [pri_key]="value"
-#)
-#declare -A SOLBK_NODELABEL_BKP=(
-#  [bkp_key]="value"
-#)
-#declare -A SOLBK_NODELABEL_MON=(
-#  [mon_key]="value"
-#)
+# NODE TOLERATTIONS TO BE ADDED TO EACH SOLACE BROKER NODE.
+# LEAVE COMMENTED IF NOT REQUIRED.
+# format: "key:effect" for "exists" operator or "key=value:effect" for "equal" operator
+declare SOLBK_NODETOL_PRI=(
+  "pkey1=value1:NoExecute"
+  "pkey2:NoExecute"
+  "pkey3=value2:NoSchedule"
+#  ...
+)
+declare SOLBK_NODETOL_BKP=(
+  "bkey1=value1:NoExecute"
+  "bkey2:NoSchedule"
+#  ...
+)
+declare SOLBK_NODETOL_MON=(
+  "mkey1=value1:NoExecute"
+  "mkey2=value2:NoSchedule"
+#  ...
+)
+
+# NODE LABELS TO BE ADDED TO EACH SOLACE BROKER NODE.
+# LEAVE COMMENTED IF NOT REQUIRED.
+declare -A SOLBK_NODELABEL_PRI=(
+  [pri_key]="value"
+)
+declare -A SOLBK_NODELABEL_BKP=(
+  [bkp_key]="value"
+)
+declare -A SOLBK_NODELABEL_MON=(
+  [mon_key]="value"
+)
 
 # add more values on top of its own namespace in case there are other brokers deployed in the same cluster but different namespace
 SOLBK_ANTIAFFINITY_NS=("${SOLBK_NS}")

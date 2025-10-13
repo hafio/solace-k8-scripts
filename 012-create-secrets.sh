@@ -15,7 +15,7 @@ if [[ -n "${errmsg}" ]]; then
 	exit 1
 fi
 
-${KUBE} create secret generic ${SOLBK_ADM_SECRET} --from-literal="username_admin_password=${SOLBK_ADM_PASS}" -n ${SOLBK_NS} 
+${KUBE} create secret generic ${SOLBK_ADM_SECRET} -n ${SOLBK_NS} --from-literal="username_admin_password=${SOLBK_ADM_PASS}"
 if [[ $? -eq 0 ]]; then
 	echo "Solace Admin Secret '${SOLBK_ADM_SECRET}' created successfully."
 else
@@ -41,6 +41,17 @@ if [[ -n "${IMAGEREPO_SECRET}" ]]; then
     echo "Error creating Image Repository Secret '${IMAGEREPO_SECRET}'."
     exit 1
   fi
+fi
+
+KEYVALS="--from-literal=\"k=v\""
+[[ -n "${SOLBK_PRODUCTKEY}" ]] && KEYVALS+=" --from-literal=\"productkey=\${SOLBK_PRODUCTKEY} "
+
+${KUBE} create secret generic ${SOLBK_CONFIGMAP} -n ${SOLBK_NS} ${KEYVALS}
+if [[ $? -eq 0 ]]; then
+  echo "Secret Config Map '${SOLBK_CONFIGMAP}' created successfully."
+else
+  echo "Error creating Secret Config Map '${SOLBK_CONFIGMAP}'."
+  exit 1
 fi
 
 ${KUBE} get secret -n ${SOLBK_NS}

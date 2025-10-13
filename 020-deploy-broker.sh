@@ -35,6 +35,7 @@ spec:
   redundancy: ${SOLBK_REDUNDANCY}"
 
   echo "  podDisruptionBudgetForHA: true
+  extraEnvVarsSecret: ${SOLBK_CONFIGMAP}
   systemScaling:
     maxConnections: ${SOLBK_SCALING_MAXCONN}
     maxQueueMessages: ${SOLBK_SCALING_MAXQMSG}
@@ -52,7 +53,52 @@ spec:
     certFilename: tls.crt
     certKeyFilename: tls.key"
     
-    if [[ -n "${SOLBK_ANTIAFFINITY_NS[@]}" ]] || [[ -n "${SOLBK_NODELABEL_PRI[@]}${SOLBK_NODELABEL_BKP[@]}${SOLBK_NODELABEL_MON[@]}" ]]; then
+    if [[ -n "${SOLBK_ANTIAFFINITY_NS[@]}" ]] || [[ -n "${SOLBK_NODETOL_PRI[@]}${SOLBK_NODETOL_BKP[@]}${SOLBK_NODETOL_MON[@]}${SOLBK_NODELABEL_PRI[@]}${SOLBK_NODELABEL_BKP[@]}${SOLBK_NODELABEL_MON[@]}" ]]; then
+      if [[ -n "${SOLBK_NODETOL_PRI[@]}" ]]; then
+        POD_TOL_PRI="      tolerations:"
+        for TAINT in "${SOLBK_NODETOL_PRI[@]}"; do
+          TNKEY=${TAINT%%:*}
+          TNEFF=${TAINT##*:}
+          if [[ ${TNKEY} == *=* ]]; then
+            TNVAL=${TNKEY##*=}
+            TNKEY=${TNKEY%%=*}
+            POD_TOL_PRI+="\n      - key: \"${TNKEY}\"\n        operator: \"Equal\"\n        value: \"${TNVAL}\"\n        effect: \"${TNEFF}\""
+          else 
+            POD_TOL_PRI+="\n      - key: \"${TNKEY}\"\n        operator: \"Exists\"\n        effect: \"${TNEFF}\""
+          fi
+        done
+        POD_TOL_PRI+="\n"
+      fi
+      if [[ -n "${SOLBK_NODETOL_BKP[@]}" ]]; then
+        POD_TOL_BKP="      tolerations:"
+        for TAINT in "${SOLBK_NODETOL_BKP[@]}"; do
+          TNKEY=${TAINT%%:*}
+          TNEFF=${TAINT##*:}
+          if [[ ${TNKEY} == *=* ]]; then
+            TNVAL=${TNKEY##*=}
+            TNKEY=${TNKEY%%=*}
+            POD_TOL_BKP+="\n      - key: \"${TNKEY}\"\n        operator: \"Equal\"\n        value: \"${TNVAL}\"\n        effect: \"${TNEFF}\""
+          else 
+            POD_TOL_BKP+="\n      - key: \"${TNKEY}\"\n        operator: \"Exists\"\n        effect: \"${TNEFF}\""
+          fi
+        done
+        POD_TOL_BKP+="\n"
+      fi
+      if [[ -n "${SOLBK_NODETOL_MON[@]}" ]]; then
+        POD_TOL_MON="      tolerations:"
+        for TAINT in "${SOLBK_NODETOL_MON[@]}"; do
+          TNKEY=${TAINT%%:*}
+          TNEFF=${TAINT##*:}
+          if [[ ${TNKEY} == *=* ]]; then
+            TNVAL=${TNKEY##*=}
+            TNKEY=${TNKEY%%=*}
+            POD_TOL_MON+="\n      - key: \"${TNKEY}\"\n        operator: \"Equal\"\n        value: \"${TNVAL}\"\n        effect: \"${TNEFF}\""
+          else 
+            POD_TOL_MON+="\n      - key: \"${TNKEY}\"\n        operator: \"Exists\"\n        effect: \"${TNEFF}\""
+          fi
+        done
+        POD_TOL_MON+="\n"
+      fi
       if [[ -n "${SOLBK_NODELABEL_PRI[@]}" ]]; then
         POD_LABEL_PRI="      nodeSelector:"
         for NL in "${!SOLBK_NODELABEL_PRI[@]}"; do
@@ -93,12 +139,12 @@ spec:
       
       echo "  nodeAssignment:"
       echo "  - name: Primary"
-      echo -e "    spec:\n${POD_LABEL_PRI}${POD_ANTIAFFINITY_SPEC}"
+      echo -e "    spec:\n${POD_TOL_PRI}${POD_LABEL_PRI}${POD_ANTIAFFINITY_SPEC}"
       if [[ "${SOLBK_REDUNDANCY}" == "true" ]]; then
         echo "  - name: Backup"
-        echo -e "    spec:\n${POD_LABEL_BKP}${POD_ANTIAFFINITY_SPEC}"
+        echo -e "    spec:\n${POD_TOL_BKP}${POD_LABEL_BKP}${POD_ANTIAFFINITY_SPEC}"
         echo "  - name: Monitor"
-        echo -e "    spec:\n${POD_LABEL_MON}${POD_ANTIAFFINITY_SPEC}"
+        echo -e "    spec:\n${POD_TOL_MON}${POD_LABEL_MON}${POD_ANTIAFFINITY_SPEC}"
       fi
     fi
       

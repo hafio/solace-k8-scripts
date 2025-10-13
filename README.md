@@ -82,6 +82,8 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_IMAGE` | (none) | Yes | Solace Event Broker Image Name. |
 | `SOLBK_IMG_TAG` | (none) | Yes | Solace Event Broker Image Tag. e.g. 10.25.0.24 |
 | `SOLBK_REDUNDANCY` | `false` | Yes | Solace Event Broker Redundancy Mode. true or false |
+| `SOLBK_PRODUCTKEY` | (none) | No | Solace Product Key to be applied during initialization. This is added as an key-value pair in `$SOLBK_CONFIGMAP`. |
+| `SOLBK_CONFIGMAP` | `solace-secret-configmap-env` | No | Name of secret to store environment variables to be applied during initialization. |
 | `SOLBK_SCALING_MAXCONN`| `100` | No | Solace Event Broker Scaling Tier Parameter - Max Client Connections. |
 | `SOLBK_SCALING_MAXPOOL` | `10000` | No | Solace Event Broker Scaling Tier Parameter - Max Spool Size (in MB). |
 | `SOLBK_SCALING_MAXQMSG` | `100` | No | Solace Event Broker Scaling Tier Parameter - Max Number of Queued Messages (in millions). |
@@ -96,9 +98,12 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_TLS_CERT` | `cert/tls.crt` | No | Full path + filename of SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified. |
 | `SOLBK_TLS_CERTKEY` | `cert/tls.key` | No | Full path + filename of private key used to generate SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified.  |
 | `SOLBK_TLS_CERTCAS` | (none) | No | List of "full path + filenames" of Certificate Authority root/intermediate certificates. This is recommended to include as these will be appended as part of the SSL/TLS Server Certificate that will be loaded as part of `050-load-server-cert.sh` |
-| `SOLBK_NODELABEL_PRI` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
-| `SOLBK_NODELABEL_BKP` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Backup Node.<br>Please comment the variable if not required. |
-| `SOLBK_NODELABEL_MON` | (none) | No | Worker Node Labels to apply during Node Selection at initiatialization for Monitoring Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_PRI` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_BKP` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODETOL_MON` | (none) | No | Work Node Tolerations to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODELABEL_PRI` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
+| `SOLBK_NODELABEL_BKP` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
+| `SOLBK_NODELABEL_MON` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
 | `SOLBK_ANTIAFFINITY_NS` | (none) | No | List of namespace to apply Kubernete "Anti-Affinity" rules to. This script applies `preferredDuringSchedulingIgnoredDuringExecution` for pod allocation if this is specified. |
 | `SOLBK_ANTIAFFINITY_WT` | `100` | No | Weight of Anti-Affinity rule. Values range from 1-100. |
 | `SOLBK_DIAG_DIR` | `diag-configs` | No | Directory to store output of `061-gather-configs.sh`. |
