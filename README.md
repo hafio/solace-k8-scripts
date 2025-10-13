@@ -1,5 +1,8 @@
 # Solace Kubernetes Deployment (with Operator) Overview
 
+> [!IMPORTANT]
+> Please use the below scripts at your own risk. They are unsupported and is not a product of Solace. Subscription services from Solace Professional Services can purchased if required.
+
 This project/folder contains a series of scripts that will help ease deployment tasks/activities in Kuberenetes or equivalent container platforms.
 
 These scripts are created so you do not need to handcraft deployment yaml and instead only need to specify the correct values for all necessary variables.
