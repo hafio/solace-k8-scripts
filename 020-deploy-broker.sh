@@ -151,12 +151,15 @@ spec:
     echo "  service:
     type: LoadBalancer"
       
-    if [[ -n "${SOLBK_LOADBALANCER_IP}" ]] || [[ -n "${SOLBK_IPPOOL}" ]]; then
+    if [[ -n "${SOLBK_LOADBALANCER_IP}${SOLBK_IPPOOL}${SOLBK_LOADBALANCER_ANOTN[@]}" ]]; then
       echo "    annotations:"
       [[ -n "${SOLBK_LOADBALANCER_IP}" ]] && echo "      metallb.universe.tf/loadBalancerIPs: ${SOLBK_LOADBALANCER_IP}
       metallb.io/loadBalancerIPs: ${SOLBK_LOADBALANCER_IP}"
       [[ -n "${SOLBK_IPPOOL}" ]] && echo "      metallb.universe.tf/address-pool: ${SOLBK_IPPOOL}
       metallb.io/address-pool: ${SOLBK_IPPOOL}"
+      for ANT in "${SOLBK_LOADBALANCER_ANOTN[@]}"; do
+        echo "      ${ANT}"
+      done
     fi
         
     echo "    ports:

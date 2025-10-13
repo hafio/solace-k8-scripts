@@ -112,6 +112,7 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_DIAG_DIR` | `diag-configs` | No | Directory to store output of `061-gather-configs.sh`. |
 | `SOLBK_IPPOOL` | (none) | No | IP Address Pool Name to be used for IP assignment for Metal LB. |
 | `SOLBK_LOADBALANCER_IP` | (none) | No | If static IP address is required to be specified for Metal LB. |
+| `SOLBK_LOADBALANCER_ANOTN` | (none) | No | Optional annotations required for loadbalancers association. |
 | `SOLBK_DOMAINCERT_FOLDER` | (none) | No | Folder containing Certificate Authority certificates to be loaded. This is used in conjunction with `$SOLBK_DOMAINCERT_FILES` |
 | `SOLBK_DOMAINCERT_FILES` | (none) | No | List of Certificate Authority certificates to be loaded into the broker. This will be applied by `051-load-domain-certs.sh`. |
 | `SOLBK_CLISCRIPTS_FOLDER` | `cli` | No | Path + Folder name of directory containing CLI scripts to be executed. This is used in `059-execute-cli.sh` |
