@@ -101,22 +101,22 @@ spec:
       fi
       if [[ -n "${SOLBK_NODELABEL_PRI[@]}" ]]; then
         POD_LABEL_PRI="      nodeSelector:"
-        for NL in "${!SOLBK_NODELABEL_PRI[@]}"; do
-          POD_LABEL_PRI+="\n        ${NL}: ${SOLBK_NODELABEL_PRI[${NL}]}"
+        for LAB in "${SOLBK_NODELABEL_PRI[@]}"; do
+          POD_LABEL_PRI+="\n        ${LAB}"
         done
         POD_LABEL_PRI+="\n"
       fi
       if [[ -n "${SOLBK_NODELABEL_BKP[@]}" ]]; then
         POD_LABEL_BKP="      nodeSelector:"
-        for NL in "${!SOLBK_NODELABEL_BKP[@]}"; do
-          POD_LABEL_BKP+="\n        ${NL}: ${SOLBK_NODELABEL_BKP[${NL}]}"
+        for LAB in "${SOLBK_NODELABEL_BKP[@]}"; do
+          POD_LABEL_BKP+="\n        ${LAB}"
         done
         POD_LABEL_BKP+="\n"
       fi
       if [[ -n "${SOLBK_NODELABEL_MON[@]}" ]]; then
         POD_LABEL_MON="      nodeSelector:"
-        for NL in "${!SOLBK_NODELABEL_MON[@]}"; do
-          POD_LABEL_MON+="\n        ${NL}: ${SOLBK_NODELABEL_MON[${NL}]}"
+        for LAB in "${SOLBK_NODELABEL_MON[@]}"; do
+          POD_LABEL_MON+="\n        ${LAB}"
         done
         POD_LABEL_MON+="\n"
       fi

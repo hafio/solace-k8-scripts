@@ -45,11 +45,8 @@ SOLBK_SCALING_MAXPOOL="10000"
 SOLBK_SCALING_MAXQMSG="100"
 
 # LEAVE COMMENTED IF NOT REQUIRED
-SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
-SOLBK_PRODUCTKEY=testkey
-#  "productkey1"
-#  "productkey2"
-#
+#SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
+#SOLBK_PRODUCTKEY=testkey
 
 SOLBK_MSGNODE_CPU="2"
 SOLBK_MSGNODE_MEM="3410Mi"
@@ -72,34 +69,34 @@ SOLBK_TLS_CERTCAS=(
 # NODE TOLERATTIONS TO BE ADDED TO EACH SOLACE BROKER NODE.
 # LEAVE COMMENTED IF NOT REQUIRED.
 # format: "key:effect" for "exists" operator or "key=value:effect" for "equal" operator
-declare SOLBK_NODETOL_PRI=(
-  "pkey1=value1:NoExecute"
-  "pkey2:NoExecute"
-  "pkey3=value2:NoSchedule"
+#declare SOLBK_NODETOL_PRI=(
+#  "pkey1=value1:NoExecute"
+#  "pkey2:NoExecute"
+#  "pkey3=value2:NoSchedule"
 #  ...
-)
-declare SOLBK_NODETOL_BKP=(
-  "bkey1=value1:NoExecute"
-  "bkey2:NoSchedule"
+#)
+#declare SOLBK_NODETOL_BKP=(
+#  "bkey1=value1:NoExecute"
+#  "bkey2:NoSchedule"
 #  ...
-)
-declare SOLBK_NODETOL_MON=(
-  "mkey1=value1:NoExecute"
-  "mkey2=value2:NoSchedule"
+#)
+#declare SOLBK_NODETOL_MON=(
+#  "mkey1=value1:NoExecute"
+#  "mkey2=value2:NoSchedule"
 #  ...
-)
+#)
 
 # NODE LABELS TO BE ADDED TO EACH SOLACE BROKER NODE.
 # LEAVE COMMENTED IF NOT REQUIRED.
-declare -A SOLBK_NODELABEL_PRI=(
-  [pri_key]="value"
-)
-declare -A SOLBK_NODELABEL_BKP=(
-  [bkp_key]="value"
-)
-declare -A SOLBK_NODELABEL_MON=(
-  [mon_key]="value"
-)
+#declare SOLBK_NODELABEL_PRI=(
+#  "pri_key: pri_value"
+#)
+#declare SOLBK_NODELABEL_BKP=(
+#  "bkp_key: bkp_value"
+#)
+#declare SOLBK_NODELABEL_MON=(
+#  "mon_key: mon_value"
+#)
 
 # add more values on top of its own namespace in case there are other brokers deployed in the same cluster but different namespace
 SOLBK_ANTIAFFINITY_NS=("${SOLBK_NS}")
@@ -108,13 +105,13 @@ SOLBK_ANTIAFFINITY_WT=100
 SOLBK_DIAG_DIR="/path/to/diag-configs/dir"
 
 # OPTIONAL PARAMETER, COMMENT IT OR LEAVE IT BLANK IF AUTO ASSIGNMENT IS DESIRED - METAL LB ONLY
-SOLBK_LOADBALANCER_IP="1.2.3.4"
+#SOLBK_LOADBALANCER_IP="1.2.3.4"
 # OPTIONAL/ADDITIONAL LOADBALANCER RELATED ANNOTATIONS IF REQUIRED - USE ACTUAL KEY: VALUE PAIR
-SOLBK_LOADBALANCER_ANOTN=(
-  "key1: value1"
-  "key2: value2"
-)
-SOLBK_IPPOOL="sample-ip-pool"
+#SOLBK_LOADBALANCER_ANOTN=(
+#  "key1: value1"
+#  "key2: value2"
+#)
+#SOLBK_IPPOOL="sample-ip-pool"
 
 SOLBK_DOMAINCERT_FOLDER="/path/to/domain/ca"
 # associative array for domain certificates [CA-NAME] = 'cert filename'
