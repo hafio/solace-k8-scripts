@@ -73,7 +73,7 @@ Scripts are prefixed with a 3-digit number system:
 | - | - | - | - |
 | `SOLOP_IMAGE` | `docker.io/solace/pubsubplus-eventbroker-operator:1.4.0` | No | Full image repo + name for Solace Operator. Specify the local repository + image name here if unable to access docker.io. |
 | `SOLOP_NS` | `pubsubplus-eventbroker-system` | No | Specify the Solace Operator's namespace, otherwise the script will try to detect the namespace the operator is running in. |
-| `SOLOP_WATCH_NS` | (none) | No | Specify the namespace(s) (comma-separated) to watch. If empty and `${SOLOP_WATCH_SOLBK_NS}` != true, all namespaces on the cluster will be watched/monitored (please use do this with caution). |
+| `SOLOP_WATCH_NS` | (none) | No | Specify the namespace(s) (comma-separated) to watch. If empty and `${SOLOP_WATCH_SOLBK_NS}` != true, all namespaces on the cluster will be watched/monitored (please do this with caution). |
 | `SOLOP_WATCH_SOLBK_NS` | `true` | No | Include Solace Event Broker's namespace as part of `${SOLOP_WATCH_NS}`. If unspecified, default value is `true`. |
 
 ## Solace Event broker
