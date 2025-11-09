@@ -45,6 +45,12 @@ SOLBK_SCALING_MAXPOOL="10000"
 SOLBK_SCALING_MAXQMSG="100"
 
 # LEAVE COMMENTED IF NOT REQUIRED
+#SOLBK_PRODUCTKEYS=(
+#  "license key 1"
+#  "license key 2"
+#)
+
+# LEAVE COMMENTED IF NOT REQUIRED
 #SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
 #SOLBK_PRODUCTKEY=testkey
 
