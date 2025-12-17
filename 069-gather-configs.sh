@@ -176,7 +176,7 @@ echo '#!/bin/bash
 
 cd /usr/sw/jail
 rm -f gather-configs.zip
-mv configs/.out cli-out
+mv configs/cliout cli-out
 zip gather-configs.zip -q -r cli-out/*
 ' > ${SHTMPFILE}
 chmod 777 ${SHTMPFILE}
