@@ -2007,7 +2007,7 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: "'${SOLOP_WATCH_NS}'"
-        image: docker.io/solace/pubsubplus-eventbroker-operator:1.4.0
+        image: '`[[ -n "${IMAGEREPO_HOST}" ]] && echo "${IMAGEREPO_HOST}/"`${SOLOP_IMAGE:-docker.io/solace/pubsubplus-eventbroker-operator:1.4.0}'
         imagePullPolicy: Always
         livenessProbe:
           httpGet:

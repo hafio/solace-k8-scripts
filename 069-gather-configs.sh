@@ -46,8 +46,7 @@ TMPFILE2=.tmp2-${BASHPID}
 CLITMPFILE=.tmp.cli-${BASHPID}
 SHTMPFILE=.tmp.sh-${BASHPID}
 
-echo 'end
-home
+echo 'home
 no paging
 
 ! some commands for specific to appliance vs software
