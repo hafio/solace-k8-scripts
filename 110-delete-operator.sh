@@ -1,14 +1,15 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
 fi
 
 TMPFILE=.tmp-${BASHPID}
+trap 'rm -f ${TMPFILE}' EXIT
 
 gen_yaml() {
   echo 'apiVersion: v1
@@ -2047,5 +2048,3 @@ spec:
 gen_yaml > ${TMPFILE}
 
 ${KUBE} delete -f ${TMPFILE}
-
-rm ${TMPFILE}

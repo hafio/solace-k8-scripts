@@ -1,8 +1,8 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
@@ -26,6 +26,7 @@ read -s BASICPASS
 echo 
 
 TMPFILE=.tmp-${BASHPID}
+trap 'rm -f ${TMPFILE}' EXIT
 
 gen_yaml() {
     echo 'home
@@ -70,4 +71,3 @@ ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/c
 echo " - Running CLI scripts..."
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .replication.cli
 
-rm -f ${TMPFILE}

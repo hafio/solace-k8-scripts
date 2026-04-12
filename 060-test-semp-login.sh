@@ -1,14 +1,15 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
 fi
 
 TMPFILE=.tmp-${BASHPID}
+trap 'rm -f ${TMPFILE}' EXIT
 
 [[ -z "$1" ]] && node=p || node=$1
 
@@ -39,7 +40,7 @@ chmod +x ${TMPFILE}
   ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/test-semp.sh
 if [[ $? -eq 0 ]]; then
 	${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/test-semp.sh | tee ${TMPFILE}
-	if [[ `grep failed ${TMPFILE} | wc -l` -gt 0 ]]; then
+	if [[ $(grep -c failed ${TMPFILE}) -gt 0 ]]; then
 		echo -n "Do you want to display the username & password? [y/n] "
 		read -n 1 display
 		echo
@@ -52,4 +53,3 @@ if [[ $? -eq 0 ]]; then
 fi
 
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm /usr/sw/jail/test-semp.sh
-rm -f ${TMPFILE}

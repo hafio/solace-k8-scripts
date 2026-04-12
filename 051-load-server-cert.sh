@@ -1,14 +1,15 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
 fi
 
-DT=`date +%Y-%m-%d`
+DT=$(date +%Y-%m-%d)
+trap 'rm -f .tls .cert' EXIT
 
 if [[ -z "${SOLBK_TLS_CERT}" ]] || [[ -z "${SOLBK_TLS_CERTKEY}" ]]; then
   echo '[Error] $SOLBK_TLS_CERT & $SOLBK_TLS_CERTKEY must be specified!'
@@ -44,5 +45,3 @@ show ssl server-certificate detail" > .cert
     fi
   done
 fi
-
-rm -f .tls .cert

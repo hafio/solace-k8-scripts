@@ -1,8 +1,8 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
@@ -45,6 +45,7 @@ TMPFILE=.tmp-${BASHPID}
 TMPFILE2=.tmp2-${BASHPID}
 CLITMPFILE=.tmp.cli-${BASHPID}
 SHTMPFILE=.tmp.sh-${BASHPID}
+trap 'rm -f ${TMPFILE} ${TMPFILE2} ${CLITMPFILE} ${SHTMPFILE}' EXIT
 
 echo 'home
 no paging
@@ -178,7 +179,7 @@ rm -f gather-configs.zip
 mv configs/cliout cli-out
 zip gather-configs.zip -q -r cli-out/*
 ' > ${SHTMPFILE}
-chmod 777 ${SHTMPFILE}
+chmod 700 ${SHTMPFILE}
 
 declare nodes=("p" "b" "m")
 [[ "${SOLBK_REDUNDANCY}" != "true" ]] && nodes=("p")
@@ -203,8 +204,8 @@ for node in "${nodes[@]}"; do
   # zip all cli outputs and copy over
   echo " - Zipping ouputs..."
   ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/jail/zip-configs.sh
-  PODHOSTNAME=`${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- hostname`
-  ${KUBE} cp -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/gather-configs.zip "${SOLBK_DIAG_DIR}/gather-configs-${PODHOSTNAME}-`date +%Y-%m-%d-T%H%M`.zip"
+  PODHOSTNAME=$(${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- hostname)
+  ${KUBE} cp -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0:/usr/sw/jail/gather-configs.zip "${SOLBK_DIAG_DIR}/gather-configs-${PODHOSTNAME}-$(date +%Y-%m-%d-T%H%M).zip"
   
   # clean up zip file and output files
   echo " - Cleaning up..."
@@ -213,8 +214,8 @@ for node in "${nodes[@]}"; do
   #get filename for gather-diagnostics
   echo " - Retrieving gather-diagnostics..."
 	grep "Diagnostics saved" ${TMPFILE} > ${TMPFILE2}
-	if [[ `cat ${TMPFILE2} | wc -l` -eq 1 ]]; then
-    DIAG_FILE=`cat ${TMPFILE2}`
+	if [[ $(wc -l < ${TMPFILE2}) -eq 1 ]]; then
+    DIAG_FILE=$(cat ${TMPFILE2})
     DIAG_FILE=${DIAG_FILE#*: }
     
     # copy file and delete cli + script
@@ -225,5 +226,3 @@ done
 
 echo -e "\nListing files in ${SOLBK_DIAG_DIR}"
 ls ${SOLBK_DIAG_DIR}/*
-
-rm -f ${TMPFILE} ${TMPFILE2} ${CLITMPFILE} ${SHTMPFILE}

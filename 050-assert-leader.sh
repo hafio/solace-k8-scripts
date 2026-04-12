@@ -1,14 +1,15 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
 fi
 
 TMPFILE=.tmp-${BASHPID}
+trap 'rm -f ${TMPFILE}' EXIT
 
 if [[ "${SOLBK_REDUNDANCY}" == "true" ]]; then
 
@@ -41,17 +42,16 @@ show config-sync database
   
   echo "Waiting for redundancy state to be restored fully..."
   for i in {0..10}; do
-    echo -ne `date`'\r'
+    echo -ne "$(date)\r"
 	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-redundancy.cli > ${TMPFILE}
-    CFG_ST=`grep "Configuration Status" ${TMPFILE}`
-    RDC_ST=`grep "Redundancy Status" ${TMPFILE}`
-    RDC_RL=`grep "Active-Standby Role" ${TMPFILE}`
-    ADB_LK=`grep "ADB Link To Mate" ${TMPFILE}`
-    ADB_MT=`grep "ADB Hello To Mate" ${TMPFILE}`
+    CFG_ST=$(grep "Configuration Status" ${TMPFILE})
+    RDC_ST=$(grep "Redundancy Status" ${TMPFILE})
+    RDC_RL=$(grep "Active-Standby Role" ${TMPFILE})
+    ADB_LK=$(grep "ADB Link To Mate" ${TMPFILE})
+    ADB_MT=$(grep "ADB Hello To Mate" ${TMPFILE})
     if [[ "${CFG_ST#*: }" == "Enabled" ]] && [[ "${RDC_ST#*: }" == "Up" ]] && [[ "${RDC_RL#*: }" == "Primary" ]] && [[ "${ADB_LK#*: }" == "Up" ]] && [[ "${ADB_MT#*: }" == "Up" ]]; then
       echo ""
       ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .assert-leader.cli | tail -12
-      rm ${TMPFILE}
       exit 0
     fi
     sleep 2
@@ -61,7 +61,6 @@ show config-sync database
 show redundancy detail' > ${TMPFILE}
   ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-redundancy-detail.cli
   ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-redundancy-detail.cli
-  rm ${TMPFILE}
 else
   echo "Standalone Broker Deployment Mode detected!"
 fi

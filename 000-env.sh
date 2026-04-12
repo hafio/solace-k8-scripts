@@ -13,9 +13,8 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-EXDIR=`dirname $0`
+EXDIR=$(dirname "$0")
 ENV_FILE=${ENV_FILE:-default}
-EXDIR=`dirname $0`
 if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
 
   source "${EXDIR}/env/${ENV_FILE}"
@@ -37,10 +36,10 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   if [[ -n "${SOLOP_NS}" ]]; then
     SOLOP_DERIVED_NS=${SOLOP_NS}
   else
-    SOLOP_DERIVED_NS=`${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2> /dev/null | grep pubsubplus-eventbroker-operator | cut -d" " -f1`
+    SOLOP_DERIVED_NS=$(${KUBE} get deployment --all-namespaces -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2> /dev/null | grep pubsubplus-eventbroker-operator | cut -d" " -f1)
   fi
   
-  [[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=`${KUBE} get pod -n ${SOLOP_DERIVED_NS} -o custom-columns=NAME:.metadata.name --no-headers`
+  [[ -n "${SOLOP_DERIVED_NS}" ]] && SOLOP_DERIVED_POD=$(${KUBE} get pod -n "${SOLOP_DERIVED_NS}" -o custom-columns=NAME:.metadata.name --no-headers)
   
   # IF OPERATOR IS NOT RUNNING AND ${SOLOP_NS} IS NOT SPECIFIED, DEFAULT TO 'pubsubplus-operator-system'
   # THIS LINE NEEDS TO BE AFTER SOLOP_DERIVED_POD SO THAT POD NAME WILL NOT BE RETRIEVED IF OPERATOR IS NOT RUNNING

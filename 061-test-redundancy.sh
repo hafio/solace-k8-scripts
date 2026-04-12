@@ -1,8 +1,8 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
@@ -11,6 +11,7 @@ fi
 set -e
 
 TMPFILE=.tmp-${BASHPID}
+trap 'rm -f ${TMPFILE}' EXIT
 
 if [[ "${SOLBK_REDUNDANCY}" == "true" ]]; then
 
@@ -45,25 +46,25 @@ redundancy revert-activity " > ${TMPFILE}
 
   # ensure redundancy is up and running properly
   ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-  CF_STS=`grep "Configuration Status" ${TMPFILE}`
-  RD_STS=`grep "Redundancy Status" ${TMPFILE}`
-  RD_ROL=`grep "Active-Standby Role" ${TMPFILE}`
-  ADB_LK=`grep "ADB Link To Mate" ${TMPFILE}`
-  ADB_HL=`grep "ADB Hello To Mate" ${TMPFILE}`
+  CF_STS=$(grep "Configuration Status" ${TMPFILE})
+  RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+  RD_ROL=$(grep "Active-Standby Role" ${TMPFILE})
+  ADB_LK=$(grep "ADB Link To Mate" ${TMPFILE})
+  ADB_HL=$(grep "ADB Hello To Mate" ${TMPFILE})
   
   if [[ "${CF_STS#*: }" == "Enabled" ]] && [[ "${RD_STS#*: }" == "Up" ]] && [[ "${RD_ROL#*: }" == "Primary" ]] && [[ "${ADB_LK#*: }" == "Up" ]] && [[ "${ADB_HL#*: }" == "Up" ]]; then
-    IS_ACT=`grep "Activity Status" ${TMPFILE} | grep "Local Active" | wc -l` 
+    IS_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active") 
     if [[ ${IS_ACT} -eq 1 ]]; then
       echo "[Info] Detected Primary Node is active."
       
       # release primary
       ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .release.cli > /dev/null
       while [[ "${CF_STS#*: }" != "Enabled-Released" ]] || [[ "${RD_STS#*: }" != "Down" ]] || [[ ${MT_ACT} -ne 1 ]]; do
-        echo -ne [`date`] Waiting for Primary Node to be released...'\r'
+        echo -ne "[$(date)] Waiting for Primary Node to be released...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=`grep "Configuration Status" ${TMPFILE}`
-        RD_STS=`grep "Redundancy Status" ${TMPFILE}`
-        MT_ACT=`grep "Activity Status" ${TMPFILE} | grep "Mate Active" | wc -l`
+        CF_STS=$(grep "Configuration Status" ${TMPFILE})
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
         sleep 3
       done
       echo "[Info] Primary node is released. Backup node is active.                                    "
@@ -71,33 +72,33 @@ redundancy revert-activity " > ${TMPFILE}
       # no release primary
       ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .no-release.cli > /dev/null
       while [[ "${CF_STS#*: }" != "Enabled" ]] || [[ "${RD_STS#*: }" != "Up" ]] || [[ ${MT_ACT} -ne 1 ]] || [[ ${BK_ACT} -ne 1 ]]; do
-        echo -ne [`date`] Waiting for Primary Node to be un-released...'\r'
+        echo -ne "[$(date)] Waiting for Primary Node to be un-released...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=`grep "Configuration Status" ${TMPFILE}`
-        RD_STS=`grep "Redundancy Status" ${TMPFILE}`
-        MT_ACT=`grep "Activity Status" ${TMPFILE} | grep "Mate Active" | wc -l`
+        CF_STS=$(grep "Configuration Status" ${TMPFILE})
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
         
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        BK_ACT=`grep "Activity Status" ${TMPFILE} | grep "Local Active" | wc -l`
+        BK_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active")
         sleep 3
       done
       echo "[Info] Primary node is 'un-released'. Backup node is active.                               "
     fi
     ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-    BK_ACT=`grep "Activity Status" ${TMPFILE} | grep "Local Active" | wc -l`
+    BK_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active")
     if [[ ${BK_ACT} -eq 1 ]]; then
       echo "[Info] Detected Backup node is active."
       ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .revert-activity.cli > /dev/null
       while [[ "${CF_STS#*: }" != "Enabled" ]] || [[ "${RD_STS#*: }" != "Up" ]] || [[ ${MT_ACT} -ne 0 ]] || [[ ${IS_ACT} -ne 1 ]] || [[ ${BK_ACT} -ne 0 ]]; do
-        echo -ne [`date`] Waiting for Primary Node to become active...'\r'
+        echo -ne "[$(date)] Waiting for Primary Node to become active...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=`grep "Configuration Status" ${TMPFILE}`
-        RD_STS=`grep "Redundancy Status" ${TMPFILE}`
-        IS_ACT=`grep "Activity Status" ${TMPFILE} | grep "Local Active" | wc -l`
-        MT_ACT=`grep "Activity Status" ${TMPFILE} | grep "Mate Active" | wc -l`
+        CF_STS=$(grep "Configuration Status" ${TMPFILE})
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        IS_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active")
+        MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
 
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        BK_ACT=`grep "Activity Status" ${TMPFILE} | grep "Local Active" | wc -l`
+        BK_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active")
         #echo line ${CF_STS#*: } ${RD_STS#*: } ${IS_ACT} ${MT_ACT} ${BK_ACT}
         sleep 3
       done
@@ -111,10 +112,8 @@ redundancy revert-activity " > ${TMPFILE}
     echo "[Error] Something is wrong with the redundancy configuration and/or status:"
     echo
     cat ${TMPFILE} | tail -27
-    rm -f ${TMPFILE}
     exit 1
   fi
-rm -f ${TMPFILE}
 else
   echo "Standalone Deployment Mode detected!"
   exit 1

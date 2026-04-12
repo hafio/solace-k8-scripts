@@ -1,8 +1,8 @@
 #!/bin/bash
 
 SELECT_ENV_FILE="000-env.sh"
-if [[ -f "`dirname $0`/${SELECT_ENV_FILE}" ]]; then
-	source "`dirname $0`/${SELECT_ENV_FILE}"
+if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
+	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
@@ -34,7 +34,7 @@ fi
 
 
 if [[ -z "$1" ]]; then
-  CLI_FILES=(`ls ${SOLBK_CLISCRIPTS_FOLDER}`)
+  CLI_FILES=($(ls ${SOLBK_CLISCRIPTS_FOLDER}))
   while [[ ! "${CLI_IND}" =~ [0-9]+ ]]; do
     for i in "${!CLI_FILES[@]}"; do
       echo "[${i}] ${CLI_FILES[$i]}"
@@ -57,7 +57,7 @@ else
     rm -f cli.out
 	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- /usr/sw/loads/currentload/bin/cli -Apes ".${CLI}" | tee cli.out
 	  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${pod}-0 -- rm -f "/usr/sw/jail/cliscripts/.${CLI}"
-    [[ `egrep -i '(invalid|error|busy)' cli.out | wc -l` -gt 0 ]] && echo "[Error] Errors detected in output!"
+    [[ $(grep -Ei '(invalid|error|busy)' cli.out | wc -l) -gt 0 ]] && echo "[Error] Errors detected in output!"
     echo "Output is available in cli.out"
   else
     echo "[Error] Unable to copy script"
