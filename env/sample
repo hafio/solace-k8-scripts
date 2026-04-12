@@ -44,15 +44,11 @@ SOLBK_SCALING_MAXCONN="100"
 SOLBK_SCALING_MAXPOOL="10000"
 SOLBK_SCALING_MAXQMSG="100"
 
-# LEAVE COMMENTED IF NOT REQUIRED
+# LEAVE COMMENTED IF NOT REQUIRED. APPLIED VIA 057-configure-product-keys.sh
 #SOLBK_PRODUCTKEYS=(
 #  "license key 1"
 #  "license key 2"
 #)
-
-# LEAVE COMMENTED IF NOT REQUIRED
-#SOLBK_CONFIGMAP=solace-secret-configmap-env # default is solace-secret-configmap-env if unspecified
-#SOLBK_PRODUCTKEY=testkey
 
 SOLBK_MSGNODE_CPU="2"
 SOLBK_MSGNODE_MEM="3410Mi"

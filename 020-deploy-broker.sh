@@ -33,7 +33,6 @@ spec:
     
   echo "  adminCredentialsSecret: ${SOLBK_ADM_SECRET:-adminpassword123}
   redundancy: ${SOLBK_REDUNDANCY}"
-  [[ -n "${SOLBK_PRODUCTKEY}" ]] && echo "  extraEnvVarsSecret: ${SOLBK_CONFIGMAP}"
   echo "  podDisruptionBudgetForHA: true
   systemScaling:
     maxConnections: ${SOLBK_SCALING_MAXCONN}

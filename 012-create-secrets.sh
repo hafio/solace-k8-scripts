@@ -43,15 +43,4 @@ if [[ -n "${IMAGEREPO_SECRET}" ]]; then
   fi
 fi
 
-KEYVALS="--from-literal=\"k=v\""
-[[ -n "${SOLBK_PRODUCTKEY}" ]] && KEYVALS+=" --from-literal=\"productkey=${SOLBK_PRODUCTKEY}\" "
-
-${KUBE} create secret generic ${SOLBK_CONFIGMAP} -n ${SOLBK_NS} ${KEYVALS}
-if [[ $? -eq 0 ]]; then
-  echo "Secret Config Map '${SOLBK_CONFIGMAP}' created successfully."
-else
-  echo "Error creating Secret Config Map '${SOLBK_CONFIGMAP}'."
-  exit 1
-fi
-
 ${KUBE} get secret -n ${SOLBK_NS}
