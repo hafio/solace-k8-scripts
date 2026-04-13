@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="application-name" content="Solace YAML Generator">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#03213B">
+<title>Solace YAML Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--sg:#00C895;--sgl:#ABFF88;--sdb:#093B5F;--sddb:#03213B;--st:#009193;--so:#FCAB29;--sky:#C2F7FF;--bg:#f8f9fa;--bgc:#fff;--bgi:#f1f5f9;--tp:#334155;--ts:#64748b;--tm:#94a3b8;--bc:#e2e8f0;--r:6px;--rl:8px;--ss:0 1px 3px 0 rgb(0 0 0/.1)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);background:var(--bg);line-height:1.5}
+.hero{background:linear-gradient(135deg,var(--sddb),var(--sdb));color:#fff;padding:1.2rem 2rem;text-align:center}
+.hero h1{font-size:1.3rem;font-weight:700}.hero .sub{font-size:.8rem;color:rgba(255,255,255,.6)}
+.page{display:flex;height:calc(100vh - 62px)}
+
+/* Sidebar */
+.sidebar{width:200px;flex-shrink:0;background:var(--sddb);overflow-y:auto;padding:.75rem 0}
+.sidebar::-webkit-scrollbar{width:4px}.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+.sb-hdr{font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tm);padding:.5rem .75rem .25rem;margin-top:.4rem}
+.sb-hdr:first-child{margin-top:0}
+.sb-item{display:block;padding:.3rem .75rem;font-size:.72rem;color:rgba(255,255,255,.55);text-decoration:none;border-left:2px solid transparent;transition:all .15s;cursor:pointer}
+.sb-item:hover{color:#fff;background:rgba(255,255,255,.05)}
+.sb-item.active{color:#fff;border-left-color:var(--sg);background:rgba(0,200,149,.1);font-weight:600}
+
+/* Main */
+.main-area{flex:1;display:flex;overflow:hidden;min-width:0}
+.form-scroll{flex:1;overflow-y:auto;padding:1rem 1rem 3rem;min-width:320px}
+.yaml-scroll{flex:1;overflow-y:auto;padding:1rem;min-width:320px;background:#0a1628}
+
+/* Sections */
+.sec{background:var(--bgc);border:1px solid var(--bc);border-radius:var(--rl);padding:1rem 1.1rem;margin-bottom:.65rem;box-shadow:var(--ss)}
+.sec h3{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tm);margin-bottom:.6rem;padding-bottom:.35rem;border-bottom:1px solid var(--bc)}
+.sec-env{border-left:3px solid var(--so);opacity:.85}
+.sec-env h3::after{content:" (env only)";font-weight:400;text-transform:none;letter-spacing:0;color:var(--so);font-style:italic}
+
+/* Fields */
+.f{margin-bottom:.5rem}
+.f label{display:block;font-size:.74rem;font-weight:500;color:var(--ts);margin-bottom:.15rem}
+.f input,.f select,.f textarea{width:100%;padding:.38rem .6rem;background:var(--bgi);border:1px solid var(--bc);border-radius:var(--r);font-family:inherit;font-size:.8rem;color:var(--tp);transition:border .15s}
+.f input:focus,.f textarea:focus{outline:none;border-color:var(--sg)}
+.f input[type=file]{padding:.35rem;font-size:.75rem;cursor:pointer}
+.f textarea{resize:vertical;min-height:52px;font-family:'Consolas','Fira Code',monospace;font-size:.75rem;line-height:1.4}
+.f .h{font-size:.68rem;color:var(--tm);margin-top:.1rem;font-style:italic}
+.fr{display:flex;gap:.6rem}.fr .f{flex:1}
+.tgl{display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem}
+.tgl input[type=checkbox]{accent-color:var(--sg);width:15px;height:15px}
+.tgl label{font-size:.78rem;color:var(--tp);cursor:pointer}
+.opt-fields{display:none}.opt-fields.vis{display:block}
+.ha-fields{display:none}.ha-fields.vis{display:block}
+
+/* YAML panels */
+.ypanel{margin-bottom:1rem}
+.ypanel-hdr{display:flex;align-items:center;justify-content:space-between;padding:.4rem .7rem;background:var(--sddb);border-radius:var(--r) var(--r) 0 0;border:1px solid rgba(255,255,255,.08)}
+.ypanel-hdr span{color:rgba(255,255,255,.7);font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.ypanel-actions{display:flex;gap:.3rem}
+.btn{padding:.28rem .6rem;border-radius:var(--r);font-size:.72rem;font-weight:600;border:none;cursor:pointer;transition:all .15s}
+.btn-c{background:var(--st);color:#fff}.btn-c:hover{background:#007a7c}
+.btn-d{background:var(--sg);color:#fff}.btn-d:hover{background:#00a87d}
+.ycode{background:#0d1b2a;color:#e2e8f0;padding:.75rem;font-family:'Consolas','Fira Code',monospace;font-size:.72rem;line-height:1.55;white-space:pre;overflow-x:auto;border-radius:0 0 var(--r) var(--r);border:1px solid rgba(255,255,255,.05);border-top:0;max-height:600px;overflow-y:auto}
+.ycode .k{color:var(--sky)}.ycode .v{color:var(--sgl)}.ycode .c{color:var(--tm)}.ycode .d{color:var(--so)}
+
+.toast{position:fixed;bottom:1rem;right:1rem;background:var(--sddb);color:#fff;padding:.5rem 1rem;border-radius:var(--r);font-size:.78rem;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;z-index:100}
+.toast.show{opacity:1;transform:translateY(0)}
+
+@media(max-width:1000px){.sidebar{display:none}.page{height:auto}.main-area{flex-direction:column}.form-scroll,.yaml-scroll{overflow:visible;min-width:0}.yaml-scroll{max-height:none}}
+</style>
+</head>
+<body>
+<div class="hero"><h1>Solace YAML Generator</h1><div class="sub">Generate Kubernetes deployment manifests</div></div>
+<div class="page">
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sb-hdr">YAML Generation</div>
+  <a class="sb-item active" data-s="s-repo">Image Repository</a>
+  <a class="sb-item" data-s="s-op">Operator</a>
+  <a class="sb-item" data-s="s-broker">Broker</a>
+  <a class="sb-item" data-s="s-scale">Scaling</a>
+  <a class="sb-item" data-s="s-res">Resources</a>
+  <a class="sb-item" data-s="s-storage">Storage</a>
+  <a class="sb-item" data-s="s-creds">Credentials</a>
+  <a class="sb-item" data-s="s-tls">TLS / SSL</a>
+  <a class="sb-item" data-s="s-labels">Node Labels</a>
+  <a class="sb-item" data-s="s-tol">Node Tolerations</a>
+  <a class="sb-item" data-s="s-aa">Anti-Affinity</a>
+  <a class="sb-item" data-s="s-lb">Load Balancer</a>
+  <div class="sb-hdr">Env Only</div>
+  <a class="sb-item" data-s="s-common">Common</a>
+  <a class="sb-item" data-s="s-tlspaths">TLS Cert Paths</a>
+  <a class="sb-item" data-s="s-domcert">Domain Certificates</a>
+  <a class="sb-item" data-s="s-prodkeys">Product Keys</a>
+  <a class="sb-item" data-s="s-repl">Replication</a>
+  <a class="sb-item" data-s="s-diag">Diagnostics &amp; CLI</a>
+</nav>
+
+<div class="main-area">
+<!-- Form -->
+<div class="form-scroll" id="formScroll">
+
+  <!-- 1. Image Repository -->
+  <div class="sec" id="s-repo"><h3>Image Repository</h3>
+    <div class="f"><label>Registry Hostname</label><input id="i-repo" placeholder="e.g. repo.tcp.intranet.example.com" oninput="gen()"><div class="h">Prepended to all image paths. Leave blank for default Docker Hub.</div></div>
+    <div class="tgl"><input type="checkbox" id="i-pson" onchange="togOpt('i-pson','ps-fields');gen()"><label for="i-pson">Require image pull secret</label></div>
+    <div class="opt-fields" id="ps-fields">
+      <div class="f"><label>Image Pull Secret Name</label><input id="i-pullsecret" value="registry-pull-secret" oninput="gen()"></div>
+      <div class="fr">
+        <div class="f"><label>Registry Username</label><input id="i-imguser" placeholder="docker-user" oninput="gen()"></div>
+        <div class="f"><label>Registry Password</label><input id="i-imgpass" type="password" placeholder="docker-pass" oninput="gen()"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Operator -->
+  <div class="sec" id="s-op"><h3>Operator</h3>
+    <div class="f"><label>Operator Namespace</label><input id="i-opns" value="pubsubplus-operator-system" oninput="gen()"></div>
+    <div class="f"><label>Operator Image</label><input id="i-opimg" value="solace/pubsubplus-eventbroker-operator:1.4.0" oninput="gen()"></div>
+    <div class="f"><label>Watch Namespaces</label><input id="i-opwatch" placeholder="e.g. sol-ns1,sol-ns2 (blank = all)" oninput="gen()"><div class="h">Comma-separated list of namespaces the operator monitors.</div></div>
+    <div class="fr">
+      <div class="f"><label>Operator CPU</label><input id="i-opcpu" value="500m" oninput="gen()"></div>
+      <div class="f"><label>Operator Memory</label><input id="i-opmem" value="512Mi" oninput="gen()"></div>
+    </div>
+  </div>
+
+  <!-- 3. Broker -->
+  <div class="sec" id="s-broker"><h3>Broker</h3>
+    <div class="fr">
+      <div class="f"><label>Broker Name</label><input id="i-bkname" value="solace-event-broker" oninput="gen()"></div>
+      <div class="f"><label>Broker Namespace</label><input id="i-bkns" value="solace-namespace" oninput="gen()"></div>
+    </div>
+    <div class="fr">
+      <div class="f"><label>Broker Image</label><input id="i-bkimg" value="solace-pubsub-standard" oninput="gen()"></div>
+      <div class="f"><label>Image Tag</label><input id="i-bktag" value="latest" oninput="gen()"></div>
+    </div>
+    <div class="tgl"><input type="checkbox" id="i-ha" onchange="togHA();gen()"><label for="i-ha">High Availability (3-node redundancy)</label></div>
+  </div>
+
+  <!-- 4. Scaling -->
+  <div class="sec" id="s-scale"><h3>Scaling</h3>
+    <div class="fr">
+      <div class="f"><label>Max Client Connections</label><select id="i-maxconn" onchange="gen()"><option value="100" selected>100</option><option value="1000">1,000</option><option value="10000">10,000</option><option value="100000">100,000</option><option value="200000">200,000</option></select></div>
+      <div class="f"><label>Max Spool Usage (MB)</label><input id="i-maxpool" value="10000" oninput="gen()"></div>
+      <div class="f"><label>Max Queue Messages (M)</label><select id="i-maxqmsg" onchange="gen()"><option value="100" selected>100</option><option value="240">240</option><option value="3000">3,000</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="f"><label>Max Kafka Bridges</label><select id="i-maxkb" onchange="gen()"><option value="0" selected>0</option><option value="10">10</option><option value="50">50</option><option value="200">200</option></select></div>
+      <div class="f"><label>Max Kafka Connections</label><select id="i-maxkc" onchange="gen()"><option value="0" selected>0</option><option value="300">300</option><option value="2000">2,000</option><option value="10000">10,000</option></select></div>
+      <div class="f"><label>Max Bridges</label><select id="i-maxbr" onchange="gen()"><option value="25" selected>25</option><option value="500">500</option><option value="5000">5,000</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="f"><label>Max Subscriptions</label><select id="i-maxsub" onchange="gen()"><option value="50000" selected>50,000</option><option value="500000">500,000</option><option value="5000000">5,000,000</option></select></div>
+      <div class="f"><label>Max Guaranteed Msg Size (MB)</label><select id="i-maxgms" onchange="gen()"><option value="10" selected>10</option><option value="30">30</option></select></div>
+    </div>
+  </div>
+
+  <!-- 5. Resources -->
+  <div class="sec" id="s-res"><h3>Resources</h3>
+    <div class="f"><a href="https://docs.solace.com/Admin-Ref/Resource-Calculator/pubsubplus-resource-calculator.html" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--st);text-decoration:none;border-bottom:1px dashed var(--st)">Solace Resource Calculator</a></div>
+    <div class="fr">
+      <div class="f"><label>Messaging Node CPU</label><input id="i-bkcpu" value="2" oninput="gen()"></div>
+      <div class="f"><label>Messaging Node Memory</label><input id="i-bkmem" value="3410Mi" oninput="gen()"></div>
+    </div>
+  </div>
+
+  <!-- 6. Storage -->
+  <div class="sec" id="s-storage"><h3>Storage</h3>
+    <div class="f"><label>Storage Class</label><input id="i-sc" placeholder="e.g. local-path" oninput="gen()"></div>
+    <div class="fr">
+      <div class="f"><label>Messaging Node Storage</label><input id="i-stmsg" value="16100Mi" oninput="gen()"></div>
+      <div class="f"><label>Monitor Node Storage</label><input id="i-stmon" value="2300Mi" oninput="gen()"></div>
+    </div>
+  </div>
+
+  <!-- 7. Credentials -->
+  <div class="sec" id="s-creds"><h3>Credentials</h3>
+    <div class="f"><label>Admin Password</label><input id="i-admpass" type="password" value="adminpassword123" oninput="gen()"><div class="h">Used to create the admin credentials secret.</div></div>
+    <div class="f"><label>Admin Secret Name</label><input id="i-admsecret" value="solace-admin-secret" oninput="gen()"></div>
+  </div>
+
+  <!-- 8. TLS / SSL -->
+  <div class="sec" id="s-tls"><h3>TLS / SSL</h3>
+    <div class="tgl"><input type="checkbox" id="i-tlson" onchange="togOpt('i-tlson','tls-fields');gen()"><label for="i-tlson">Enable TLS server certificates</label></div>
+    <div class="opt-fields" id="tls-fields">
+      <div class="f"><label>Server Certificate Secret Name</label><input id="i-tlssecret" value="solace-server-secret" oninput="gen()"></div>
+      <div class="f"><label>Server Certificate (.crt / .pem)</label><input type="file" id="i-tlscertfile" accept=".crt,.pem,.cer" onchange="readTlsFile('i-tlscertfile','tlsCertRaw','tlsCertStatus');gen()"><div class="h" id="tlsCertStatus"></div></div>
+      <div class="f"><label>Certificate Private Key (.key)</label><input type="file" id="i-tlskeyfile" accept=".key,.pem" onchange="readTlsFile('i-tlskeyfile','tlsKeyRaw','tlsKeyStatus');gen()"><div class="h" id="tlsKeyStatus"></div></div>
+      <div class="f"><label>CA Certificates (optional, multi-select)</label><input type="file" id="i-tlscafiles" accept=".crt,.pem,.cer" multiple onchange="readTlsCaFiles();gen()"><div class="h" id="tlsCaStatus">Select root and/or intermediate CA certificates to bundle with the server certificate.</div></div>
+    </div>
+  </div>
+
+  <!-- 9. Node Labels (HA only) -->
+  <div class="sec" id="s-labels"><h3>Node Labels</h3>
+    <div class="tgl"><input type="checkbox" id="i-lblon" onchange="togOpt('i-lblon','lbl-fields');gen()"><label for="i-lblon">Configure node label selectors</label></div>
+    <div class="opt-fields" id="lbl-fields">
+      <div class="f"><label>Primary Node Labels</label><textarea id="i-lblpri" rows="2" oninput="gen()" placeholder="kubernetes.io/hostname: worker-01">kubernetes.io/hostname: worker-01</textarea><div class="h">One key: value per line</div></div>
+      <div class="ha-fields">
+        <div class="f"><label>Backup Node Labels</label><textarea id="i-lblbkp" rows="2" oninput="gen()" placeholder="kubernetes.io/hostname: worker-02">kubernetes.io/hostname: worker-02</textarea></div>
+        <div class="f"><label>Monitor Node Labels</label><textarea id="i-lblmon" rows="2" oninput="gen()" placeholder="kubernetes.io/hostname: worker-03">kubernetes.io/hostname: worker-03</textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. Node Tolerations (HA only) -->
+  <div class="sec" id="s-tol"><h3>Node Tolerations</h3>
+    <div class="tgl"><input type="checkbox" id="i-tolon" onchange="togOpt('i-tolon','tol-fields');gen()"><label for="i-tolon">Configure node tolerations</label></div>
+    <div class="opt-fields" id="tol-fields">
+      <div class="f"><label>Primary Tolerations</label><textarea id="i-tolpri" rows="2" oninput="gen()" placeholder="dedicated=solace:NoSchedule"></textarea><div class="h">Format: key=value:effect or key:effect</div></div>
+      <div class="ha-fields">
+        <div class="f"><label>Backup Tolerations</label><textarea id="i-tolbkp" rows="2" oninput="gen()"></textarea></div>
+        <div class="f"><label>Monitor Tolerations</label><textarea id="i-tolmon" rows="2" oninput="gen()"></textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. Anti-Affinity -->
+  <div class="sec" id="s-aa"><h3>Anti-Affinity</h3>
+    <div class="tgl"><input type="checkbox" id="i-aaon" onchange="togOpt('i-aaon','aa-fields');gen()"><label for="i-aaon">Configure pod anti-affinity</label></div>
+    <div class="opt-fields" id="aa-fields">
+      <div class="f"><label>Namespaces</label><textarea id="i-aans" rows="2" oninput="gen()" placeholder="One namespace per line"></textarea></div>
+      <div class="f"><label>Weight (1-100)</label><input id="i-aawt" value="100" oninput="gen()"></div>
+    </div>
+  </div>
+
+  <!-- 12. Load Balancer -->
+  <div class="sec" id="s-lb"><h3>Load Balancer</h3>
+    <div class="tgl"><input type="checkbox" id="i-lbon" onchange="togOpt('i-lbon','lb-fields');gen()"><label for="i-lbon">Configure Load Balancer options</label></div>
+    <div class="opt-fields" id="lb-fields">
+      <div class="fr">
+        <div class="f"><label>Static IP (MetalLB)</label><input id="i-lbip" placeholder="e.g. 10.0.0.100" oninput="gen()"></div>
+        <div class="f"><label>IP Address Pool</label><input id="i-ippool" placeholder="e.g. default-pool" oninput="gen()"></div>
+      </div>
+      <div class="f"><label>Extra Annotations</label><textarea id="i-lbanotn" rows="2" oninput="gen()" placeholder="key: value (one per line)"></textarea></div>
+    </div>
+  </div>
+
+  <!-- ═══════ ENV ONLY SECTIONS ═══════ -->
+
+  <!-- 13. Common -->
+  <div class="sec sec-env" id="s-common"><h3>Common</h3>
+    <div class="f"><label>Kubectl Command</label><input id="i-kube" value="kubectl" oninput="gen()"><div class="h">Full kubectl command including --kubeconfig path.</div></div>
+  </div>
+
+  <!-- 14. Image Credentials - merged into Image Repository section above -->
+
+  <!-- 15. TLS Certificate Paths -->
+  <div class="sec sec-env" id="s-tlspaths"><h3>TLS Certificate Paths</h3>
+    <div class="f"><label>Server Certificate File</label><input id="i-tlscert" placeholder="/path/to/tls.crt" oninput="gen()"></div>
+    <div class="f"><label>Server Certificate Key</label><input id="i-tlskey" placeholder="/path/to/tls.key" oninput="gen()"></div>
+    <div class="f"><label>CA Certificate Chain</label><textarea id="i-tlscas" rows="2" oninput="gen()" placeholder="/path/to/ca/cert (one per line)"></textarea><div class="h">One CA certificate path per line.</div></div>
+  </div>
+
+  <!-- 16. Domain Certificates -->
+  <div class="sec sec-env" id="s-domcert"><h3>Domain Certificates</h3>
+    <div class="f"><label>Certificate Folder</label><input id="i-domfolder" placeholder="/path/to/domain/ca" oninput="gen()"></div>
+    <div class="f"><label>Certificate Files</label><textarea id="i-domfiles" rows="2" oninput="gen()" placeholder="ca-name=filename.cer (one per line)"></textarea><div class="h">Format: ca-name=filename.cer</div></div>
+  </div>
+
+  <!-- 17. Product Keys -->
+  <div class="sec sec-env" id="s-prodkeys"><h3>Product Keys</h3>
+    <div class="tgl"><input type="checkbox" id="i-pkon" onchange="togOpt('i-pkon','pk-fields');gen()"><label for="i-pkon">Configure product keys</label></div>
+    <div class="opt-fields" id="pk-fields">
+      <div class="f"><label>License Keys</label><textarea id="i-pkeys" rows="3" oninput="gen()" placeholder="One license key per line"></textarea><div class="h">Applied via 057-configure-product-keys.sh</div></div>
+    </div>
+  </div>
+
+  <!-- 18. Replication -->
+  <div class="sec sec-env" id="s-repl"><h3>Replication</h3>
+    <div class="tgl"><input type="checkbox" id="i-replon" onchange="togOpt('i-replon','repl-fields');gen()"><label for="i-replon">Configure data replication</label></div>
+    <div class="opt-fields" id="repl-fields">
+      <div class="f"><label>Mate Virtual Router Name</label><input id="i-replmate" placeholder="mate-virtual-router-name" oninput="gen()"></div>
+      <div class="f"><label>SSL Connections</label><textarea id="i-replconn" rows="2" oninput="gen()" placeholder="host:port (one per line)"></textarea></div>
+      <div class="f"><label>Pre-Shared Key</label><input id="i-replpsk" placeholder="Leave blank to auto-generate" oninput="gen()"></div>
+    </div>
+  </div>
+
+  <!-- 19. Diagnostics & CLI -->
+  <div class="sec sec-env" id="s-diag"><h3>Diagnostics &amp; CLI</h3>
+    <div class="f"><label>Diagnostics Output Directory</label><input id="i-diagdir" placeholder="/path/to/diag-configs/dir" oninput="gen()"></div>
+    <div class="f"><label>CLI Scripts Folder</label><input id="i-clifolder" value="cliscripts" oninput="gen()"></div>
+  </div>
+
+</div>
+
+<!-- YAML Output -->
+<div class="yaml-scroll" id="yamlScroll">
+  <div class="ypanel" id="yp-op">
+    <div class="ypanel-hdr"><span>Operator YAML</span><div class="ypanel-actions"><button class="btn btn-c" onclick="copy('yc-op')">Copy</button><button class="btn btn-d" onclick="dl('yc-op','operator.yaml')">Download</button></div></div>
+    <div class="ycode" id="yc-op"></div>
+  </div>
+  <div class="ypanel" id="yp-secrets">
+    <div class="ypanel-hdr"><span>Secrets YAML</span><div class="ypanel-actions"><button class="btn btn-c" onclick="copy('yc-secrets')">Copy</button><button class="btn btn-d" onclick="dl('yc-secrets','secrets.yaml')">Download</button></div></div>
+    <div class="ycode" id="yc-secrets"></div>
+  </div>
+  <div class="ypanel" id="yp-broker">
+    <div class="ypanel-hdr"><span>Broker YAML</span><div class="ypanel-actions"><button class="btn btn-c" onclick="copy('yc-broker')">Copy</button><button class="btn btn-d" onclick="dl('yc-broker','broker.yaml')">Download</button></div></div>
+    <div class="ycode" id="yc-broker"></div>
+  </div>
+  <div class="ypanel" id="yp-env">
+    <div class="ypanel-hdr"><span>Env File</span><div class="ypanel-actions"><button class="btn btn-c" onclick="copy('yc-env')">Copy</button><button class="btn btn-d" onclick="dl('yc-env','env-config')">Download</button></div></div>
+    <div class="ycode" id="yc-env"></div>
+  </div>
+</div>
+</div></div>
+<div class="toast" id="toast">Copied to clipboard</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const V = id => $(id).value.trim();
+const L = id => V(id).split('\n').map(s=>s.trim()).filter(s=>s);
+
+// Toggle helpers
+function togHA(){const ha=$('i-ha').checked;document.querySelectorAll('.ha-fields').forEach(e=>e.classList.toggle('vis',ha))}
+
+// TLS file reading - store raw PEM text, encode at YAML generation time
+let tlsCertRaw='',tlsKeyRaw='',tlsCaRaw='';
+function readTlsFile(inputId,varName,statusId){
+  const file=$(inputId).files[0];
+  if(!file){window[varName]='';$(statusId).textContent='';gen();return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    window[varName]=e.target.result;
+    $(statusId).textContent=file.name+' loaded ('+e.target.result.length+' bytes)';
+    gen();
+  };
+  reader.readAsText(file);
+}
+function readTlsCaFiles(){
+  const files=$('i-tlscafiles').files;
+  if(!files.length){tlsCaRaw='';$('tlsCaStatus').textContent='No CA certificates selected.';gen();return;}
+  let combined='',loaded=0;const names=[];
+  Array.from(files).forEach(f=>{
+    names.push(f.name);
+    const r=new FileReader();
+    r.onload=function(e){combined+=e.target.result;loaded++;if(loaded===files.length){tlsCaRaw=combined;$('tlsCaStatus').textContent=names.join(', ')+' loaded';gen();}};
+    r.readAsText(f);
+  });
+}
+function togOpt(chkId,fieldsId){$(fieldsId).classList.toggle('vis',$(chkId).checked)}
+
+// CRD blob (gzipped base64)
+const CRD_B64='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';
+let crdCache=null;
+async function getCrd(){
+  if(crdCache)return crdCache;
+  try{const b=Uint8Array.from(atob(CRD_B64),c=>c.charCodeAt(0));const ds=new DecompressionStream('gzip');const w=ds.writable.getWriter();w.write(b);w.close();const r=ds.readable.getReader();let ch=[],d=false;while(!d){const x=await r.read();if(x.value)ch.push(x.value);d=x.done;}crdCache=new TextDecoder().decode(await new Blob(ch).arrayBuffer());crdCache=crdCache.replace(/^\s*echo\s+'/,'').replace(/'\s*$/,'');return crdCache;}catch(e){return '# Error decompressing CRD';}
+}
+
+// ═══════ Tolerations parser ═══════
+function parseTol(lines){
+  if(!lines.length)return '';
+  let o='      tolerations:\n';
+  lines.forEach(l=>{const ci=l.lastIndexOf(':');if(ci<0)return;let kp=l.substring(0,ci).trim();const eff=l.substring(ci+1).trim();if(kp.includes('=')){const ei=kp.indexOf('=');o+=`      - key: "${kp.substring(0,ei)}"\n        operator: "Equal"\n        value: "${kp.substring(ei+1)}"\n        effect: "${eff}"\n`;}else{o+=`      - key: "${kp}"\n        operator: "Exists"\n        effect: "${eff}"\n`;}});
+  return o;
+}
+function parseLabels(lines){if(!lines.length)return '';let o='      nodeSelector:\n';lines.forEach(l=>{o+=`        ${l}\n`;});return o;}
+function buildAA(nsLines,wt){if(!nsLines.length)return '';let o='      affinity:\n        podAntiAffinity:\n          preferredDuringSchedulingIgnoredDuringExecution:\n          - weight: '+wt+'\n            podAffinityTerm:\n              topologyKey: kubernetes.io/hostname\n              labelSelector:\n                matchLabels:\n                  app.kubernetes.io/name: pubsubpluseventbroker\n              namespaces:\n';nsLines.forEach(ns=>{o+=`              - ${ns}\n`;});return o;}
+
+// ═══════ YAML highlight ═══════
+function hl(yaml){
+  // Highlight line by line to avoid cross-line regex issues
+  return yaml.split('\n').map(line=>{
+    const el=line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if(/^\s*---\s*$/.test(el)) return '<span class="d">'+el+'</span>';
+    if(/^\s*#/.test(el)) return '<span class="c">'+el+'</span>';
+    const m=el.match(/^(\s*)([\w\.\-\/][^:]*?):\s+(.+)$/);
+    if(m) return m[1]+'<span class="k">'+m[2]+'</span>: <span class="v">'+m[3]+'</span>';
+    const m2=el.match(/^(\s*)([\w\.\-\/][^:]*?):\s*$/);
+    if(m2) return m2[1]+'<span class="k">'+m2[2]+'</span>:';
+    return el;
+  }).join('\n');
+}
+
+// ═══════ OPERATOR YAML ═══════
+async function genOp(){
+  const ns=V('i-opns')||'pubsubplus-operator-system',repo=V('i-repo'),img=V('i-opimg')||'docker.io/solace/pubsubplus-eventbroker-operator:1.4.0',watch=V('i-opwatch'),cpu=V('i-opcpu')||'500m',mem=V('i-opmem')||'512Mi';
+  const fimg=repo?`${repo}/${img}`:img;
+  let crd=await getCrd();crd=crd.replace(/\$\{SOLOP_DERIVED_NS(?::-[^}]*)?\}/g,ns);
+  return crd+`\n---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pubsubplus-eventbroker-operator-leader-election-role
+  namespace: ${ns}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pubsubplus-eventbroker-operator-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - events
+  - namespaces
+  - pods
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pubsubplus.solace.com
+  resources:
+  - pubsubpluseventbrokers
+  - pubsubpluseventbrokers/finalizers
+  - pubsubpluseventbrokers/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pubsubplus-eventbroker-operator-leader-election-rolebinding
+  namespace: ${ns}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pubsubplus-eventbroker-operator-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: pubsubplus-eventbroker-operator
+  namespace: ${ns}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pubsubplus-eventbroker-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pubsubplus-eventbroker-operator-role
+subjects:
+- kind: ServiceAccount
+  name: pubsubplus-eventbroker-operator
+  namespace: ${ns}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: solace-pubsubplus-eventbroker-operator
+    control-plane: controller-manager
+  name: pubsubplus-eventbroker-operator
+  namespace: ${ns}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        - --zap-log-level=info
+        command:
+        - /manager
+        env:
+        - name: WATCH_NAMESPACE
+          value: "${watch}"
+        image: ${fimg}
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: ${cpu}
+            memory: ${mem}
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      imagePullSecrets:
+      - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      serviceAccountName: pubsubplus-eventbroker-operator
+      terminationGracePeriodSeconds: 10`;
+}
+
+// ═══════ SECRETS YAML ═══════
+function genSecrets(){
+  const ns=V('i-bkns')||'solace-namespace',admSecret=V('i-admsecret')||'solace-admin-secret',admPass=V('i-admpass')||'adminpassword123';
+  const psOn=$('i-pson').checked,pullSecret=psOn?V('i-pullsecret'):'',tlsOn=$('i-tlson').checked,tlsSecret=V('i-tlssecret');
+  const admB64=btoa(admPass);
+  let y=`# Admin Credentials Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${admSecret}
+  namespace: ${ns}
+type: Opaque
+data:
+  username_admin_password: ${admB64}`;
+  if(pullSecret){
+    const user=V('i-imguser')||'user',pass=V('i-imgpass')||'pass',host=V('i-repo')||'https://index.docker.io/v1/';
+    const dockerJson=JSON.stringify({auths:{[host]:{username:user,password:pass,auth:btoa(user+':'+pass)}}});
+    y+=`\n---
+# Image Pull Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${pullSecret}
+  namespace: ${ns}
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ${btoa(dockerJson)}`;
+  }
+  if(tlsOn&&tlsSecret){
+    // Concatenate cert + CA chain as PEM text, then base64 encode
+    const certPem=tlsCertRaw+(tlsCaRaw?('\n'+tlsCaRaw):'');
+    const certDisplay=certPem?btoa(certPem):'<base64-encoded-certificate>';
+    const keyDisplay=tlsKeyRaw?btoa(tlsKeyRaw):'<base64-encoded-private-key>';
+    let tlsNote=(!tlsCertRaw||!tlsKeyRaw)?'\n# Note: Select certificate and key files above to populate base64 values':'';
+    y+=`\n---
+# TLS Server Certificate Secret${tlsNote}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${tlsSecret}
+  namespace: ${ns}
+type: kubernetes.io/tls
+data:
+  tls.crt: ${certDisplay}
+  tls.key: ${keyDisplay}`;
+  }
+  return y;
+}
+
+// ═══════ BROKER YAML ═══════
+function genBroker(){
+  const name=V('i-bkname')||'solace-event-broker',ns=V('i-bkns')||'solace-namespace',repo=V('i-repo'),img=V('i-bkimg')||'solace-pubsub-standard',tag=V('i-bktag')||'latest',ps=$('i-pson').checked?V('i-pullsecret'):'',ha=$('i-ha').checked,admSec=V('i-admsecret')||'solace-admin-secret',sc=V('i-sc'),stMsg=V('i-stmsg'),stMon=V('i-stmon'),cpu=V('i-bkcpu'),mem=V('i-bkmem');
+  const fRepo=repo?`${repo}/${img}`:img;
+  const tlsOn=$('i-tlson').checked,tlsSec=V('i-tlssecret');
+  let y=`apiVersion: pubsubplus.solace.com/v1beta1
+kind: PubSubPlusEventBroker
+metadata:
+  namespace: ${ns}
+  name: ${name}
+spec:
+  image:
+    repository: ${fRepo}
+    tag: ${tag}
+    pullPolicy: IfNotPresent
+`;
+  if(ps)y+=`    pullSecrets:
+    - name: ${ps}
+`;
+  y+=`  adminCredentialsSecret: ${admSec}
+  redundancy: ${ha}
+  podDisruptionBudgetForHA: true
+  systemScaling:
+    system_scaling_maxconnectioncount: ${V('i-maxconn')}
+    system_scaling_maxqueuemessagecount: ${V('i-maxqmsg')}
+    system_scaling_maxkafkabridgecount: ${V('i-maxkb')}
+    system_scaling_maxkafkabrokerconnectioncount: ${V('i-maxkc')}
+    system_scaling_maxbridgecount: ${V('i-maxbr')}
+    system_scaling_maxsubscriptioncount: ${V('i-maxsub')}
+    system_scaling_maxguaranteedmessagesize: ${V('i-maxgms')}
+    maxSpoolUsage: ${V('i-maxpool')}
+    messagingNodeCpu: "${cpu}"
+    messagingNodeMemory: ${mem}
+  storage:
+`;
+  if(sc)y+=`    useStorageClass: ${sc}
+`;
+  y+=`    messagingNodeStorageSize: ${stMsg}
+    monitorNodeStorageSize: ${stMon}
+  timezone: "Asia/Singapore"
+`;
+  if(tlsOn&&tlsSec)y+=`  tls:
+    serverTlsConfigSecret: ${tlsSec}
+    enabled: true
+    certFilename: tls.crt
+    certKeyFilename: tls.key
+`;
+
+  // Node assignment
+  const tolOn=$('i-tolon').checked,lblOn=$('i-lblon').checked,aaOn=$('i-aaon').checked;
+  const tolP=tolOn?L('i-tolpri'):[],tolB=tolOn?L('i-tolbkp'):[],tolM=tolOn?L('i-tolmon'):[];
+  const lblP=lblOn?L('i-lblpri'):[],lblB=lblOn?L('i-lblbkp'):[],lblM=lblOn?L('i-lblmon'):[];
+  const aaNs=aaOn?L('i-aans'):[],aaWt=V('i-aawt')||'100';
+  const hasNA=aaNs.length||tolP.length||tolB.length||tolM.length||lblP.length||lblB.length||lblM.length;
+  if(hasNA){
+    const aa=buildAA(aaNs,aaWt);
+    y+='  nodeAssignment:\n';
+    y+='  - name: Primary\n    spec:\n'+parseTol(tolP)+parseLabels(lblP)+aa;
+    if(ha){
+      y+='  - name: Backup\n    spec:\n'+parseTol(tolB)+parseLabels(lblB)+aa;
+      y+='  - name: Monitor\n    spec:\n'+parseTol(tolM)+parseLabels(lblM)+aa;
+    }
+  }
+
+  // Service
+  y+=`  service:
+    type: LoadBalancer
+`;
+  const lbOn=$('i-lbon').checked,lbIp=V('i-lbip'),ipp=V('i-ippool'),lbA=L('i-lbanotn');
+  if(lbOn&&(lbIp||ipp||lbA.length)){
+    y+='    annotations:\n';
+    if(lbIp)y+=`      metallb.universe.tf/loadBalancerIPs: ${lbIp}\n      metallb.io/loadBalancerIPs: ${lbIp}\n`;
+    if(ipp)y+=`      metallb.universe.tf/address-pool: ${ipp}\n      metallb.io/address-pool: ${ipp}\n`;
+    lbA.forEach(a=>{y+=`      ${a}\n`;});
+  }
+  y+=`    ports:
+    - containerPort: 8080
+      name: tcp-semp
+      protocol: TCP
+      servicePort: 8080
+    - containerPort: 1943
+      name: tls-semp
+      protocol: TCP
+      servicePort: 1943
+    - containerPort: 55555
+      name: tcp-smf
+      protocol: TCP
+      servicePort: 55555
+    - containerPort: 55003
+      name: tcp-smfcomp
+      protocol: TCP
+      servicePort: 55003
+    - containerPort: 55443
+      name: tls-smf
+      protocol: TCP
+      servicePort: 55443
+    - containerPort: 55556
+      name: tcp-smfroute
+      protocol: TCP
+      servicePort: 55556
+    - containerPort: 8008
+      name: tcp-web
+      protocol: TCP
+      servicePort: 8008
+    - containerPort: 1443
+      name: tls-web
+      protocol: TCP
+      servicePort: 1443
+    - containerPort: 9000
+      name: tcp-rest
+      protocol: TCP
+      servicePort: 9000
+    - containerPort: 9443
+      name: tls-rest
+      protocol: TCP
+      servicePort: 9443
+    - containerPort: 5672
+      name: tcp-amqp
+      protocol: TCP
+      servicePort: 5672
+    - containerPort: 5671
+      name: tls-amqp
+      protocol: TCP
+      servicePort: 5671
+    - containerPort: 1883
+      name: tcp-mqtt
+      protocol: TCP
+      servicePort: 1883
+    - containerPort: 8883
+      name: tls-mqtt
+      protocol: TCP
+      servicePort: 8883
+    - containerPort: 8000
+      name: tcp-mqttweb
+      protocol: TCP
+      servicePort: 8000
+    - containerPort: 8443
+      name: tls-mqttweb
+      protocol: TCP
+      servicePort: 8443`;
+  return y;
+}
+
+// ═══════ ENV FILE ═══════
+function genEnv(){
+  const ha=$('i-ha').checked,tlsOn=$('i-tlson').checked,lbOn=$('i-lbon').checked,pkOn=$('i-pkon').checked,replOn=$('i-replon').checked,psOn=$('i-pson').checked,lblOn=$('i-lblon').checked,tolOn=$('i-tolon').checked,aaOn=$('i-aaon').checked;
+  let e=`#!/bin/bash\n\n`;
+  e+=`KUBE="${V('i-kube')||'kubectl'}"\n\n`;
+  if(psOn){e+=`IMAGEREPO_SECRET="${V('i-pullsecret')}"\n`;}else{e+=`#IMAGEREPO_SECRET=""\n`;}
+  e+=`IMAGEREPO_HOST="${V('i-repo')}"\n`;
+  if(psOn){const iu=V('i-imguser'),ip=V('i-imgpass');e+=`IMAGEREPO_USER="${iu}"\nIMAGEREPO_PASS="${ip}"\n`;}else{e+=`#IMAGEREPO_USER=""\n#IMAGEREPO_PASS=""\n`;}
+  e+=`\nSOLOP_IMAGE="${V('i-opimg')}"\nSOLOP_NS="${V('i-opns')}"\n#SOLOP_WATCH_NS="${V('i-opwatch')}"\nSOLOP_WATCH_SOLBK_NS="true"\nSOLOP_CPU="${V('i-opcpu')}"\nSOLOP_MEM="${V('i-opmem')}"\n`;
+  e+=`\nSOLBK_NAME="${V('i-bkname')}"\nSOLBK_NS="${V('i-bkns')}"\nSOLBK_IMAGE="${V('i-bkimg')}"\nSOLBK_IMG_TAG="${V('i-bktag')}"\nSOLBK_REDUNDANCY="${ha}"\n`;
+  e+=`\nSOLBK_SCALING_MAXCONN="${V('i-maxconn')}"\nSOLBK_SCALING_MAXPOOL="${V('i-maxpool')}"\nSOLBK_SCALING_MAXQMSG="${V('i-maxqmsg')}"\nSOLBK_SCALING_MAXKAFKABRIDGE="${V('i-maxkb')}"\nSOLBK_SCALING_MAXKAFKACONN="${V('i-maxkc')}"\nSOLBK_SCALING_MAXBRIDGE="${V('i-maxbr')}"\nSOLBK_SCALING_MAXSUB="${V('i-maxsub')}"\nSOLBK_SCALING_MAXGMSSIZE="${V('i-maxgms')}"\n`;
+  if(pkOn){const pks=L('i-pkeys');if(pks.length){e+=`\nSOLBK_PRODUCTKEYS=(\n`;pks.forEach(k=>{e+=`  "${k}"\n`;});e+=`)\n`;}}
+  e+=`\nSOLBK_MSGNODE_CPU="${V('i-bkcpu')}"\nSOLBK_MSGNODE_MEM="${V('i-bkmem')}"\n`;
+  e+=`\nSOLBK_STORAGECLASS="${V('i-sc')}"\nSOLBK_STORAGE_MSGNODE="${V('i-stmsg')}"\nSOLBK_STORAGE_MONNODE="${V('i-stmon')}"\n`;
+  e+=`\nSOLBK_ADM_PASS="${V('i-admpass')}"\nSOLBK_ADM_SECRET="${V('i-admsecret')}"\n`;
+  if(tlsOn)e+=`\nSOLBK_SVR_SECRET="${V('i-tlssecret')}"\n`;else e+=`\n#SOLBK_SVR_SECRET=""\n`;
+  e+=`SOLBK_TLS_CERT="${V('i-tlscert')}"\nSOLBK_TLS_CERTKEY="${V('i-tlskey')}"\n`;
+  const cas=L('i-tlscas');if(cas.length){e+=`SOLBK_TLS_CERTCAS=(\n`;cas.forEach(c=>{e+=`  "${c}"\n`;});e+=`)\n`;}
+  if(ha&&lblOn){const lp=L('i-lblpri'),lb=L('i-lblbkp'),lm=L('i-lblmon');if(lp.length){e+=`\ndeclare SOLBK_NODELABEL_PRI=(\n`;lp.forEach(l=>{e+=`  "${l}"\n`;});e+=`)\n`;}if(lb.length){e+=`declare SOLBK_NODELABEL_BKP=(\n`;lb.forEach(l=>{e+=`  "${l}"\n`;});e+=`)\n`;}if(lm.length){e+=`declare SOLBK_NODELABEL_MON=(\n`;lm.forEach(l=>{e+=`  "${l}"\n`;});e+=`)\n`;}}
+  if(aaOn){const aans=L('i-aans');if(aans.length){e+=`\nSOLBK_ANTIAFFINITY_NS=("${aans.join('" "')}")\nSOLBK_ANTIAFFINITY_WT=${V('i-aawt')}\n`;}}
+  e+=`\nSOLBK_DIAG_DIR="${V('i-diagdir')}"\n`;
+  if(lbOn){const ip2=V('i-lbip'),pool=V('i-ippool');if(ip2)e+=`SOLBK_LOADBALANCER_IP="${ip2}"\n`;if(pool)e+=`SOLBK_IPPOOL="${pool}"\n`;}
+  const df=V('i-domfolder'),dfiles=L('i-domfiles');
+  if(df)e+=`\nSOLBK_DOMAINCERT_FOLDER="${df}"\n`;
+  if(dfiles.length){e+=`declare -A SOLBK_DOMAINCERT_FILES=(\n`;dfiles.forEach(d=>{const p=d.split('=');if(p.length===2)e+=`\t[${p[0].trim()}]="${p[1].trim()}"\n`;});e+=`)\n`;}
+  e+=`\nSOLBK_CLISCRIPTS_FOLDER="${V('i-clifolder')||'cliscripts'}"\n`;
+  if(replOn){e+=`\nREPL_MATE=${V('i-replmate')}\n`;const rc=L('i-replconn');if(rc.length)e+=`REPL_CONN_SSL=("${rc.join('" "')}")\n`;e+=`REPL_PSK="${V('i-replpsk')}"\n`;}
+  return e;
+}
+
+// ═══════ Main gen ═══════
+let gt;
+function gen(){clearTimeout(gt);gt=setTimeout(async()=>{
+  const opY=await genOp();$('yc-op').innerHTML=hl(opY);$('yc-op').dataset.raw=opY;
+  const secY=genSecrets();$('yc-secrets').innerHTML=hl(secY);$('yc-secrets').dataset.raw=secY;
+  const bkY=genBroker();$('yc-broker').innerHTML=hl(bkY);$('yc-broker').dataset.raw=bkY;
+  const envY=genEnv();$('yc-env').innerHTML=hl(envY);$('yc-env').dataset.raw=envY;
+},120);}
+
+function copy(id){navigator.clipboard.writeText($(id).dataset.raw).then(()=>{$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),1200);});}
+function dl(id,fn){const b=new Blob([$(id).dataset.raw],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;a.click();URL.revokeObjectURL(a.href);}
+
+// ═══════ Scroll spy ═══════
+const sbItems=document.querySelectorAll('.sb-item[data-s]');
+const formScroll=$('formScroll');
+formScroll.addEventListener('scroll',()=>{let cur=null;sbItems.forEach(si=>{const sec=$(si.dataset.s);if(sec){const r=sec.getBoundingClientRect();const fr=formScroll.getBoundingClientRect();if(r.top<=fr.top+fr.height*.3)cur=si;}});sbItems.forEach(s=>s.classList.remove('active'));if(cur)cur.classList.add('active');});
+sbItems.forEach(si=>si.addEventListener('click',()=>{const sec=$(si.dataset.s);if(sec)sec.scrollIntoView({behavior:'smooth',block:'start'});}));
+
+gen();
+</script>
+</body>
+</html>

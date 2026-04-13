@@ -35,8 +35,13 @@ spec:
   redundancy: ${SOLBK_REDUNDANCY}"
   echo "  podDisruptionBudgetForHA: true
   systemScaling:
-    maxConnections: ${SOLBK_SCALING_MAXCONN}
-    maxQueueMessages: ${SOLBK_SCALING_MAXQMSG}
+    system_scaling_maxconnectioncount: ${SOLBK_SCALING_MAXCONN}
+    system_scaling_maxqueuemessagecount: ${SOLBK_SCALING_MAXQMSG}
+    system_scaling_maxkafkabridgecount: ${SOLBK_SCALING_MAXKAFKABRIDGE}
+    system_scaling_maxkafkabrokerconnectioncount: ${SOLBK_SCALING_MAXKAFKACONN}
+    system_scaling_maxbridgecount: ${SOLBK_SCALING_MAXBRIDGE}
+    system_scaling_maxsubscriptioncount: ${SOLBK_SCALING_MAXSUB}
+    system_scaling_maxguaranteedmessagesize: ${SOLBK_SCALING_MAXGMSSIZE}
     maxSpoolUsage: ${SOLBK_SCALING_MAXPOOL}
     messagingNodeCpu: \"${SOLBK_MSGNODE_CPU}\"
     messagingNodeMemory: ${SOLBK_MSGNODE_MEM}

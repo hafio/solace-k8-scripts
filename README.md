@@ -85,9 +85,14 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_IMAGE` | (none) | Yes | Solace Event Broker Image Name. |
 | `SOLBK_IMG_TAG` | (none) | Yes | Solace Event Broker Image Tag. e.g. 10.25.0.24 |
 | `SOLBK_REDUNDANCY` | `false` | Yes | Solace Event Broker Redundancy Mode. true or false |
-| `SOLBK_SCALING_MAXCONN`| `100` | No | Solace Event Broker Scaling Tier Parameter - Max Client Connections. |
-| `SOLBK_SCALING_MAXPOOL` | `10000` | No | Solace Event Broker Scaling Tier Parameter - Max Spool Size (in MB). |
-| `SOLBK_SCALING_MAXQMSG` | `100` | No | Solace Event Broker Scaling Tier Parameter - Max Number of Queued Messages (in millions). |
+| `SOLBK_SCALING_MAXCONN`| `100` | No | Max Client Connections. |
+| `SOLBK_SCALING_MAXPOOL` | `10000` | No | Max Spool Size (in MB). |
+| `SOLBK_SCALING_MAXQMSG` | `100` | No | Max Number of Queued Messages (in millions). |
+| `SOLBK_SCALING_MAXKAFKABRIDGE` | `0` | No | Max Kafka Bridge Count. |
+| `SOLBK_SCALING_MAXKAFKACONN` | `0` | No | Max Kafka Broker Connection Count. |
+| `SOLBK_SCALING_MAXBRIDGE` | `25` | No | Max Bridge Count. |
+| `SOLBK_SCALING_MAXSUB` | `50000` | No | Max Subscription Count. |
+| `SOLBK_SCALING_MAXGMSSIZE` | `10` | No | Max Guaranteed Message Size (in MB). |
 | `SOLBK_PRODUCTKEYS` | (none) | No | List of product keys to apply to Solace brokers. |
 | `SOLBK_MSGNODE_CPU` | `2` | No | Number of CPUs for Solace Broker messaging nodes. <br> Please refer to the Broker Resource Calculator for numbers. |
 | `SOLBK_MSGNODE_MEM` | `3410Mi` | No | Amount of memory assigned for Solace Broker message node. Units are "Mi" "Gi". <br> Please refer to the Broker Resource Calculator for numbers. |
