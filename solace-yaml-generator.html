@@ -86,6 +86,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
   <a class="sb-item" data-s="s-storage">Storage</a>
   <a class="sb-item" data-s="s-creds">Credentials</a>
   <a class="sb-item" data-s="s-tls">TLS / SSL</a>
+  <a class="sb-item" data-s="s-secctx">Security Context</a>
   <a class="sb-item" data-s="s-labels">Node Labels</a>
   <a class="sb-item" data-s="s-tol">Node Tolerations</a>
   <a class="sb-item" data-s="s-aa">Anti-Affinity</a>
@@ -194,6 +195,25 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
   </div>
 
   <!-- 9. Node Labels (HA only) -->
+  <!-- 9. Security Context -->
+  <div class="sec" id="s-secctx"><h3>Security Context</h3>
+    <div class="tgl"><input type="checkbox" id="i-secctxon" checked onchange="togOpt('i-secctxon','secctx-fields');gen()"><label for="i-secctxon">Configure security context</label></div>
+    <div class="opt-fields vis" id="secctx-fields">
+      <div class="f" style="font-size:.72rem;color:var(--ts);margin-bottom:.5rem;font-weight:600">Pod Security Context (spec.securityContext)</div>
+      <div class="fr">
+        <div class="f"><label>Run As User</label><input id="i-runasuser" value="1000001" oninput="gen()"><div class="h">Default: 1000001 (Solace broker user). Set 0 for OpenShift auto-detect.</div></div>
+        <div class="f"><label>FS Group</label><input id="i-fsgroup" value="1000002" oninput="gen()"><div class="h">Default: 1000002. Set 0 for OpenShift auto-detect.</div></div>
+      </div>
+      <div class="f" style="font-size:.72rem;color:var(--ts);margin-bottom:.5rem;margin-top:.75rem;font-weight:600">Container Security (spec.brokerContainerSecurity)</div>
+      <div class="fr">
+        <div class="f"><label>Container Run As User</label><input id="i-crunasuser" value="1000001" oninput="gen()"></div>
+        <div class="f"><label>Container Run As Group</label><input id="i-crunasgroup" value="1000002" oninput="gen()"></div>
+      </div>
+      <div class="tgl"><input type="checkbox" id="i-readonly" onchange="gen()"><label for="i-readonly">Read-only root filesystem (v10.9+)</label></div>
+    </div>
+  </div>
+
+  <!-- 10. Node Labels -->
   <div class="sec" id="s-labels"><h3>Node Labels</h3>
     <div class="tgl"><input type="checkbox" id="i-lblon" onchange="togOpt('i-lblon','lbl-fields');gen()"><label for="i-lblon">Configure node label selectors</label></div>
     <div class="opt-fields" id="lbl-fields">
@@ -682,6 +702,25 @@ spec:
     certFilename: tls.crt
     certKeyFilename: tls.key
 `;
+
+  // Security context (pod-level)
+  if($('i-secctxon').checked){
+    const runAsUser=V('i-runasuser')||'1000001';
+    const fsGroup=V('i-fsgroup')||'1000002';
+    y+=`  securityContext:
+    runAsUser: ${runAsUser}
+    fsGroup: ${fsGroup}
+`;
+    // Container security (spec.brokerContainerSecurity)
+    const cRunAsUser=V('i-crunasuser')||'1000001';
+    const cRunAsGroup=V('i-crunasgroup')||'1000002';
+    const readOnly=$('i-readonly').checked;
+    y+=`  brokerContainerSecurity:
+    runAsUser: ${cRunAsUser}
+    runAsGroup: ${cRunAsGroup}
+    readOnlyRootFilesystem: ${readOnly}
+`;
+  }
 
   // Node assignment
   const tolOn=$('i-tolon').checked,lblOn=$('i-lblon').checked,aaOn=$('i-aaon').checked;
