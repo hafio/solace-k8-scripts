@@ -8,7 +8,7 @@ else
 	exit 1
 fi
 
-if [[ -n "${REPL_MATE}" ]] || [[ -n "${REPL_CONN_SSL[@]}" ]]; then
+if [[ -z "${REPL_MATE}" ]] || [[ -z "${REPL_CONN_SSL[@]}" ]]; then
     echo "[Error] Missing Replication Mate virtual-router-name and/or connect-via."
     exit 1
 fi
@@ -39,7 +39,7 @@ enable
 configure
 
 no replication interface'
-for conn in "${REPL_CONN_SSL}"; do
+for conn in "${REPL_CONN_SSL[@]}"; do
     echo 'replication mate connect-via "'${conn}'" "ssl"'
 done
 echo 'replication mate virtual-router-name "'${REPL_MATE}'"
@@ -59,5 +59,5 @@ ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/c
 
 # execute cli
 echo " - Running CLI scripts..."
-${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- /usr/sw/loads/currentload/bin/cli -Apes .replication.cli
+${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .replication.cli
 
