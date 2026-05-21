@@ -15,11 +15,18 @@ if [[ -n "${errmsg}" ]]; then
 	exit 1
 fi
 
-${KUBE} create secret generic ${SOLBK_ADM_SECRET} -n ${SOLBK_NS} --from-literal="username_admin_password=${SOLBK_ADM_PASS}"
+CLI_USR_PASS=(--from-literal="username_admin_password=${SOLBK_ADM_PASS}")
+[[ -n "${SOLBK_MON_PASS}" ]] && CLI_USR_PASS+=(--from-literal="username_monitor_password=${SOLBK_MON_PASS}")
+for up in "${SOLBK_USR_PASS[@]}"; do
+	user="${up%%=*}"
+	pass="${up#*=}"
+	CLI_USR_PASS+=(--from-literal="username_${user}_password=${pass}")
+done
+${KUBE} create secret generic "${SOLBK_USR_SECRET}" -n "${SOLBK_NS}" "${CLI_USR_PASS[@]}"
 if [[ $? -eq 0 ]]; then
-	echo "Solace Admin Secret '${SOLBK_ADM_SECRET}' created successfully."
+	echo "Solace Admin Secret '${SOLBK_USR_SECRET}' created successfully."
 else
-	echo "Error creating Solace Admin Secret '${SOLBK_ADM_SECRET}'."
+	echo "Error creating Solace Admin Secret '${SOLBK_USR_SECRET}'."
 	exit 1
 fi
 

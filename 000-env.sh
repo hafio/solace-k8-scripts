@@ -57,7 +57,7 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   SOLBK_REDUNDANCY=${SOLBK_REDUNDANCY:-false}
 
   SOLBK_ADM_PASS=${SOLBK_ADM_PASS:-adm1nPA@55w0rD}
-  SOLBK_ADM_SECRET=${SOLBK_ADM_SECRET:-solace-admin-secret}
+  SOLBK_USR_SECRET=${SOLBK_USR_SECRET:-solace-admin-secret}
 
   if [[ -n "${SOLBK_SVR_SECRET}" ]]; then
     SOLBK_TLS_CERT=${SOLBK_TLS_CERT:-certs/tls.crt}

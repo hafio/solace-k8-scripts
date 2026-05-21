@@ -831,7 +831,7 @@ function genEnv(){
   if(pkOn){const pks=L('i-pkeys');if(pks.length){e+=`\nSOLBK_PRODUCTKEYS=(\n`;pks.forEach(k=>{e+=`  "${k}"\n`;});e+=`)\n`;}}
   e+=`\nSOLBK_MSGNODE_CPU="${V('i-bkcpu')}"\nSOLBK_MSGNODE_MEM="${V('i-bkmem')}"\n`;
   e+=`\nSOLBK_STORAGECLASS="${V('i-sc')}"\nSOLBK_STORAGE_MSGNODE="${V('i-stmsg')}"\nSOLBK_STORAGE_MONNODE="${V('i-stmon')}"\n`;
-  e+=`\nSOLBK_ADM_PASS="${V('i-admpass')}"\nSOLBK_ADM_SECRET="${V('i-admsecret')}"\n`;
+  e+=`\nSOLBK_ADM_PASS="${V('i-admpass')}"\nSOLBK_USR_SECRET="${V('i-admsecret')}"\n`;
   if(tlsOn)e+=`\nSOLBK_SVR_SECRET="${V('i-tlssecret')}"\n`;else e+=`\n#SOLBK_SVR_SECRET=""\n`;
   e+=`SOLBK_TLS_CERT="${V('i-tlscert')}"\nSOLBK_TLS_CERTKEY="${V('i-tlskey')}"\n`;
   const cas=L('i-tlscas');if(cas.length){e+=`SOLBK_TLS_CERTCAS=(\n`;cas.forEach(c=>{e+=`  "${c}"\n`;});e+=`)\n`;}

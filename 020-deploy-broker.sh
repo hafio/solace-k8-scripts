@@ -31,7 +31,7 @@ spec:
   [[ -n ${IMAGEREPO_SECRET} ]] && echo "    pullSecrets:
     - name: ${IMAGEREPO_SECRET}"
     
-  echo "  adminCredentialsSecret: ${SOLBK_ADM_SECRET:-adminpassword123}
+  echo "  adminCredentialsSecret: ${SOLBK_USR_SECRET:-adminpassword123}
   redundancy: ${SOLBK_REDUNDANCY}"
   echo "  podDisruptionBudgetForHA: true
   systemScaling:

@@ -22,7 +22,7 @@ read -s SEMP_PASS
 echo 
 
 SEMP_USER=${SEMP_USER:-admin}
-SEMP_PASS=${SEMP_PASS:-${SOLBK_ADM_SECRET}}
+SEMP_PASS=${SEMP_PASS:-${SOLBK_USR_SECRET}}
 
 echo '#!/bin/bash
 

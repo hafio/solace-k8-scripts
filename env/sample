@@ -63,7 +63,11 @@ SOLBK_STORAGE_MSGNODE="16100Mi"
 SOLBK_STORAGE_MONNODE="2300Mi"
 
 SOLBK_ADM_PASS="adminpassword123"
-SOLBK_ADM_SECRET="solace-admin-secret"
+SOLBK_MON_PASS="monitorpassword123"
+SOLBK_USR_SECRET="solace-cli-secret"
+#declare SOLBK_USR_PASS=(
+#  "user=password"
+#)
 
 # TO CREATE A SECRET CONTAINING SSL/TLS CERTIFICATES, ${SOLBK_SVR_SECRET} MUST HAVE A VALUE
 #SOLBK_SVR_SECRET="solace-server-secret"

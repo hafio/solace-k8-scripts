@@ -99,8 +99,10 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_STORAGECLASS` | (none) | No | Specify the storage class to use if required. |
 | `SOLBK_STORAGE_MSGNODE` | (none) | Yes | Specify the disk storage size for messaging nodes. |
 | `SOLBK_STORAGE_MONNODE` | `5Gi` | No | Specify the disk storage size for the monitor node. |
-| `SOLBK_ADM_PASS` | `adm1nPA@55w0rD` | Yes | Admin password for SEMP. |
-| `SOLBK_ADM_SECRET` | `solace-admin-secret` | Yes | Name of secret to store admin password for SEMP. |
+| `SOLBK_ADM_PASS` | `adminpassword123` | Yes | Admin password for SEMP. |
+| `SOLBK_MON_PASS` | `monitorpassword123` | Yes | Monitor (read-only) password for SEMP. |
+| `SOLBK_USR_PASS` | (none) | No | List of key-value pair strings ("key=value") for additional CLI users. |
+| `SOLBK_USR_SECRET` | `solace-admin-secret` | Yes | Name of secret to store admin password for SEMP. |
 | `SOLBK_SVR_SECRET` | (none) | No | Name of secret to store SSL/TLS Server Certificates. Leave blank if you do not want to enable SSL/TLS for the broker. |
 | `SOLBK_TLS_CERT` | `cert/tls.crt` | No | Full path + filename of SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified. |
 | `SOLBK_TLS_CERTKEY` | `cert/tls.key` | No | Full path + filename of private key used to generate SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified.  |

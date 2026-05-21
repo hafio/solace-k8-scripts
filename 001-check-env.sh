@@ -65,7 +65,7 @@ echo "[ INFO] Broker Storage (Monitor Node): ${SOLBK_STORAGE_MONNODE:-3Gi (defau
 
 
 [[ -n "${SOLBK_ADM_PASS}" ]] && echo "[ OK  ] Solace Broker Admin Password specfied" || echo "[ERROR] No Solace Broer Admin Password"
-[[ -n "${SOLBK_ADM_SECRET}" ]] && echo "[ OK  ] Solace Broker Admin Secret Name: ${SOLBK_ADM_SECRET}" || echo "[ERROR] Solace Broker Admin Secret Name not specified"
+[[ -n "${SOLBK_USR_SECRET}" ]] && echo "[ OK  ] Solace Broker Admin Secret Name: ${SOLBK_USR_SECRET}" || echo "[ERROR] Solace Broker Admin Secret Name not specified"
 
 if [[ -n "${SOLBK_SVR_SECRET}" ]]; then
   echo "[ OK  ] SSL Server certificates:"

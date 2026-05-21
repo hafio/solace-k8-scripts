@@ -1,0 +1,25 @@
+# Env File (000)
+
+> 1 nodes
+
+## Key Concepts
+
+- **000-env.sh** (0 connections) — `000-env.sh`
+
+## Relationships
+
+- No strong cross-community connections detected
+
+## Source Files
+
+- `000-env.sh`
+
+## Audit Trail
+
+- EXTRACTED: 0 (0%)
+- INFERRED: 0 (0%)
+- AMBIGUOUS: 0 (0%)
+
+---
+
+*Part of the graphify knowledge wiki. See [[index]] to navigate.*

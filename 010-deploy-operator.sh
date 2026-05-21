@@ -18,8 +18,9 @@ metadata:
   labels:
     control-plane: controller-manager
   name: '${SOLOP_DERIVED_NS}'
----
-apiVersion: apiextensions.k8s.io/v1
+---'
+[[ -n "${IMAGEREPO_SECRET}" ]] && ${KUBE} create secret docker-registry regcred -n ${SOLOP_DERIVED_NS} --docker-server="${IMAGEREPO_HOST}" --docker-username="${IMAGEREPO_USER}" --docker-password="${IMAGEREPO_PASS}" --dry-run=client -o yaml && echo "---"
+echo 'apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
@@ -2034,10 +2035,10 @@ spec:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
-            - ALL
-      imagePullSecrets:
-      - name: regcred
-      securityContext:
+            - ALL'
+[[ -n "${IMAGEREPO_SECRET}" ]] && echo '      imagePullSecrets:
+      - name: regcred'
+echo '      securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault

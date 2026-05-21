@@ -8,7 +8,7 @@ else
 	exit 1
 fi
 
-${KUBE} delete secret ${SOLBK_ADM_SECRET} -n ${SOLBK_NS}
+${KUBE} delete secret ${SOLBK_USR_SECRET} -n ${SOLBK_NS}
 [[ -n "${SOLBK_SVR_SECRET}" ]] && ${KUBE} delete secret ${SOLBK_SVR_SECRET} -n ${SOLBK_NS}
 [[ -n "${IMAGEREPO_SECRET}" ]] && ${KUBE} delete secret ${IMAGEREPO_SECRET} -n ${SOLBK_NS}
 ${KUBE} get secret -n ${SOLBK_NS}

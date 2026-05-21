@@ -1,0 +1,40 @@
+# .graphifyignore — files to exclude from the graphify corpus.
+# Format: gitignore-style. Graphify does NOT read .gitignore, so rules
+# here are independent of the project .gitignore.
+#
+# Graphify already auto-skips by default:
+#   - Dirs: .git, node_modules, __pycache__, dist, build, graphify-out, env, ...
+#   - Sensitive: *.env*, *.pem, *.key, anything matching
+#     \b(credential|secret|passwd|password|token|private_key)s?\b
+
+# Notepad++ editor backups. The env/nppBackup/ tree is already covered
+# because env/ is in graphify's default SKIP_DIRS; this rule catches
+# cliscripts-templates/nppBackup/ and is also defensive for any future
+# .bak files at other paths.
+nppBackup/
+*.bak
+
+# Graphify's own temp files and output directory. graphify-out/ is
+# already in default SKIP_DIRS but listing it here keeps intent explicit.
+.graphify*
+graphify-out/
+
+# Real Solace product license key. The substring "product key" does not
+# match graphify's built-in sensitive-name regex, so explicit exclusion
+# is required.
+product key.txt
+
+# Upstream Solace reference docs (~5000 lines combined). Useful for
+# humans but not part of THIS repo's authored content, and they swamp
+# the graph if included.
+EventBrokerOperatorParametersReference.md
+EventBrokerOperatorUserGuide.md
+
+# Pre-rendered HTML duplicate of howto-deploy-solace.md. Including both
+# would create double concept nodes from the same source content.
+howto-deploy-solace.html
+
+LICENSE
+
+solace-theme-reference.md
+.broker.yaml
