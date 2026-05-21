@@ -20,7 +20,7 @@ while IFS= read -r line; do
   if [[ "${line:0:30}" == "------------------------------" ]]; then
     PARSE_VPN=yes
   elif [[ "${PARSE_VPN}" == "yes" ]] && [[ "${line:0:1}" != "#" ]]; then
-    VPNS+=$(echo ${line:0:32})
+    VPNS+=($(echo ${line:0:32}))
   fi
 done < ${TMPFILE}
 
