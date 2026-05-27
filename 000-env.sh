@@ -1,5 +1,21 @@
 #!/bin/bash
 
+# Normalize a pod-role argument to its single-letter form (p|b|m).
+# Accepts: p|primary, b|backup, m|monitor. Empty defaults to p.
+# Usage: pod=$(pick_pod "$1") || exit 1
+pick_pod() {
+  case "$1" in
+    p|primary) echo p ;;
+    b|backup)  echo b ;;
+    m|monitor) echo m ;;
+    "")        echo p ;;
+    *)
+      echo "[Error] Invalid node: $1 (expected p|b|m or primary|backup|monitor)" >&2
+      return 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--env)

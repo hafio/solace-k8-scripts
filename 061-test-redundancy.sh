@@ -46,11 +46,11 @@ redundancy revert-activity " > ${TMPFILE}
 
   # ensure redundancy is up and running properly
   ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-  CF_STS=$(grep "Configuration Status" ${TMPFILE})
-  RD_STS=$(grep "Redundancy Status" ${TMPFILE})
-  RD_ROL=$(grep "Active-Standby Role" ${TMPFILE})
-  ADB_LK=$(grep "ADB Link To Mate" ${TMPFILE})
-  ADB_HL=$(grep "ADB Hello To Mate" ${TMPFILE})
+  CF_STS=$(grep "Configuration Status" ${TMPFILE} | tr -d '\r')
+  RD_STS=$(grep "Redundancy Status" ${TMPFILE} | tr -d '\r')
+  RD_ROL=$(grep "Active-Standby Role" ${TMPFILE} | tr -d '\r')
+  ADB_LK=$(grep "ADB Link To Mate" ${TMPFILE} | tr -d '\r')
+  ADB_HL=$(grep "ADB Hello To Mate" ${TMPFILE} | tr -d '\r')
   
   if [[ "${CF_STS#*: }" == "Enabled" ]] && [[ "${RD_STS#*: }" == "Up" ]] && [[ "${RD_ROL#*: }" == "Primary" ]] && [[ "${ADB_LK#*: }" == "Up" ]] && [[ "${ADB_HL#*: }" == "Up" ]]; then
     IS_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active") 
@@ -62,8 +62,8 @@ redundancy revert-activity " > ${TMPFILE}
       while [[ "${CF_STS#*: }" != "Enabled-Released" ]] || [[ "${RD_STS#*: }" != "Down" ]] || [[ ${MT_ACT} -ne 1 ]]; do
         echo -ne "[$(date)] Waiting for Primary Node to be released...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=$(grep "Configuration Status" ${TMPFILE})
-        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        CF_STS=$(grep "Configuration Status" ${TMPFILE} | tr -d '\r')
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE} | tr -d '\r')
         MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
         sleep 3
       done
@@ -74,8 +74,8 @@ redundancy revert-activity " > ${TMPFILE}
       while [[ "${CF_STS#*: }" != "Enabled" ]] || [[ "${RD_STS#*: }" != "Up" ]] || [[ ${MT_ACT} -ne 1 ]] || [[ ${BK_ACT} -ne 1 ]]; do
         echo -ne "[$(date)] Waiting for Primary Node to be un-released...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=$(grep "Configuration Status" ${TMPFILE})
-        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        CF_STS=$(grep "Configuration Status" ${TMPFILE} | tr -d '\r')
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE} | tr -d '\r')
         MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
         
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-b-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
@@ -92,8 +92,8 @@ redundancy revert-activity " > ${TMPFILE}
       while [[ "${CF_STS#*: }" != "Enabled" ]] || [[ "${RD_STS#*: }" != "Up" ]] || [[ ${MT_ACT} -ne 0 ]] || [[ ${IS_ACT} -ne 1 ]] || [[ ${BK_ACT} -ne 0 ]]; do
         echo -ne "[$(date)] Waiting for Primary Node to become active...\r"
         ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-rd.cli > ${TMPFILE}
-        CF_STS=$(grep "Configuration Status" ${TMPFILE})
-        RD_STS=$(grep "Redundancy Status" ${TMPFILE})
+        CF_STS=$(grep "Configuration Status" ${TMPFILE} | tr -d '\r')
+        RD_STS=$(grep "Redundancy Status" ${TMPFILE} | tr -d '\r')
         IS_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Local Active")
         MT_ACT=$(grep "Activity Status" ${TMPFILE} | grep -c "Mate Active")
 

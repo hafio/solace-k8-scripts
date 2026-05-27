@@ -47,7 +47,7 @@ message-vpn "default"
   
   # copy revert activity cli and execute
   ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.disable-default-vpn.cli
-  ${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .disable-default-vpn.cli > /dev/null
+  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .disable-default-vpn.cli > /dev/null
 
 echo "home
 enable
@@ -56,7 +56,7 @@ show message-vpn *" > ${TMPFILE}
 
 # create show redundancy cli and copy
 ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.show-vpn.cli
-${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-vpn.cli
+${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .show-vpn.cli
 
-${KUBE} exec -it -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- rm -f /usr/sw/jail/cliscripts/.disable-default-vpn.cli /usr/sw/jail/cliscripts/.show-vpn.cli
+${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- rm -f /usr/sw/jail/cliscripts/.disable-default-vpn.cli /usr/sw/jail/cliscripts/.show-vpn.cli
   

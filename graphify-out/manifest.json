@@ -1,8 +1,8 @@
 {
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\000-env.sh": {
-    "mtime": 1779272646.9082177,
-    "ast_hash": "a1ba2acefe01999017daa6a4a9adf9e9",
-    "semantic_hash": "a1ba2acefe01999017daa6a4a9adf9e9"
+    "mtime": 1779889507.9817283,
+    "ast_hash": "2346257c5c17be99ae3bcff731441c26",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\001-check-env.sh": {
     "mtime": 1779275710.3076549,
@@ -10,14 +10,14 @@
     "semantic_hash": "e58efb506a89a1eaf9c2c1091832f28f"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\009-check-storage-class.sh": {
-    "mtime": 1775969480.550844,
-    "ast_hash": "bdd4f51aea8c2c028e2cf96275b50a23",
-    "semantic_hash": "bdd4f51aea8c2c028e2cf96275b50a23"
+    "mtime": 1779889123.6127214,
+    "ast_hash": "a6ec1fc498589a067e3d816746ae9a00",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\010-deploy-operator.sh": {
-    "mtime": 1775969441.8287683,
-    "ast_hash": "d3627cb7c10e5f833490fc0ff56235c3",
-    "semantic_hash": "d3627cb7c10e5f833490fc0ff56235c3"
+    "mtime": 1779332048.4329169,
+    "ast_hash": "b065edeb539e549c538b892d3b85df1a",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\011-create-namespace.sh": {
     "mtime": 1775969441.9753668,
@@ -30,19 +30,19 @@
     "semantic_hash": "ec964804d0a7663ffc985e2d6a9504aa"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\020-deploy-broker.sh": {
-    "mtime": 1779272598.9873457,
-    "ast_hash": "9f8fd047d0a3e25cf0f50eb8cfa9b0ca",
-    "semantic_hash": "9f8fd047d0a3e25cf0f50eb8cfa9b0ca"
+    "mtime": 1779334147.0208557,
+    "ast_hash": "12696ffa9ea4f323957fa11ac34a2253",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\050-assert-leader.sh": {
-    "mtime": 1775969442.6340723,
-    "ast_hash": "0e466e43c7c322bc9ef279bf87ae7030",
-    "semantic_hash": "0e466e43c7c322bc9ef279bf87ae7030"
+    "mtime": 1779889135.6576738,
+    "ast_hash": "866e4f29390723459498e144d2baedaa",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\051-load-server-cert.sh": {
-    "mtime": 1775994481.865456,
-    "ast_hash": "6cd01bfdad2b794fb096dd2bd755edb9",
-    "semantic_hash": "6cd01bfdad2b794fb096dd2bd755edb9"
+    "mtime": 1779889141.9275832,
+    "ast_hash": "e8321f415f91d88dbb83068d9dc7de66",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\052-load-domain-certs.sh": {
     "mtime": 1775969756.638055,
@@ -50,39 +50,29 @@
     "semantic_hash": "a19a84d2c3419f3edee0888df34c57b2"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\053-disable-default-vpn.sh": {
-    "mtime": 1775969756.7539015,
-    "ast_hash": "142ebda91ac16d4b4c30e7fba2322d2c",
-    "semantic_hash": "142ebda91ac16d4b4c30e7fba2322d2c"
+    "mtime": 1779889113.802595,
+    "ast_hash": "e33dd5cdf7f0f945ddab60a1852b76dd",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\054-disable-all-default-usernames.sh": {
-    "mtime": 1775969508.6668994,
-    "ast_hash": "41511917675e7421acf0a53f900ea16f",
-    "semantic_hash": "41511917675e7421acf0a53f900ea16f"
+    "mtime": 1779889103.3915777,
+    "ast_hash": "1a73489df215833d92268e4da50478bb",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\057-configure-product-keys.sh": {
     "mtime": 1775969771.036037,
     "ast_hash": "af64383c0058c7a77fa19758aa09edb8",
     "semantic_hash": "af64383c0058c7a77fa19758aa09edb8"
   },
-  "C:\\Users\\hamly\\git\\solace-k8-scripts\\058-setup-data-replication.sh": {
-    "mtime": 1775969757.0270936,
-    "ast_hash": "53956599fd03212165a834854b689f22",
-    "semantic_hash": "53956599fd03212165a834854b689f22"
-  },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\059-execute-cli.sh": {
-    "mtime": 1775969588.9728246,
-    "ast_hash": "d813f02eac899da7d1b5c2b36f9b3dfa",
-    "semantic_hash": "d813f02eac899da7d1b5c2b36f9b3dfa"
-  },
-  "C:\\Users\\hamly\\git\\solace-k8-scripts\\05A-generate-data-replication-for-vpn.sh": {
-    "mtime": 1775969756.8782804,
-    "ast_hash": "7bd5606dc65e745d1381e16fd6c2d681",
-    "semantic_hash": "7bd5606dc65e745d1381e16fd6c2d681"
+    "mtime": 1779862300.596398,
+    "ast_hash": "0593c666a5d6bebbdd007edbb9580ff9",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\060-test-semp-login.sh": {
-    "mtime": 1779272679.321694,
-    "ast_hash": "3a781f730d4aa87498254c33f1924da4",
-    "semantic_hash": "3a781f730d4aa87498254c33f1924da4"
+    "mtime": 1779334252.639014,
+    "ast_hash": "cfe1dda08b7437e1bdc0a9b85e49107c",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\061-test-redundancy.sh": {
     "mtime": 1775994440.1240683,
@@ -90,14 +80,14 @@
     "semantic_hash": "3fb3ab1f40d5be61ea4e2c27d1bc7a2e"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\069-gather-configs.sh": {
-    "mtime": 1775969444.505985,
-    "ast_hash": "4d095481dbaf69067f9279c610c12486",
-    "semantic_hash": "4d095481dbaf69067f9279c610c12486"
+    "mtime": 1779862323.5903094,
+    "ast_hash": "0745617faacab5d3e6ade6906fd33c71",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\110-delete-operator.sh": {
-    "mtime": 1775969701.928065,
-    "ast_hash": "24b54e702832a49dbcc4a6cc82ffc020",
-    "semantic_hash": "24b54e702832a49dbcc4a6cc82ffc020"
+    "mtime": 1779332112.7019732,
+    "ast_hash": "892f0c2ac6d8dcc01a7f3ca318111239",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\111-delete-namespace.sh": {
     "mtime": 1775969444.8064423,
@@ -105,9 +95,9 @@
     "semantic_hash": "e13f6e3e60818e4bd73fa9a96e33ec44"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\120-delete-broker.sh": {
-    "mtime": 1775969445.1054175,
-    "ast_hash": "310270ab688b886fcab5056515918af9",
-    "semantic_hash": "310270ab688b886fcab5056515918af9"
+    "mtime": 1779862305.40153,
+    "ast_hash": "354861937b36c76cdde6abedd2e23d40",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\150-remove-domain-certs.sh": {
     "mtime": 1775969757.303792,
@@ -129,25 +119,15 @@
     "ast_hash": "7b8d54c8e99481c56785f2995c582a0b",
     "semantic_hash": "7b8d54c8e99481c56785f2995c582a0b"
   },
-  "C:\\Users\\hamly\\git\\solace-k8-scripts\\d037-assign-ip.sh": {
-    "mtime": 1775969445.8346403,
-    "ast_hash": "2a373831902772bd52f5b4118ba8592b",
-    "semantic_hash": "2a373831902772bd52f5b4118ba8592b"
-  },
-  "C:\\Users\\hamly\\git\\solace-k8-scripts\\d137-delete-ip.sh": {
-    "mtime": 1775969445.9851751,
-    "ast_hash": "bcaa8aee1adf340f8f4971745adb4adb",
-    "semantic_hash": "bcaa8aee1adf340f8f4971745adb4adb"
-  },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\delete-registry.sh": {
     "mtime": 1775969446.1318448,
     "ast_hash": "e18fdabf00a0d5eb170d0e4b0ffc0247",
     "semantic_hash": "e18fdabf00a0d5eb170d0e4b0ffc0247"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\desc-broker.sh": {
-    "mtime": 1775969446.277733,
-    "ast_hash": "7cf547a26ab1a2270b131eb16e698c12",
-    "semantic_hash": "7cf547a26ab1a2270b131eb16e698c12"
+    "mtime": 1779889541.021791,
+    "ast_hash": "114f99b40d4eea0dc20fd040e0fc04b8",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\desc-lb.sh": {
     "mtime": 1775969446.4276493,
@@ -160,14 +140,14 @@
     "semantic_hash": "ded4cf3c78d76ebb2a511156395e156c"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\enter-solace-cli.sh": {
-    "mtime": 1775969446.7102046,
-    "ast_hash": "979531a6890fe321c12f2b2a537eb07d",
-    "semantic_hash": "979531a6890fe321c12f2b2a537eb07d"
+    "mtime": 1779889546.9907482,
+    "ast_hash": "55b218295a0e44b48bcf91578ccc1a57",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\enter-solace-shell.sh": {
-    "mtime": 1775969446.8584323,
-    "ast_hash": "5c048fca74f29a9cc7e31f1df8f9d607",
-    "semantic_hash": "5c048fca74f29a9cc7e31f1df8f9d607"
+    "mtime": 1779889557.471469,
+    "ast_hash": "947ace7b5874fd6e0aa21bc59aa4d96d",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\get-broker-status.sh": {
     "mtime": 1775969447.0015259,
@@ -180,9 +160,9 @@
     "semantic_hash": "7a5e76ab4cee27d8756f3d6c9ace4207"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\logs-broker.sh": {
-    "mtime": 1775969447.2676766,
-    "ast_hash": "72fdc6bfbad3e3382b102412b440ff99",
-    "semantic_hash": "72fdc6bfbad3e3382b102412b440ff99"
+    "mtime": 1779889563.5243206,
+    "ast_hash": "2bc02b410c394a1b4a96282bd42b7da9",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\logs-op.sh": {
     "mtime": 1775969447.3972178,
@@ -235,9 +215,9 @@
     "semantic_hash": "dcea25cbe7d71fd80f08140c05168ec6"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\README.md": {
-    "mtime": 1779275713.4625435,
-    "ast_hash": "750b5afc7ac452b3db46f223880adf90",
-    "semantic_hash": "750b5afc7ac452b3db46f223880adf90"
+    "mtime": 1779889751.1723192,
+    "ast_hash": "32877e63d86927d837459ce7298be774",
+    "semantic_hash": ""
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\solace-theme-reference.md": {
     "mtime": 1775803816.941189,
@@ -265,8 +245,8 @@
     "semantic_hash": "1814d98cb6c17373b884b24ff3376796"
   },
   "C:\\Users\\hamly\\git\\solace-k8-scripts\\CLAUDE.md": {
-    "mtime": 1779276574.5400414,
-    "ast_hash": "c7d04fcd83fb6f99b2ec76bb64f69603",
-    "semantic_hash": "c7d04fcd83fb6f99b2ec76bb64f69603"
+    "mtime": 1779889705.3453455,
+    "ast_hash": "13b6ca2bb4286a8fa422291162919445",
+    "semantic_hash": ""
   }
 }

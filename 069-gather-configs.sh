@@ -190,7 +190,7 @@ for node in "${nodes[@]}"; do
 	echo "Gathering Diagnostics for '${node}' node..."
   
   echo " - Creating tmp directory..."
-  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- mkdir -p /usr/sw/jail/configs/.out
+  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- mkdir -p /usr/sw/jail/configs/cliout
   
   # copy files
   echo " - Copy Files..."
@@ -209,7 +209,7 @@ for node in "${nodes[@]}"; do
   
   # clean up zip file and output files
   echo " - Cleaning up..."
-  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm -rf /usr/sw/jail/cli-out /usr/sw/jail/zip-configs.zip
+  ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-${node}-0 -- rm -rf /usr/sw/jail/cli-out /usr/sw/jail/gather-configs.zip
   
   #get filename for gather-diagnostics
   echo " - Retrieving gather-diagnostics..."

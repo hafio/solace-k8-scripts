@@ -96,7 +96,7 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_PRODUCTKEYS` | (none) | No | List of product keys to apply to Solace brokers. |
 | `SOLBK_MSGNODE_CPU` | `2` | No | Number of CPUs for Solace Broker messaging nodes. <br> Please refer to the Broker Resource Calculator for numbers. |
 | `SOLBK_MSGNODE_MEM` | `3410Mi` | No | Amount of memory assigned for Solace Broker message node. Units are "Mi" "Gi". <br> Please refer to the Broker Resource Calculator for numbers. |
-| `SOLBK_STORAGECLASS` | (none) | No | Specify the storage class to use if required. |
+| `SOLBK_STORAGECLASS` | (none) | No | Specify the storage class to use. If left blank, `009-check-storage-class.sh` auto-detects the cluster's default StorageClass (the one annotated `storageclass.kubernetes.io/is-default-class=true`) and validates that one. |
 | `SOLBK_STORAGE_MSGNODE` | (none) | Yes | Specify the disk storage size for messaging nodes. |
 | `SOLBK_STORAGE_MONNODE` | `5Gi` | No | Specify the disk storage size for the monitor node. |
 | `SOLBK_ADM_PASS` | `adminpassword123` | Yes | Admin password for SEMP. |
@@ -106,7 +106,7 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_SVR_SECRET` | (none) | No | Name of secret to store SSL/TLS Server Certificates. Leave blank if you do not want to enable SSL/TLS for the broker. |
 | `SOLBK_TLS_CERT` | `cert/tls.crt` | No | Full path + filename of SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified. |
 | `SOLBK_TLS_CERTKEY` | `cert/tls.key` | No | Full path + filename of private key used to generate SSL/TLS Server Certificate. This is required if `$SOLBK_SVR_SECRET` is specified.  |
-| `SOLBK_TLS_CERTCAS` | (none) | No | List of "full path + filenames" of Certificate Authority root/intermediate certificates. This is recommended to include as these will be appended as part of the SSL/TLS Server Certificate that will be loaded as part of `050-load-server-cert.sh` |
+| `SOLBK_TLS_CERTCAS` | (none) | No | List of "full path + filenames" of Certificate Authority root/intermediate certificates. This is recommended to include as these will be appended as part of the SSL/TLS Server Certificate that will be loaded as part of `051-load-server-cert.sh` |
 | `SOLBK_NODETOL_PRI` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Primary Node. Use this for standalone broker deployment too.<br>Please comment the variable if not required. |
 | `SOLBK_NODETOL_BKP` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Backup Node.<br>Please comment the variable if not required. |
 | `SOLBK_NODETOL_MON` | (none) | No | Worker Node Tolerations to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
@@ -115,14 +115,62 @@ Scripts are prefixed with a 3-digit number system:
 | `SOLBK_NODELABEL_MON` | (none) | No | Worker Node Labels to apply during Node Selection at initialization for Monitoring Node.<br>Please comment the variable if not required. |
 | `SOLBK_ANTIAFFINITY_NS` | (none) | No | List of namespace to apply Kubernete "Anti-Affinity" rules to. This script applies `preferredDuringSchedulingIgnoredDuringExecution` for pod allocation if this is specified. |
 | `SOLBK_ANTIAFFINITY_WT` | `100` | No | Weight of Anti-Affinity rule. Values range from 1-100. |
-| `SOLBK_DIAG_DIR` | `diag-configs` | No | Directory to store output of `061-gather-configs.sh`. |
+| `SOLBK_DIAG_DIR` | `diag-configs` | No | Directory to store output of `069-gather-configs.sh`. |
 | `SOLBK_IPPOOL` | (none) | No | IP Address Pool Name to be used for IP assignment for Metal LB. |
 | `SOLBK_LOADBALANCER_IP` | (none) | No | If static IP address is required to be specified for Metal LB. |
 | `SOLBK_LOADBALANCER_ANOTN` | (none) | No | Optional annotations required for loadbalancers association. |
 | `SOLBK_DOMAINCERT_FOLDER` | (none) | No | Folder containing Certificate Authority certificates to be loaded. This is used in conjunction with `$SOLBK_DOMAINCERT_FILES` |
-| `SOLBK_DOMAINCERT_FILES` | (none) | No | List of Certificate Authority certificates to be loaded into the broker. This will be applied by `051-load-domain-certs.sh`. |
+| `SOLBK_DOMAINCERT_FILES` | (none) | No | List of Certificate Authority certificates to be loaded into the broker. This will be applied by `052-load-domain-certs.sh`. |
 | `SOLBK_CLISCRIPTS_FOLDER` | `cli` | No | Path + Folder name of directory containing CLI scripts to be executed. This is used in `059-execute-cli.sh` |
 
 # Additional Helper Scripts
 
-(TODO)
+These are operational helpers — they do not participate in the deploy/delete sequence. All scripts still take `--env <name>`.
+
+## Pod-role argument
+
+Helpers that target a specific broker pod accept the role as the first positional argument. Both the short and long forms are accepted; if omitted, `primary` is used:
+
+| Short | Long | Pod suffix |
+| - | - | - |
+| `p` | `primary` | `-pubsubplus-p-0` |
+| `b` | `backup` | `-pubsubplus-b-0` |
+| `m` | `monitor` | `-pubsubplus-m-0` |
+
+```bash
+./desc-broker.sh --env dev backup
+./logs-broker.sh --env dev primary -f --tail=200
+./enter-solace-cli.sh --env dev m
+```
+
+Normalization happens in the shared `pick_pod` function in `000-env.sh`.
+
+## Inspection
+
+| Script | Purpose |
+| - | - |
+| `desc-broker.sh [role]` | `kubectl describe pod` of a broker pod |
+| `desc-op.sh` | `kubectl describe pod` of the operator pod |
+| `desc-lb.sh` | `kubectl describe svc` of the broker LoadBalancer |
+| `get-broker-status.sh` | Show broker pod/PVC/svc status |
+| `get-op-status.sh` | Show operator deployment status |
+| `show-all-brokers.sh` | List broker pods, services, statefulsets across all namespaces |
+| `logs-broker.sh [role] [kubectl logs args...]` | Tail broker logs; extra args are forwarded to `kubectl logs` |
+| `logs-op.sh [kubectl logs args...]` | Tail operator logs |
+| `watch.sh` | Loop `get-op-status.sh` and `get-broker-status.sh` |
+
+## Interactive access
+
+| Script | Purpose |
+| - | - |
+| `enter-solace-cli.sh [role]` | Drop into the Solace CLI (`cli -A`) inside the chosen pod |
+| `enter-solace-shell.sh [role]` | Drop into a bash shell inside the chosen pod |
+| `copy-files-from-broker.sh [role] <path>...` | `kubectl cp` files out of the broker pod |
+| `copy-files-into-broker.sh [role] <local-path>... <pod-dir>` | `kubectl cp` files into the broker pod |
+
+## Lifecycle
+
+| Script | Purpose |
+| - | - |
+| `replicas-start-broker.sh` | Scale broker statefulsets to 1 (start) |
+| `replicas-stop-broker.sh` | Scale broker statefulsets to 0 (stop) — prompts for confirmation |

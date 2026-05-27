@@ -35,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --no-prompt)
 			DEL_PVC=y
       CONF=y
+      shift
       ;;
 		*)
 			shift

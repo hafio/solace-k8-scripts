@@ -15,7 +15,7 @@ if [[ -z "${SOLBK_TLS_CERT}" ]] || [[ -z "${SOLBK_TLS_CERTKEY}" ]]; then
   echo '[Error] $SOLBK_TLS_CERT & $SOLBK_TLS_CERTKEY must be specified!'
   exit 1
 elif [[ ! -f "${SOLBK_TLS_CERT}" ]] || [[ ! -f "${SOLBK_TLS_CERTKEY}" ]]; then
-  echo '[Error] Both $SOLBK_TLS_CERT & $SOLBK_TLS_CERT must be valid files!'
+  echo '[Error] Both $SOLBK_TLS_CERT & $SOLBK_TLS_CERTKEY must be valid files!'
   exit 1
 else
     echo "enable

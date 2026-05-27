@@ -8,14 +8,7 @@ else
 	exit 1
 fi
 
-if [[ "$1" =~ (p|b|m) ]]; then 
-  pod=$1
-  shift
-elif [[ -n "$1" ]]; then
-  echo "Invalid node: $1"
-  exit 1
-else
-  pod=p
-fi
+pod=$(pick_pod "$1") || exit 1
+[[ -n "$1" ]] && shift
 
 ${KUBE} logs -n ${SOLBK_NS} pod/${SOLBK_NAME}-pubsubplus-${pod}-0 $@

@@ -26,6 +26,7 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+set -- ${PARAMS}
 
 if [[ ! -r "${SOLBK_CLISCRIPTS_FOLDER}" ]]; then
   echo  "[Error] ${SOLBK_CLISCRIPTS_FOLDER} is not accessible or valid."

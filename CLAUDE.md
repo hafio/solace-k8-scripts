@@ -31,7 +31,7 @@ source "$(dirname "$0")/000-env.sh"
 2. Applies defaults to optional vars (`VAR=${VAR:-default}`) and derives values via `kubectl` (e.g. auto-detects `SOLOP_DERIVED_NS` by grep'ing the operator deployment).
 3. Validates mandatory vars (`SOLBK_NAME`, `SOLBK_NS`, `SOLBK_IMAGE`, `SOLBK_IMG_TAG`, `SOLBK_STORAGE_MSGNODE`) and exits if any are empty.
 
-So **`000-env.sh` is never run directly** — it's the bootstrap every other script relies on. Changes to env-loading semantics belong here, not in individual scripts.
+So **`000-env.sh` is never run directly** — it's the bootstrap every other script relies on. Changes to env-loading semantics belong here, not in individual scripts. It also exposes a shared `pick_pod` helper that normalizes a pod-role argument (`p|primary`, `b|backup`, `m|monitor`) to the single-letter form used in pod names; helper scripts call it with `pod=$(pick_pod "$1") || exit 1`.
 
 ## File-naming convention
 
@@ -39,7 +39,7 @@ Scripts are prefixed `<Category><Action><Sequence>`:
 
 | Position | Values |
 | --- | --- |
-| Category | `0` = create/deploy · `1` = delete/remove · `d` = infrastructure helpers (e.g. `d037-assign-ip`, `d137-delete-ip`) |
+| Category | `0` = create/deploy · `1` = delete/remove · `d` = infrastructure helpers (reserved prefix; no scripts currently use it) |
 | Action | `0` = pre-checks · `1` = pre-actions · `2` = deploy · `5` = post-config · `6` = post-checks |
 | Sequence | execution order within the action band |
 
@@ -49,7 +49,7 @@ The README's "How to use" section is the canonical run order; consult it before 
 
 ## `gen_yaml()` pattern — large scripts
 
-Several scripts ([010-deploy-operator.sh](010-deploy-operator.sh), [020-deploy-broker.sh](020-deploy-broker.sh), [058-setup-data-replication.sh](058-setup-data-replication.sh), [05A-generate-data-replication-for-vpn.sh](05A-generate-data-replication-for-vpn.sh), [110-delete-operator.sh](110-delete-operator.sh)) define an inline `gen_yaml()` function that emits a multi-doc Kubernetes manifest from a heredoc using the env vars, then pipes it to `${KUBE} apply -f -`. **`010-deploy-operator.sh` and `110-delete-operator.sh` are ~119 KB** — they embed the entire Solace operator bundle as YAML literals. Don't reformat blindly; line breaks inside the heredoc are part of the manifest.
+Several scripts ([010-deploy-operator.sh](010-deploy-operator.sh), [020-deploy-broker.sh](020-deploy-broker.sh), [110-delete-operator.sh](110-delete-operator.sh)) define an inline `gen_yaml()` function that emits a multi-doc Kubernetes manifest from a heredoc using the env vars, then pipes it to `${KUBE} apply -f -`. **`010-deploy-operator.sh` and `110-delete-operator.sh` are ~119 KB** — they embed the entire Solace operator bundle as YAML literals. Don't reformat blindly; line breaks inside the heredoc are part of the manifest.
 
 There is also a browser tool [solace-yaml-generator.html](solace-yaml-generator.html) that produces broker CR YAML interactively — keep it in sync with the variables in [env/sample](env/sample) when adding new knobs.
 

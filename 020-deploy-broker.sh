@@ -251,6 +251,9 @@ done
 
 gen_yaml > .broker.yaml
 
-[[ "${GENONLY}" != "true" ]] && ${KUBE} apply -f .broker.yaml
-
-[[ "${GENONLY}" != "true" ]] && [[ "${KEEP}" != "true" ]] && rm .broker.yaml
+if [[ "${GENONLY}" != "true" ]]; then
+  # Remove .broker.yaml only if apply succeeded and the user did not pass --keep-yaml.
+  # On apply failure the file is preserved so the user can inspect / re-apply.
+  trap '[[ $? -eq 0 && "${KEEP}" != "true" ]] && rm -f .broker.yaml' EXIT
+  ${KUBE} apply -f .broker.yaml
+fi

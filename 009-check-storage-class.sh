@@ -8,6 +8,15 @@ else
 	exit 1
 fi
 
+if [[ -z "${SOLBK_STORAGECLASS}" ]]; then
+  SOLBK_STORAGECLASS=$(${KUBE} get sc -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' 2> /dev/null)
+  if [[ -z "${SOLBK_STORAGECLASS}" ]]; then
+    echo "[Error] SOLBK_STORAGECLASS is not set and no default StorageClass is configured in the cluster."
+    exit 1
+  fi
+  echo "[Info] Using cluster default StorageClass: '${SOLBK_STORAGECLASS}'"
+fi
+
 VOL_BIND_MODE=$(${KUBE} get sc ${SOLBK_STORAGECLASS} -o custom-columns=MODE:.volumeBindingMode --no-headers 2> /dev/null)
 VOL_EXPANSION=$(${KUBE} get sc ${SOLBK_STORAGECLASS} -o custom-columns=MODE:.allowVolumeExpansion --no-headers 2> /dev/null)
 

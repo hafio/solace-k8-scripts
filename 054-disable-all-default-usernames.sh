@@ -31,8 +31,9 @@ for vpn in "${VPNS[@]}"; do
   echo "client-username default message-vpn \"${vpn}\"
 shutdown
 exit" >> ${TMPFILE}
-echo "show client-username default message-vpn *" >> ${TMPFILE}
 done
+echo "end
+show client-username default message-vpn *" >> ${TMPFILE}
 
 ${KUBE} cp -n ${SOLBK_NS} ${TMPFILE} ${SOLBK_NAME}-pubsubplus-p-0:/usr/sw/jail/cliscripts/.disable-default-usernames.cli
 ${KUBE} exec -n ${SOLBK_NS} ${SOLBK_NAME}-pubsubplus-p-0 -- /usr/sw/loads/currentload/bin/cli -Apes .disable-default-usernames.cli
