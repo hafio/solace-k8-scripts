@@ -4,35 +4,387 @@
   "graph": {
     "hyperedges": [
       {
-        "id": "he_doc_entry_points",
-        "label": "Documentation Entry Points",
+        "id": "all_scripts_source_000env",
+        "label": "All scripts source 000-env.sh as bootstrap",
         "nodes": [
-          "doc_readme",
-          "doc_claude_md",
-          "s001_check_env"
+          "001check_env",
+          "009check_storage_class",
+          "010deploy_operator",
+          "020deploy_broker",
+          "050assert_leader",
+          "051load_server_cert",
+          "053disable_default_vpn",
+          "054disable_all_default_usernames",
+          "059execute_cli",
+          "060test_semp_login",
+          "110delete_operator",
+          "000env_bootstrap"
         ],
         "relation": "participate_in",
-        "confidence": "INFERRED",
-        "confidence_score": 0.85,
-        "source_file": null
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "000-env.sh"
       },
       {
-        "id": "he_yaml_generation_surfaces",
-        "label": "Broker YAML Generation Surfaces",
+        "id": "gen_yaml_pattern_users",
+        "label": "Scripts using the gen_yaml() heredoc-to-kubectl pattern",
         "nodes": [
-          "tool_yaml_generator",
-          "s020_deploy_broker",
-          "concept_gen_yaml_pattern",
-          "concept_pubsubplus_cr_schema"
+          "010deploy_operator",
+          "020deploy_broker",
+          "110delete_operator",
+          "concept_gen_yaml_pattern"
+        ],
+        "relation": "implement",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "010-deploy-operator.sh"
+      },
+      {
+        "id": "broker_pod_cli_executors",
+        "label": "Post-config scripts that copy CLI into pod and exec it",
+        "nodes": [
+          "050assert_leader",
+          "051load_server_cert",
+          "053disable_default_vpn",
+          "054disable_all_default_usernames",
+          "059execute_cli",
+          "concept_kubectl_exec_cli",
+          "concept_kubectl_cp"
+        ],
+        "relation": "participate_in",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "050-assert-leader.sh"
+      },
+      {
+        "id": "scripts_calling_pick_pod",
+        "label": "Scripts that call pick_pod helper",
+        "nodes": [
+          "desc-broker_script",
+          "enter-solace-cli_script",
+          "enter-solace-shell_script",
+          "logs-broker_script"
+        ],
+        "relation": "participate_in",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "000-env.sh"
+      },
+      {
+        "id": "operational_helpers_no_prefix",
+        "label": "Operational helper scripts (no number prefix)",
+        "nodes": [
+          "desc-broker_script",
+          "enter-solace-cli_script",
+          "enter-solace-shell_script",
+          "logs-broker_script",
+          "replicas-start-broker_script",
+          "show-all-brokers_script"
         ],
         "relation": "form",
-        "confidence": "INFERRED",
-        "confidence_score": 0.85,
-        "source_file": null
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "CLAUDE.md"
+      },
+      {
+        "id": "post_check_scripts_action_band_6",
+        "label": "Post-check scripts (action band 6)",
+        "nodes": [
+          "060-test-semp-login_script",
+          "061-test-redundancy_script",
+          "069-gather-configs_script"
+        ],
+        "relation": "form",
+        "confidence": "EXTRACTED",
+        "confidence_score": 1.0,
+        "source_file": "README.md"
       }
     ]
   },
   "nodes": [
+    {
+      "label": "013-label-nodes.sh",
+      "file_type": "code",
+      "source_file": "013-label-nodes.sh",
+      "source_location": "L1",
+      "community": 6,
+      "norm_label": "013-label-nodes.sh",
+      "id": "013_label_nodes_sh"
+    },
+    {
+      "label": "is_builtin_label()",
+      "file_type": "code",
+      "source_file": "013-label-nodes.sh",
+      "source_location": "L25",
+      "community": 6,
+      "norm_label": "is_builtin_label()",
+      "id": "solace_k8_scripts_013_label_nodes_is_builtin_label"
+    },
+    {
+      "label": "extract_custom_labels()",
+      "file_type": "code",
+      "source_file": "013-label-nodes.sh",
+      "source_location": "L36",
+      "community": 6,
+      "norm_label": "extract_custom_labels()",
+      "id": "solace_k8_scripts_013_label_nodes_extract_custom_labels"
+    },
+    {
+      "label": "show_node_menu()",
+      "file_type": "code",
+      "source_file": "013-label-nodes.sh",
+      "source_location": "L87",
+      "community": 6,
+      "norm_label": "show_node_menu()",
+      "id": "solace_k8_scripts_013_label_nodes_show_node_menu"
+    },
+    {
+      "label": "057-configure-product-keys.sh",
+      "file_type": "code",
+      "source_file": "057-configure-product-keys.sh",
+      "source_location": "L1",
+      "community": 30,
+      "norm_label": "057-configure-product-keys.sh",
+      "id": "057_configure_product_keys_sh"
+    },
+    {
+      "label": "150-remove-domain-certs.sh",
+      "file_type": "code",
+      "source_file": "150-remove-domain-certs.sh",
+      "source_location": "L1",
+      "community": 31,
+      "norm_label": "150-remove-domain-certs.sh",
+      "id": "150_remove_domain_certs_sh"
+    },
+    {
+      "label": "add-insecure-repo.sh",
+      "file_type": "code",
+      "source_file": "add-insecure-repo.sh",
+      "source_location": "L1",
+      "community": 32,
+      "norm_label": "add-insecure-repo.sh",
+      "id": "add_insecure_repo_sh"
+    },
+    {
+      "label": "003-local-images.md",
+      "file_type": "document",
+      "source_file": "003-local-images.md",
+      "source_location": "L1",
+      "community": 4,
+      "norm_label": "003-local-images.md",
+      "id": "003_local_images_md"
+    },
+    {
+      "label": "Using local tar images for kubectl setup",
+      "file_type": "document",
+      "source_file": "003-local-images.md",
+      "source_location": "L1",
+      "community": 4,
+      "norm_label": "using local tar images for kubectl setup",
+      "id": "solace_k8_scripts_003_local_images_using_local_tar_images_for_kubectl_setup"
+    },
+    {
+      "label": "Steps",
+      "file_type": "document",
+      "source_file": "003-local-images.md",
+      "source_location": "L10",
+      "community": 4,
+      "norm_label": "steps",
+      "id": "solace_k8_scripts_003_local_images_steps"
+    },
+    {
+      "label": "Minikube Steps",
+      "file_type": "document",
+      "source_file": "003-local-images.md",
+      "source_location": "L17",
+      "community": 4,
+      "norm_label": "minikube steps",
+      "id": "solace_k8_scripts_003_local_images_minikube_steps"
+    },
+    {
+      "label": "058-setup-data-replication.sh",
+      "file_type": "code",
+      "source_file": "058-setup-data-replication.sh",
+      "source_location": "L1",
+      "community": 28,
+      "norm_label": "058-setup-data-replication.sh",
+      "id": "058_setup_data_replication_sh"
+    },
+    {
+      "label": "gen_yaml()",
+      "file_type": "code",
+      "source_file": "058-setup-data-replication.sh",
+      "source_location": "L36",
+      "community": 28,
+      "norm_label": "gen_yaml()",
+      "id": "solace_k8_scripts_058_setup_data_replication_gen_yaml"
+    },
+    {
+      "label": "05A-generate-data-replication-for-vpn.sh",
+      "file_type": "code",
+      "source_file": "05A-generate-data-replication-for-vpn.sh",
+      "source_location": "L1",
+      "community": 29,
+      "norm_label": "05a-generate-data-replication-for-vpn.sh",
+      "id": "05a_generate_data_replication_for_vpn_sh"
+    },
+    {
+      "label": "gen_yaml()",
+      "file_type": "code",
+      "source_file": "05A-generate-data-replication-for-vpn.sh",
+      "source_location": "L31",
+      "community": 29,
+      "norm_label": "gen_yaml()",
+      "id": "solace_k8_scripts_05a_generate_data_replication_for_vpn_gen_yaml"
+    },
+    {
+      "label": "d037-assign-ip.sh",
+      "file_type": "code",
+      "source_file": "d037-assign-ip.sh",
+      "source_location": "L1",
+      "community": 33,
+      "norm_label": "d037-assign-ip.sh",
+      "id": "d037_assign_ip_sh"
+    },
+    {
+      "label": "d137-delete-ip.sh",
+      "file_type": "code",
+      "source_file": "d137-delete-ip.sh",
+      "source_location": "L1",
+      "community": 34,
+      "norm_label": "d137-delete-ip.sh",
+      "id": "d137_delete_ip_sh"
+    },
+    {
+      "label": "Label Cluster Nodes for Broker Pods",
+      "file_type": "code",
+      "source_file": "013-label-nodes.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 35,
+      "norm_label": "label cluster nodes for broker pods",
+      "id": "s013_label_nodes"
+    },
+    {
+      "label": "Apply Solace Product Keys",
+      "file_type": "code",
+      "source_file": "057-configure-product-keys.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 36,
+      "norm_label": "apply solace product keys",
+      "id": "s057_configure_product_keys"
+    },
+    {
+      "label": "Configure Broker-level Data Replication",
+      "file_type": "code",
+      "source_file": "058-setup-data-replication.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 37,
+      "norm_label": "configure broker-level data replication",
+      "id": "s058_setup_data_replication"
+    },
+    {
+      "label": "Configure VPN-level Data Replication",
+      "file_type": "code",
+      "source_file": "05A-generate-data-replication-for-vpn.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 38,
+      "norm_label": "configure vpn-level data replication",
+      "id": "s05A_generate_data_replication_for_vpn"
+    },
+    {
+      "label": "150-remove-domain-certs.sh",
+      "file_type": "code",
+      "source_file": "150-remove-domain-certs.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 39,
+      "norm_label": "150-remove-domain-certs.sh",
+      "id": "s_150_remove_domain_certs"
+    },
+    {
+      "label": "add-insecure-repo.sh",
+      "file_type": "code",
+      "source_file": "add-insecure-repo.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 40,
+      "norm_label": "add-insecure-repo.sh",
+      "id": "s_add_insecure_repo"
+    },
+    {
+      "label": "d037-assign-ip.sh",
+      "file_type": "code",
+      "source_file": "d037-assign-ip.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 41,
+      "norm_label": "d037-assign-ip.sh",
+      "id": "s_d037_assign_ip"
+    },
+    {
+      "label": "d137-delete-ip.sh",
+      "file_type": "code",
+      "source_file": "d137-delete-ip.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 42,
+      "norm_label": "d137-delete-ip.sh",
+      "id": "s_d137_delete_ip"
+    },
+    {
+      "label": "Using Local Tar Images for kubectl/containerd",
+      "file_type": "document",
+      "source_file": "003-local-images.md",
+      "source_location": "whole file",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 25,
+      "norm_label": "using local tar images for kubectl/containerd",
+      "id": "doc_local_images"
+    },
+    {
+      "label": "Local Image Mirror (ctr/crictl import)",
+      "file_type": "rationale",
+      "source_file": "003-local-images.md",
+      "source_location": "Steps section",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 25,
+      "norm_label": "local image mirror (ctr/crictl import)",
+      "id": "concept_local_image_mirror"
+    },
     {
       "label": "000-env.sh",
       "file_type": "code",
@@ -43,7 +395,7 @@
         "kind": "file"
       },
       "id": "000_env_sh",
-      "community": 15,
+      "community": 8,
       "norm_label": "000-env.sh"
     },
     {
@@ -56,7 +408,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_000_env_sh__entry",
-      "community": 15,
+      "community": 8,
       "norm_label": "000-env.sh script"
     },
     {
@@ -69,7 +421,7 @@
         "kind": "bash_function"
       },
       "id": "solace_k8_scripts_000_env_pick_pod",
-      "community": 15,
+      "community": 8,
       "norm_label": "pick_pod()"
     },
     {
@@ -77,9 +429,26 @@
       "file_type": "code",
       "source_file": "001-check-env.sh",
       "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
       "id": "001_check_env_sh",
-      "community": 16,
+      "community": 12,
       "norm_label": "001-check-env.sh"
+    },
+    {
+      "label": "001-check-env.sh script",
+      "file_type": "code",
+      "source_file": "001-check-env.sh",
+      "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "id": "c_users_hamly_git_solace_k8_scripts_001_check_env_sh__entry",
+      "community": 12,
+      "norm_label": "001-check-env.sh script"
     },
     {
       "label": "009-check-storage-class.sh",
@@ -117,7 +486,7 @@
         "kind": "file"
       },
       "id": "010_deploy_operator_sh",
-      "community": 6,
+      "community": 7,
       "norm_label": "010-deploy-operator.sh"
     },
     {
@@ -130,7 +499,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_010_deploy_operator_sh__entry",
-      "community": 6,
+      "community": 7,
       "norm_label": "010-deploy-operator.sh script"
     },
     {
@@ -143,53 +512,8 @@
         "kind": "bash_function"
       },
       "id": "solace_k8_scripts_010_deploy_operator_gen_yaml",
-      "community": 6,
+      "community": 7,
       "norm_label": "gen_yaml()"
-    },
-    {
-      "label": "011-create-namespace.sh",
-      "file_type": "code",
-      "source_file": "011-create-namespace.sh",
-      "source_location": "L1",
-      "id": "011_create_namespace_sh",
-      "community": 18,
-      "norm_label": "011-create-namespace.sh"
-    },
-    {
-      "label": "013-label-nodes.sh",
-      "file_type": "code",
-      "source_file": "013-label-nodes.sh",
-      "source_location": "L1",
-      "id": "013_label_nodes_sh",
-      "community": 3,
-      "norm_label": "013-label-nodes.sh"
-    },
-    {
-      "label": "is_builtin_label()",
-      "file_type": "code",
-      "source_file": "013-label-nodes.sh",
-      "source_location": "L25",
-      "id": "solace_k8_scripts_013_label_nodes_is_builtin_label",
-      "community": 3,
-      "norm_label": "is_builtin_label()"
-    },
-    {
-      "label": "extract_custom_labels()",
-      "file_type": "code",
-      "source_file": "013-label-nodes.sh",
-      "source_location": "L36",
-      "id": "solace_k8_scripts_013_label_nodes_extract_custom_labels",
-      "community": 3,
-      "norm_label": "extract_custom_labels()"
-    },
-    {
-      "label": "show_node_menu()",
-      "file_type": "code",
-      "source_file": "013-label-nodes.sh",
-      "source_location": "L87",
-      "id": "solace_k8_scripts_013_label_nodes_show_node_menu",
-      "community": 3,
-      "norm_label": "show_node_menu()"
     },
     {
       "label": "020-deploy-broker.sh",
@@ -201,7 +525,7 @@
         "kind": "file"
       },
       "id": "020_deploy_broker_sh",
-      "community": 12,
+      "community": 9,
       "norm_label": "020-deploy-broker.sh"
     },
     {
@@ -214,7 +538,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_020_deploy_broker_sh__entry",
-      "community": 12,
+      "community": 9,
       "norm_label": "020-deploy-broker.sh script"
     },
     {
@@ -227,7 +551,7 @@
         "kind": "bash_function"
       },
       "id": "solace_k8_scripts_020_deploy_broker_gen_yaml",
-      "community": 12,
+      "community": 9,
       "norm_label": "gen_yaml()"
     },
     {
@@ -240,7 +564,7 @@
         "kind": "file"
       },
       "id": "050_assert_leader_sh",
-      "community": 20,
+      "community": 13,
       "norm_label": "050-assert-leader.sh"
     },
     {
@@ -253,7 +577,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_050_assert_leader_sh__entry",
-      "community": 20,
+      "community": 13,
       "norm_label": "050-assert-leader.sh script"
     },
     {
@@ -266,7 +590,7 @@
         "kind": "file"
       },
       "id": "051_load_server_cert_sh",
-      "community": 21,
+      "community": 14,
       "norm_label": "051-load-server-cert.sh"
     },
     {
@@ -279,17 +603,8 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_051_load_server_cert_sh__entry",
-      "community": 21,
+      "community": 14,
       "norm_label": "051-load-server-cert.sh script"
-    },
-    {
-      "label": "052-load-domain-certs.sh",
-      "file_type": "code",
-      "source_file": "052-load-domain-certs.sh",
-      "source_location": "L1",
-      "id": "052_load_domain_certs_sh",
-      "community": 22,
-      "norm_label": "052-load-domain-certs.sh"
     },
     {
       "label": "053-disable-default-vpn.sh",
@@ -301,7 +616,7 @@
         "kind": "file"
       },
       "id": "053_disable_default_vpn_sh",
-      "community": 23,
+      "community": 15,
       "norm_label": "053-disable-default-vpn.sh"
     },
     {
@@ -314,7 +629,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_053_disable_default_vpn_sh__entry",
-      "community": 23,
+      "community": 15,
       "norm_label": "053-disable-default-vpn.sh script"
     },
     {
@@ -327,7 +642,7 @@
         "kind": "file"
       },
       "id": "054_disable_all_default_usernames_sh",
-      "community": 24,
+      "community": 18,
       "norm_label": "054-disable-all-default-usernames.sh"
     },
     {
@@ -340,17 +655,8 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_054_disable_all_default_usernames_sh__entry",
-      "community": 24,
+      "community": 18,
       "norm_label": "054-disable-all-default-usernames.sh script"
-    },
-    {
-      "label": "057-configure-product-keys.sh",
-      "file_type": "code",
-      "source_file": "057-configure-product-keys.sh",
-      "source_location": "L1",
-      "id": "057_configure_product_keys_sh",
-      "community": 25,
-      "norm_label": "057-configure-product-keys.sh"
     },
     {
       "label": "059-execute-cli.sh",
@@ -362,7 +668,7 @@
         "kind": "file"
       },
       "id": "059_execute_cli_sh",
-      "community": 26,
+      "community": 19,
       "norm_label": "059-execute-cli.sh"
     },
     {
@@ -375,7 +681,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_059_execute_cli_sh__entry",
-      "community": 26,
+      "community": 19,
       "norm_label": "059-execute-cli.sh script"
     },
     {
@@ -388,7 +694,7 @@
         "kind": "file"
       },
       "id": "060_test_semp_login_sh",
-      "community": 27,
+      "community": 20,
       "norm_label": "060-test-semp-login.sh"
     },
     {
@@ -401,7 +707,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_060_test_semp_login_sh__entry",
-      "community": 27,
+      "community": 20,
       "norm_label": "060-test-semp-login.sh script"
     },
     {
@@ -409,9 +715,26 @@
       "file_type": "code",
       "source_file": "061-test-redundancy.sh",
       "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
       "id": "061_test_redundancy_sh",
-      "community": 28,
+      "community": 21,
       "norm_label": "061-test-redundancy.sh"
+    },
+    {
+      "label": "061-test-redundancy.sh script",
+      "file_type": "code",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "id": "c_users_hamly_git_solace_k8_scripts_061_test_redundancy_sh__entry",
+      "community": 21,
+      "norm_label": "061-test-redundancy.sh script"
     },
     {
       "label": "069-gather-configs.sh",
@@ -475,7 +798,7 @@
         "kind": "file"
       },
       "id": "110_delete_operator_sh",
-      "community": 13,
+      "community": 10,
       "norm_label": "110-delete-operator.sh"
     },
     {
@@ -488,7 +811,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_110_delete_operator_sh__entry",
-      "community": 13,
+      "community": 10,
       "norm_label": "110-delete-operator.sh script"
     },
     {
@@ -501,17 +824,8 @@
         "kind": "bash_function"
       },
       "id": "solace_k8_scripts_110_delete_operator_gen_yaml",
-      "community": 13,
+      "community": 10,
       "norm_label": "gen_yaml()"
-    },
-    {
-      "label": "111-delete-namespace.sh",
-      "file_type": "code",
-      "source_file": "111-delete-namespace.sh",
-      "source_location": "L1",
-      "id": "111_delete_namespace_sh",
-      "community": 29,
-      "norm_label": "111-delete-namespace.sh"
     },
     {
       "label": "120-delete-broker.sh",
@@ -523,7 +837,7 @@
         "kind": "file"
       },
       "id": "120_delete_broker_sh",
-      "community": 31,
+      "community": 16,
       "norm_label": "120-delete-broker.sh"
     },
     {
@@ -536,71 +850,8 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_120_delete_broker_sh__entry",
-      "community": 31,
+      "community": 16,
       "norm_label": "120-delete-broker.sh script"
-    },
-    {
-      "label": "150-remove-domain-certs.sh",
-      "file_type": "code",
-      "source_file": "150-remove-domain-certs.sh",
-      "source_location": "L1",
-      "id": "150_remove_domain_certs_sh",
-      "community": 32,
-      "norm_label": "150-remove-domain-certs.sh"
-    },
-    {
-      "label": "add-insecure-repo.sh",
-      "file_type": "code",
-      "source_file": "add-insecure-repo.sh",
-      "source_location": "L1",
-      "id": "add_insecure_repo_sh",
-      "community": 33,
-      "norm_label": "add-insecure-repo.sh"
-    },
-    {
-      "label": "copy-files-from-broker.sh",
-      "file_type": "code",
-      "source_file": "copy-files-from-broker.sh",
-      "source_location": "L1",
-      "id": "copy_files_from_broker_sh",
-      "community": 10,
-      "norm_label": "copy-files-from-broker.sh"
-    },
-    {
-      "label": "echoUsage()",
-      "file_type": "code",
-      "source_file": "copy-files-from-broker.sh",
-      "source_location": "L11",
-      "id": "solace_k8_scripts_copy_files_from_broker_echousage",
-      "community": 10,
-      "norm_label": "echousage()"
-    },
-    {
-      "label": "copy-files-into-broker.sh",
-      "file_type": "code",
-      "source_file": "copy-files-into-broker.sh",
-      "source_location": "L1",
-      "id": "copy_files_into_broker_sh",
-      "community": 11,
-      "norm_label": "copy-files-into-broker.sh"
-    },
-    {
-      "label": "echoUsage()",
-      "file_type": "code",
-      "source_file": "copy-files-into-broker.sh",
-      "source_location": "L11",
-      "id": "solace_k8_scripts_copy_files_into_broker_echousage",
-      "community": 11,
-      "norm_label": "echousage()"
-    },
-    {
-      "label": "delete-registry.sh",
-      "file_type": "code",
-      "source_file": "delete-registry.sh",
-      "source_location": "L1",
-      "id": "delete_registry_sh",
-      "community": 36,
-      "norm_label": "delete-registry.sh"
     },
     {
       "label": "desc-broker.sh",
@@ -612,7 +863,7 @@
         "kind": "file"
       },
       "id": "desc_broker_sh",
-      "community": 37,
+      "community": 22,
       "norm_label": "desc-broker.sh"
     },
     {
@@ -625,26 +876,8 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_desc_broker_sh__entry",
-      "community": 37,
+      "community": 22,
       "norm_label": "desc-broker.sh script"
-    },
-    {
-      "label": "desc-lb.sh",
-      "file_type": "code",
-      "source_file": "desc-lb.sh",
-      "source_location": "L1",
-      "id": "desc_lb_sh",
-      "community": 38,
-      "norm_label": "desc-lb.sh"
-    },
-    {
-      "label": "desc-op.sh",
-      "file_type": "code",
-      "source_file": "desc-op.sh",
-      "source_location": "L1",
-      "id": "desc_op_sh",
-      "community": 39,
-      "norm_label": "desc-op.sh"
     },
     {
       "label": "enter-solace-cli.sh",
@@ -656,7 +889,7 @@
         "kind": "file"
       },
       "id": "enter_solace_cli_sh",
-      "community": 40,
+      "community": 26,
       "norm_label": "enter-solace-cli.sh"
     },
     {
@@ -669,7 +902,7 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_enter_solace_cli_sh__entry",
-      "community": 40,
+      "community": 26,
       "norm_label": "enter-solace-cli.sh script"
     },
     {
@@ -682,7 +915,7 @@
         "kind": "file"
       },
       "id": "enter_solace_shell_sh",
-      "community": 41,
+      "community": 23,
       "norm_label": "enter-solace-shell.sh"
     },
     {
@@ -695,26 +928,8 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_enter_solace_shell_sh__entry",
-      "community": 41,
+      "community": 23,
       "norm_label": "enter-solace-shell.sh script"
-    },
-    {
-      "label": "get-broker-status.sh",
-      "file_type": "code",
-      "source_file": "get-broker-status.sh",
-      "source_location": "L1",
-      "id": "get_broker_status_sh",
-      "community": 42,
-      "norm_label": "get-broker-status.sh"
-    },
-    {
-      "label": "get-op-status.sh",
-      "file_type": "code",
-      "source_file": "get-op-status.sh",
-      "source_location": "L1",
-      "id": "get_op_status_sh",
-      "community": 43,
-      "norm_label": "get-op-status.sh"
     },
     {
       "label": "logs-broker.sh",
@@ -726,7 +941,7 @@
         "kind": "file"
       },
       "id": "logs_broker_sh",
-      "community": 44,
+      "community": 27,
       "norm_label": "logs-broker.sh"
     },
     {
@@ -739,434 +954,76 @@
         "kind": "bash_entrypoint"
       },
       "id": "c_users_hamly_git_solace_k8_scripts_logs_broker_sh__entry",
-      "community": 44,
+      "community": 27,
       "norm_label": "logs-broker.sh script"
-    },
-    {
-      "label": "logs-op.sh",
-      "file_type": "code",
-      "source_file": "logs-op.sh",
-      "source_location": "L1",
-      "id": "logs_op_sh",
-      "community": 45,
-      "norm_label": "logs-op.sh"
     },
     {
       "label": "replicas-start-broker.sh",
       "file_type": "code",
       "source_file": "replicas-start-broker.sh",
       "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
       "id": "replicas_start_broker_sh",
-      "community": 46,
+      "community": 24,
       "norm_label": "replicas-start-broker.sh"
     },
     {
-      "label": "replicas-stop-broker.sh",
+      "label": "replicas-start-broker.sh script",
       "file_type": "code",
-      "source_file": "replicas-stop-broker.sh",
+      "source_file": "replicas-start-broker.sh",
       "source_location": "L1",
-      "id": "replicas_stop_broker_sh",
-      "community": 47,
-      "norm_label": "replicas-stop-broker.sh"
-    },
-    {
-      "label": "run-registry.sh",
-      "file_type": "code",
-      "source_file": "run-registry.sh",
-      "source_location": "L1",
-      "id": "run_registry_sh",
-      "community": 48,
-      "norm_label": "run-registry.sh"
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "id": "c_users_hamly_git_solace_k8_scripts_replicas_start_broker_sh__entry",
+      "community": 24,
+      "norm_label": "replicas-start-broker.sh script"
     },
     {
       "label": "show-all-brokers.sh",
       "file_type": "code",
       "source_file": "show-all-brokers.sh",
       "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
       "id": "show_all_brokers_sh",
-      "community": 14,
+      "community": 11,
       "norm_label": "show-all-brokers.sh"
+    },
+    {
+      "label": "show-all-brokers.sh script",
+      "file_type": "code",
+      "source_file": "show-all-brokers.sh",
+      "source_location": "L1",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "id": "c_users_hamly_git_solace_k8_scripts_show_all_brokers_sh__entry",
+      "community": 11,
+      "norm_label": "show-all-brokers.sh script"
     },
     {
       "label": "stores",
       "file_type": "code",
       "source_file": "show-all-brokers.sh",
-      "source_location": "L17",
+      "source_location": "L19",
+      "metadata": {
+        "language": "bash",
+        "kind": "code"
+      },
       "id": "solace_k8_scripts_show_all_brokers_stores",
-      "community": 14,
+      "community": 11,
       "norm_label": "stores"
     },
     {
-      "label": "watch.sh",
-      "file_type": "code",
-      "source_file": "watch.sh",
-      "source_location": "L1",
-      "id": "watch_sh",
-      "community": 49,
-      "norm_label": "watch.sh"
-    },
-    {
-      "label": "003-local-images.md",
-      "file_type": "document",
-      "source_file": "003-local-images.md",
-      "source_location": "L1",
-      "id": "003_local_images_md",
-      "community": 54,
-      "norm_label": "003-local-images.md"
-    },
-    {
-      "label": "Using local tar images for kubectl setup",
-      "file_type": "document",
-      "source_file": "003-local-images.md",
-      "source_location": "L1",
-      "id": "solace_k8_scripts_003_local_images_using_local_tar_images_for_kubectl_setup",
-      "community": 54,
-      "norm_label": "using local tar images for kubectl setup"
-    },
-    {
-      "label": "Steps",
-      "file_type": "document",
-      "source_file": "003-local-images.md",
-      "source_location": "L10",
-      "id": "solace_k8_scripts_003_local_images_steps",
-      "community": 54,
-      "norm_label": "steps"
-    },
-    {
-      "label": "Minikube Steps",
-      "file_type": "document",
-      "source_file": "003-local-images.md",
-      "source_location": "L17",
-      "id": "solace_k8_scripts_003_local_images_minikube_steps",
-      "community": 54,
-      "norm_label": "minikube steps"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "id": "claude_md",
-      "community": 53,
-      "norm_label": "claude.md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "id": "solace_k8_scripts_claude_claude_md",
-      "community": 53,
-      "norm_label": "claude.md"
-    },
-    {
-      "label": "What this repo is",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "id": "solace_k8_scripts_claude_what_this_repo_is",
-      "community": 53,
-      "norm_label": "what this repo is"
-    },
-    {
-      "label": "Running a script",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "id": "solace_k8_scripts_claude_running_a_script",
-      "community": 53,
-      "norm_label": "running a script"
-    },
-    {
-      "label": "code:bash (./001-check-env.sh --env dev)",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L13",
-      "id": "solace_k8_scripts_claude_codeblock_1",
-      "community": 53,
-      "norm_label": "code:bash (./001-check-env.sh --env dev)"
-    },
-    {
-      "label": "How the scripts compose",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L20",
-      "id": "solace_k8_scripts_claude_how_the_scripts_compose",
-      "community": 53,
-      "norm_label": "how the scripts compose"
-    },
-    {
-      "label": "code:bash (source \"$(dirname \"$0\")/000-env.sh\")",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L24",
-      "id": "solace_k8_scripts_claude_codeblock_2",
-      "community": 53,
-      "norm_label": "code:bash (source \"$(dirname \"$0\")/000-env.sh\")"
-    },
-    {
-      "label": "File-naming convention",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L36",
-      "id": "solace_k8_scripts_claude_file_naming_convention",
-      "community": 53,
-      "norm_label": "file-naming convention"
-    },
-    {
-      "label": "`gen_yaml()` pattern \u2014 large scripts",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L50",
-      "id": "solace_k8_scripts_claude_gen_yaml_pattern_large_scripts",
-      "community": 53,
-      "norm_label": "`gen_yaml()` pattern \u2014 large scripts"
-    },
-    {
-      "label": "CLI scripts directory",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L56",
-      "id": "solace_k8_scripts_claude_cli_scripts_directory",
-      "community": 53,
-      "norm_label": "cli scripts directory"
-    },
-    {
-      "label": "Knowledge graph",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L60",
-      "id": "solace_k8_scripts_claude_knowledge_graph",
-      "community": 53,
-      "norm_label": "knowledge graph"
-    },
-    {
-      "label": "README.md",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L1",
-      "id": "readme_md",
-      "community": 4,
-      "norm_label": "readme.md"
-    },
-    {
-      "label": "Solace Kubernetes Deployment (with Operator) Overview",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L1",
-      "id": "solace_k8_scripts_readme_solace_kubernetes_deployment_with_operator_overview",
-      "community": 4,
-      "norm_label": "solace kubernetes deployment (with operator) overview"
-    },
-    {
-      "label": "File Organization System",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L14",
-      "id": "solace_k8_scripts_readme_file_organization_system",
-      "community": 4,
-      "norm_label": "file organization system"
-    },
-    {
-      "label": "How to use",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L26",
-      "id": "solace_k8_scripts_readme_how_to_use",
-      "community": 4,
-      "norm_label": "how to use"
-    },
-    {
-      "label": "Prepare configuration file(s)",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L28",
-      "id": "solace_k8_scripts_readme_prepare_configuration_file_s",
-      "community": 4,
-      "norm_label": "prepare configuration file(s)"
-    },
-    {
-      "label": "New Deployment",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L33",
-      "id": "solace_k8_scripts_readme_new_deployment",
-      "community": 4,
-      "norm_label": "new deployment"
-    },
-    {
-      "label": "Redeployment / Delete Deployment",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L50",
-      "id": "solace_k8_scripts_readme_redeployment_delete_deployment",
-      "community": 4,
-      "norm_label": "redeployment / delete deployment"
-    },
-    {
-      "label": "Configuration Variables",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L58",
-      "id": "solace_k8_scripts_readme_configuration_variables",
-      "community": 4,
-      "norm_label": "configuration variables"
-    },
-    {
-      "label": "Common / Kubernetes / Environment",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L60",
-      "id": "solace_k8_scripts_readme_common_kubernetes_environment",
-      "community": 4,
-      "norm_label": "common / kubernetes / environment"
-    },
-    {
-      "label": "Operator",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L70",
-      "id": "solace_k8_scripts_readme_operator",
-      "community": 4,
-      "norm_label": "operator"
-    },
-    {
-      "label": "Solace Event broker",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L79",
-      "id": "solace_k8_scripts_readme_solace_event_broker",
-      "community": 4,
-      "norm_label": "solace event broker"
-    },
-    {
-      "label": "Additional Helper Scripts",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L126",
-      "id": "solace_k8_scripts_readme_additional_helper_scripts",
-      "community": 4,
-      "norm_label": "additional helper scripts"
-    },
-    {
-      "label": "Pod-role argument",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L130",
-      "id": "solace_k8_scripts_readme_pod_role_argument",
-      "community": 4,
-      "norm_label": "pod-role argument"
-    },
-    {
-      "label": "code:bash (./desc-broker.sh --env dev backup)",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L140",
-      "id": "solace_k8_scripts_readme_codeblock_1",
-      "community": 4,
-      "norm_label": "code:bash (./desc-broker.sh --env dev backup)"
-    },
-    {
-      "label": "Inspection",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L148",
-      "id": "solace_k8_scripts_readme_inspection",
-      "community": 4,
-      "norm_label": "inspection"
-    },
-    {
-      "label": "Interactive access",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L162",
-      "id": "solace_k8_scripts_readme_interactive_access",
-      "community": 4,
-      "norm_label": "interactive access"
-    },
-    {
-      "label": "Lifecycle",
-      "file_type": "document",
-      "source_file": "README.md",
-      "source_location": "L171",
-      "id": "solace_k8_scripts_readme_lifecycle",
-      "community": 4,
-      "norm_label": "lifecycle"
-    },
-    {
-      "label": "012-create-secrets.sh",
-      "file_type": "code",
-      "source_file": "012-create-secrets.sh",
-      "source_location": "L1",
-      "community": 19,
-      "norm_label": "012-create-secrets.sh",
-      "id": "012_create_secrets_sh"
-    },
-    {
-      "label": "058-setup-data-replication.sh",
-      "file_type": "code",
-      "source_file": "058-setup-data-replication.sh",
-      "source_location": "L1",
-      "community": 7,
-      "norm_label": "058-setup-data-replication.sh",
-      "id": "058_setup_data_replication_sh"
-    },
-    {
-      "label": "gen_yaml()",
-      "file_type": "code",
-      "source_file": "058-setup-data-replication.sh",
-      "source_location": "L36",
-      "community": 7,
-      "norm_label": "gen_yaml()",
-      "id": "solace_k8_scripts_058_setup_data_replication_gen_yaml"
-    },
-    {
-      "label": "05A-generate-data-replication-for-vpn.sh",
-      "file_type": "code",
-      "source_file": "05A-generate-data-replication-for-vpn.sh",
-      "source_location": "L1",
-      "community": 8,
-      "norm_label": "05a-generate-data-replication-for-vpn.sh",
-      "id": "05a_generate_data_replication_for_vpn_sh"
-    },
-    {
-      "label": "gen_yaml()",
-      "file_type": "code",
-      "source_file": "05A-generate-data-replication-for-vpn.sh",
-      "source_location": "L31",
-      "community": 8,
-      "norm_label": "gen_yaml()",
-      "id": "solace_k8_scripts_05a_generate_data_replication_for_vpn_gen_yaml"
-    },
-    {
-      "label": "112-delete-secrets.sh",
-      "file_type": "code",
-      "source_file": "112-delete-secrets.sh",
-      "source_location": "L1",
-      "community": 30,
-      "norm_label": "112-delete-secrets.sh",
-      "id": "112_delete_secrets_sh"
-    },
-    {
-      "label": "d037-assign-ip.sh",
-      "file_type": "code",
-      "source_file": "d037-assign-ip.sh",
-      "source_location": "L1",
-      "community": 34,
-      "norm_label": "d037-assign-ip.sh",
-      "id": "d037_assign_ip_sh"
-    },
-    {
-      "label": "d137-delete-ip.sh",
-      "file_type": "code",
-      "source_file": "d137-delete-ip.sh",
-      "source_location": "L1",
-      "community": 35,
-      "norm_label": "d137-delete-ip.sh",
-      "id": "d137_delete_ip_sh"
-    },
-    {
-      "label": "Environment Loader (000-env.sh)",
+      "label": "000-env.sh bootstrap script",
       "file_type": "code",
       "source_file": "000-env.sh",
       "source_location": null,
@@ -1174,25 +1031,90 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "environment loader (000-env.sh)",
-      "id": "s000_env"
-    },
-    {
-      "label": "000-env.sh (env file)",
-      "file_type": "code",
-      "source_file": "000-env.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
+      "id": "000env_bootstrap",
       "community": 1,
-      "norm_label": "000-env.sh (env file)",
-      "id": "e_000_env"
+      "norm_label": "000-env.sh bootstrap script"
     },
     {
-      "label": "Verify StorageClass Settings",
+      "label": "pick_pod() helper",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": "lines 6-17",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "000env_pick_pod",
+      "community": 1,
+      "norm_label": "pick_pod() helper"
+    },
+    {
+      "label": "env/<name> file loader",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": "lines 19-36",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "000env_env_file_loader",
+      "community": 1,
+      "norm_label": "env/<name> file loader"
+    },
+    {
+      "label": "Default values block (KUBE, SOLOP_IMAGE, SOLBK_REDUNDANCY defaults)",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": "lines 42-103",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "000env_defaults_block",
+      "community": 1,
+      "norm_label": "default values block (kube, solop_image, solbk_redundancy defaults)"
+    },
+    {
+      "label": "SOLOP_DERIVED_NS auto-detection via kubectl",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": "lines 52-62",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "000env_solop_ns_derivation",
+      "community": 1,
+      "norm_label": "solop_derived_ns auto-detection via kubectl"
+    },
+    {
+      "label": "Mandatory variable validation (SOLBK_NAME, SOLBK_NS, SOLBK_IMAGE, SOLBK_IMG_TAG, SOLBK_STORAGE_MSGNODE)",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": "lines 105-117",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "000env_mandatory_check",
+      "community": 1,
+      "norm_label": "mandatory variable validation (solbk_name, solbk_ns, solbk_image, solbk_img_tag, solbk_storage_msgnode)"
+    },
+    {
+      "label": "001-check-env.sh - environment variable summary",
+      "file_type": "code",
+      "source_file": "001-check-env.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "001check_env",
+      "community": 1,
+      "norm_label": "001-check-env.sh - environment variable summary"
+    },
+    {
+      "label": "009-check-storage-class.sh - StorageClass validation",
       "file_type": "code",
       "source_file": "009-check-storage-class.sh",
       "source_location": null,
@@ -1200,12 +1122,12 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "verify storageclass settings",
-      "id": "s009_check_storage_class"
+      "id": "009check_storage_class",
+      "community": 1,
+      "norm_label": "009-check-storage-class.sh - storageclass validation"
     },
     {
-      "label": "Deploy Solace Operator (bundled YAML)",
+      "label": "010-deploy-operator.sh - deploys Solace operator",
       "file_type": "code",
       "source_file": "010-deploy-operator.sh",
       "source_location": null,
@@ -1213,220 +1135,25 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "deploy solace operator (bundled yaml)",
-      "id": "s010_deploy_operator"
+      "id": "010deploy_operator",
+      "community": 1,
+      "norm_label": "010-deploy-operator.sh - deploys solace operator"
     },
     {
-      "label": "Create Broker Namespace",
+      "label": "gen_yaml() in 010-deploy-operator.sh (operator manifest bundle)",
       "file_type": "code",
-      "source_file": "011-create-namespace.sh",
-      "source_location": null,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "line 14",
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "create broker namespace",
-      "id": "s011_create_namespace"
+      "id": "010deploy_gen_yaml",
+      "community": 3,
+      "norm_label": "gen_yaml() in 010-deploy-operator.sh (operator manifest bundle)"
     },
     {
-      "label": "Create Broker Secrets",
-      "file_type": "code",
-      "source_file": "012-create-secrets.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "create broker secrets",
-      "id": "s012_create_secrets"
-    },
-    {
-      "label": "Label Cluster Nodes for Broker Pods",
-      "file_type": "code",
-      "source_file": "013-label-nodes.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "label cluster nodes for broker pods",
-      "id": "s013_label_nodes"
-    },
-    {
-      "label": "Generate and Apply PubSubPlusEventBroker CR",
-      "file_type": "code",
-      "source_file": "020-deploy-broker.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 2,
-      "norm_label": "generate and apply pubsubpluseventbroker cr",
-      "id": "s020_deploy_broker"
-    },
-    {
-      "label": "Assert HA Config-Sync Leader",
-      "file_type": "code",
-      "source_file": "050-assert-leader.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "assert ha config-sync leader",
-      "id": "s050_assert_leader"
-    },
-    {
-      "label": "Load TLS Server Certificate",
-      "file_type": "code",
-      "source_file": "051-load-server-cert.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "load tls server certificate",
-      "id": "s051_load_server_cert"
-    },
-    {
-      "label": "Load Domain Certificate Authorities",
-      "file_type": "code",
-      "source_file": "052-load-domain-certs.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "load domain certificate authorities",
-      "id": "s052_load_domain_certs"
-    },
-    {
-      "label": "Disable Default Message VPN Services",
-      "file_type": "code",
-      "source_file": "053-disable-default-vpn.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "disable default message vpn services",
-      "id": "s053_disable_default_vpn"
-    },
-    {
-      "label": "Disable All Default Client-Usernames",
-      "file_type": "code",
-      "source_file": "054-disable-all-default-usernames.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "disable all default client-usernames",
-      "id": "s054_disable_all_default_usernames"
-    },
-    {
-      "label": "Apply Solace Product Keys",
-      "file_type": "code",
-      "source_file": "057-configure-product-keys.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "apply solace product keys",
-      "id": "s057_configure_product_keys"
-    },
-    {
-      "label": "Configure Broker-level Data Replication",
-      "file_type": "code",
-      "source_file": "058-setup-data-replication.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "configure broker-level data replication",
-      "id": "s058_setup_data_replication"
-    },
-    {
-      "label": "Generic CLI Script Executor",
-      "file_type": "code",
-      "source_file": "059-execute-cli.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "generic cli script executor",
-      "id": "s059_execute_cli"
-    },
-    {
-      "label": "Configure VPN-level Data Replication",
-      "file_type": "code",
-      "source_file": "05A-generate-data-replication-for-vpn.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "configure vpn-level data replication",
-      "id": "s05A_generate_data_replication_for_vpn"
-    },
-    {
-      "label": "Test SEMP API Login",
-      "file_type": "code",
-      "source_file": "060-test-semp-login.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "test semp api login",
-      "id": "s060_test_semp_login"
-    },
-    {
-      "label": "Test HA Redundancy Failover",
-      "file_type": "code",
-      "source_file": "061-test-redundancy.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "test ha redundancy failover",
-      "id": "s061_test_redundancy"
-    },
-    {
-      "label": "Gather Configs and Diagnostics",
-      "file_type": "code",
-      "source_file": "069-gather-configs.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "gather configs and diagnostics",
-      "id": "s069_gather_configs"
-    },
-    {
-      "label": "Delete Solace Operator (bundled YAML)",
+      "label": "110-delete-operator.sh - deletes Solace operator",
       "file_type": "code",
       "source_file": "110-delete-operator.sh",
       "source_location": null,
@@ -1434,38 +1161,259 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "delete solace operator (bundled yaml)",
-      "id": "s110_delete_operator"
+      "id": "110delete_operator",
+      "community": 1,
+      "norm_label": "110-delete-operator.sh - deletes solace operator"
     },
     {
-      "label": "Delete Broker Namespace",
+      "label": "gen_yaml() in 110-delete-operator.sh (mirror of 010)",
       "file_type": "code",
-      "source_file": "111-delete-namespace.sh",
+      "source_file": "110-delete-operator.sh",
+      "source_location": "line 14",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "110delete_gen_yaml",
+      "community": 3,
+      "norm_label": "gen_yaml() in 110-delete-operator.sh (mirror of 010)"
+    },
+    {
+      "label": "020-deploy-broker.sh - deploys PubSubPlusEventBroker CR",
+      "file_type": "code",
+      "source_file": "020-deploy-broker.sh",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "delete broker namespace",
-      "id": "s111_delete_namespace"
+      "id": "020deploy_broker",
+      "community": 1,
+      "norm_label": "020-deploy-broker.sh - deploys pubsubpluseventbroker cr"
     },
     {
-      "label": "Delete Broker Secrets",
+      "label": "gen_yaml() in 020-deploy-broker.sh (broker CR YAML)",
       "file_type": "code",
-      "source_file": "112-delete-secrets.sh",
+      "source_file": "020-deploy-broker.sh",
+      "source_location": "lines 19-234",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "020deploy_gen_yaml",
+      "community": 3,
+      "norm_label": "gen_yaml() in 020-deploy-broker.sh (broker cr yaml)"
+    },
+    {
+      "label": "050-assert-leader.sh - asserts config-sync leader on HA broker",
+      "file_type": "code",
+      "source_file": "050-assert-leader.sh",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "delete broker secrets",
-      "id": "s112_delete_secrets"
+      "id": "050assert_leader",
+      "community": 1,
+      "norm_label": "050-assert-leader.sh - asserts config-sync leader on ha broker"
     },
     {
-      "label": "Delete PubSubPlusEventBroker CR and PVCs",
+      "label": "051-load-server-cert.sh - loads TLS server certificate into broker",
+      "file_type": "code",
+      "source_file": "051-load-server-cert.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "051load_server_cert",
+      "community": 1,
+      "norm_label": "051-load-server-cert.sh - loads tls server certificate into broker"
+    },
+    {
+      "label": "053-disable-default-vpn.sh - disables built-in 'default' VPN",
+      "file_type": "code",
+      "source_file": "053-disable-default-vpn.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "053disable_default_vpn",
+      "community": 1,
+      "norm_label": "053-disable-default-vpn.sh - disables built-in 'default' vpn"
+    },
+    {
+      "label": "054-disable-all-default-usernames.sh - disables 'default' client-username in every VPN",
+      "file_type": "code",
+      "source_file": "054-disable-all-default-usernames.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "054disable_all_default_usernames",
+      "community": 1,
+      "norm_label": "054-disable-all-default-usernames.sh - disables 'default' client-username in every vpn"
+    },
+    {
+      "label": "059-execute-cli.sh - executes a CLI script inside a broker pod",
+      "file_type": "code",
+      "source_file": "059-execute-cli.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "059execute_cli",
+      "community": 1,
+      "norm_label": "059-execute-cli.sh - executes a cli script inside a broker pod"
+    },
+    {
+      "label": "060-test-semp-login.sh - tests SEMP login via curl in broker pod",
+      "file_type": "code",
+      "source_file": "060-test-semp-login.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "060test_semp_login",
+      "community": 1,
+      "norm_label": "060-test-semp-login.sh - tests semp login via curl in broker pod"
+    },
+    {
+      "label": "Solace operator manifest bundle (CRD + RBAC + Deployment)",
+      "file_type": "rationale",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_solace_operator_manifest_bundle",
+      "community": 3,
+      "norm_label": "solace operator manifest bundle (crd + rbac + deployment)"
+    },
+    {
+      "label": "PubSubPlusEventBroker CRD (pubsubplus.solace.com/v1beta1)",
+      "file_type": "rationale",
+      "source_file": "020-deploy-broker.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_pubsubplus_event_broker_cr",
+      "community": 3,
+      "norm_label": "pubsubpluseventbroker crd (pubsubplus.solace.com/v1beta1)"
+    },
+    {
+      "label": "kubectl apply (deploy verb)",
+      "file_type": "rationale",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_kubectl_apply",
+      "community": 1,
+      "norm_label": "kubectl apply (deploy verb)"
+    },
+    {
+      "label": "kubectl delete (teardown verb)",
+      "file_type": "rationale",
+      "source_file": "110-delete-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_kubectl_delete",
+      "community": 1,
+      "norm_label": "kubectl delete (teardown verb)"
+    },
+    {
+      "label": "kubectl exec + cli -Apes pattern (run Solace CLI in pod)",
+      "file_type": "rationale",
+      "source_file": "050-assert-leader.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_kubectl_exec_cli",
+      "community": 1,
+      "norm_label": "kubectl exec + cli -apes pattern (run solace cli in pod)"
+    },
+    {
+      "label": "kubectl cp (stage file into broker pod)",
+      "file_type": "rationale",
+      "source_file": "050-assert-leader.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_kubectl_cp",
+      "community": 1,
+      "norm_label": "kubectl cp (stage file into broker pod)"
+    },
+    {
+      "label": "gen_yaml() heredoc-to-kubectl pattern",
+      "file_type": "rationale",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_gen_yaml_pattern",
+      "community": 3,
+      "norm_label": "gen_yaml() heredoc-to-kubectl pattern"
+    },
+    {
+      "label": "Pod naming convention: {SOLBK_NAME}-pubsubplus-{p|b|m}-0",
+      "file_type": "rationale",
+      "source_file": "000-env.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_pod_name_convention",
+      "community": 1,
+      "norm_label": "pod naming convention: {solbk_name}-pubsubplus-{p|b|m}-0"
+    },
+    {
+      "label": "061-test-redundancy.sh",
+      "file_type": "code",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "061-test-redundancy_script",
+      "community": 0,
+      "norm_label": "061-test-redundancy.sh"
+    },
+    {
+      "label": "069-gather-configs.sh",
+      "file_type": "code",
+      "source_file": "069-gather-configs.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "069-gather-configs_script",
+      "community": 0,
+      "norm_label": "069-gather-configs.sh"
+    },
+    {
+      "label": "120-delete-broker.sh",
       "file_type": "code",
       "source_file": "120-delete-broker.sh",
       "source_location": null,
@@ -1473,100 +1421,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "120-delete-broker_script",
       "community": 0,
-      "norm_label": "delete pubsubpluseventbroker cr and pvcs",
-      "id": "s120_delete_broker"
-    },
-    {
-      "label": "150-remove-domain-certs.sh",
-      "file_type": "code",
-      "source_file": "150-remove-domain-certs.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "150-remove-domain-certs.sh",
-      "id": "s_150_remove_domain_certs"
-    },
-    {
-      "label": "add-insecure-repo.sh",
-      "file_type": "code",
-      "source_file": "add-insecure-repo.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 50,
-      "norm_label": "add-insecure-repo.sh",
-      "id": "s_add_insecure_repo"
-    },
-    {
-      "label": "copy-files-from-broker.sh",
-      "file_type": "code",
-      "source_file": "copy-files-from-broker.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "copy-files-from-broker.sh",
-      "id": "s_copy_files_from_broker"
-    },
-    {
-      "label": "copy-files-into-broker.sh",
-      "file_type": "code",
-      "source_file": "copy-files-into-broker.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "copy-files-into-broker.sh",
-      "id": "s_copy_files_into_broker"
-    },
-    {
-      "label": "d037-assign-ip.sh",
-      "file_type": "code",
-      "source_file": "d037-assign-ip.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "d037-assign-ip.sh",
-      "id": "s_d037_assign_ip"
-    },
-    {
-      "label": "d137-delete-ip.sh",
-      "file_type": "code",
-      "source_file": "d137-delete-ip.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "d137-delete-ip.sh",
-      "id": "s_d137_delete_ip"
-    },
-    {
-      "label": "delete-registry.sh",
-      "file_type": "code",
-      "source_file": "delete-registry.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 51,
-      "norm_label": "delete-registry.sh",
-      "id": "s_delete_registry"
+      "norm_label": "120-delete-broker.sh"
     },
     {
       "label": "desc-broker.sh",
@@ -1577,35 +1434,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "desc-broker.sh",
-      "id": "s_desc_broker"
-    },
-    {
-      "label": "desc-lb.sh",
-      "file_type": "code",
-      "source_file": "desc-lb.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "desc-lb.sh",
-      "id": "s_desc_lb"
-    },
-    {
-      "label": "desc-op.sh",
-      "file_type": "code",
-      "source_file": "desc-op.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "desc-op.sh",
-      "id": "s_desc_op"
+      "id": "desc-broker_script",
+      "community": 2,
+      "norm_label": "desc-broker.sh"
     },
     {
       "label": "enter-solace-cli.sh",
@@ -1616,9 +1447,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "enter-solace-cli.sh",
-      "id": "s_enter_solace_cli"
+      "id": "enter-solace-cli_script",
+      "community": 2,
+      "norm_label": "enter-solace-cli.sh"
     },
     {
       "label": "enter-solace-shell.sh",
@@ -1629,35 +1460,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "enter-solace-shell.sh",
-      "id": "s_enter_solace_shell"
-    },
-    {
-      "label": "get-broker-status.sh",
-      "file_type": "code",
-      "source_file": "get-broker-status.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "get-broker-status.sh",
-      "id": "s_get_broker_status"
-    },
-    {
-      "label": "get-op-status.sh",
-      "file_type": "code",
-      "source_file": "get-op-status.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "get-op-status.sh",
-      "id": "s_get_op_status"
+      "id": "enter-solace-shell_script",
+      "community": 2,
+      "norm_label": "enter-solace-shell.sh"
     },
     {
       "label": "logs-broker.sh",
@@ -1668,22 +1473,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "logs-broker.sh",
-      "id": "s_logs_broker"
-    },
-    {
-      "label": "logs-op.sh",
-      "file_type": "code",
-      "source_file": "logs-op.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "logs-op.sh",
-      "id": "s_logs_op"
+      "id": "logs-broker_script",
+      "community": 2,
+      "norm_label": "logs-broker.sh"
     },
     {
       "label": "replicas-start-broker.sh",
@@ -1694,35 +1486,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "replicas-start-broker.sh",
-      "id": "s_replicas_start_broker"
-    },
-    {
-      "label": "replicas-stop-broker.sh",
-      "file_type": "code",
-      "source_file": "replicas-stop-broker.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 1,
-      "norm_label": "replicas-stop-broker.sh",
-      "id": "s_replicas_stop_broker"
-    },
-    {
-      "label": "run-registry.sh",
-      "file_type": "code",
-      "source_file": "run-registry.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 52,
-      "norm_label": "run-registry.sh",
-      "id": "s_run_registry"
+      "id": "replicas-start-broker_script",
+      "community": 0,
+      "norm_label": "replicas-start-broker.sh"
     },
     {
       "label": "show-all-brokers.sh",
@@ -1733,48 +1499,100 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "show-all-brokers.sh",
-      "id": "s_show_all_brokers"
+      "id": "show-all-brokers_script",
+      "community": 2,
+      "norm_label": "show-all-brokers.sh"
     },
     {
-      "label": "watch.sh",
+      "label": "000-env.sh",
       "file_type": "code",
-      "source_file": "watch.sh",
+      "source_file": "000-env.sh",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
-      "norm_label": "watch.sh",
-      "id": "s_watch"
+      "id": "000-env_script",
+      "community": 2,
+      "norm_label": "000-env.sh"
     },
     {
-      "label": "Using Local Tar Images for kubectl/containerd",
-      "file_type": "document",
-      "source_file": "003-local-images.md",
-      "source_location": "whole file",
+      "label": "pick_pod() helper",
+      "file_type": "code",
+      "source_file": "000-env.sh",
+      "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
-      "norm_label": "using local tar images for kubectl/containerd",
-      "id": "doc_local_images"
+      "id": "000-env_pick_pod",
+      "community": 2,
+      "norm_label": "pick_pod() helper"
     },
     {
-      "label": "Local Image Mirror (ctr/crictl import)",
-      "file_type": "rationale",
-      "source_file": "003-local-images.md",
-      "source_location": "Steps section",
+      "label": "020-deploy-broker.sh",
+      "file_type": "code",
+      "source_file": "020-deploy-broker.sh",
+      "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
-      "norm_label": "local image mirror (ctr/crictl import)",
-      "id": "concept_local_image_mirror"
+      "id": "020-deploy-broker_script",
+      "community": 0,
+      "norm_label": "020-deploy-broker.sh"
+    },
+    {
+      "label": "010-deploy-operator.sh",
+      "file_type": "code",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "010-deploy-operator_script",
+      "community": 2,
+      "norm_label": "010-deploy-operator.sh"
+    },
+    {
+      "label": "110-delete-operator.sh",
+      "file_type": "code",
+      "source_file": "110-delete-operator.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "110-delete-operator_script",
+      "community": 2,
+      "norm_label": "110-delete-operator.sh"
+    },
+    {
+      "label": "111-delete-namespace.sh",
+      "file_type": "code",
+      "source_file": "111-delete-namespace.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "111-delete-namespace_script",
+      "community": 0,
+      "norm_label": "111-delete-namespace.sh"
+    },
+    {
+      "label": "112-delete-secrets.sh",
+      "file_type": "code",
+      "source_file": "112-delete-secrets.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "112-delete-secrets_script",
+      "community": 0,
+      "norm_label": "112-delete-secrets.sh"
     },
     {
       "label": "001-check-env.sh",
@@ -1785,9 +1603,256 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "001-check-env_script",
       "community": 0,
-      "norm_label": "001-check-env.sh",
-      "id": "s001_check_env"
+      "norm_label": "001-check-env.sh"
+    },
+    {
+      "label": "009-check-storage-class.sh",
+      "file_type": "code",
+      "source_file": "009-check-storage-class.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "009-check-storage-class_script",
+      "community": 0,
+      "norm_label": "009-check-storage-class.sh"
+    },
+    {
+      "label": "011-create-namespace.sh",
+      "file_type": "code",
+      "source_file": "011-create-namespace.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "011-create-namespace_script",
+      "community": 0,
+      "norm_label": "011-create-namespace.sh"
+    },
+    {
+      "label": "012-create-secrets.sh",
+      "file_type": "code",
+      "source_file": "012-create-secrets.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "012-create-secrets_script",
+      "community": 0,
+      "norm_label": "012-create-secrets.sh"
+    },
+    {
+      "label": "050-assert-leader.sh",
+      "file_type": "code",
+      "source_file": "050-assert-leader.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "050-assert-leader_script",
+      "community": 0,
+      "norm_label": "050-assert-leader.sh"
+    },
+    {
+      "label": "051-load-server-cert.sh",
+      "file_type": "code",
+      "source_file": "051-load-server-cert.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "051-load-server-cert_script",
+      "community": 0,
+      "norm_label": "051-load-server-cert.sh"
+    },
+    {
+      "label": "052-load-domain-certs.sh",
+      "file_type": "code",
+      "source_file": "052-load-domain-certs.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "052-load-domain-certs_script",
+      "community": 0,
+      "norm_label": "052-load-domain-certs.sh"
+    },
+    {
+      "label": "059-execute-cli.sh",
+      "file_type": "code",
+      "source_file": "059-execute-cli.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "059-execute-cli_script",
+      "community": 2,
+      "norm_label": "059-execute-cli.sh"
+    },
+    {
+      "label": "060-test-semp-login.sh",
+      "file_type": "code",
+      "source_file": "060-test-semp-login.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "060-test-semp-login_script",
+      "community": 0,
+      "norm_label": "060-test-semp-login.sh"
+    },
+    {
+      "label": "replicas-stop-broker.sh",
+      "file_type": "code",
+      "source_file": "replicas-stop-broker.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "replicas-stop-broker_script",
+      "community": 0,
+      "norm_label": "replicas-stop-broker.sh"
+    },
+    {
+      "label": "desc-op.sh",
+      "file_type": "code",
+      "source_file": "desc-op.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "desc-op_script",
+      "community": 2,
+      "norm_label": "desc-op.sh"
+    },
+    {
+      "label": "desc-lb.sh",
+      "file_type": "code",
+      "source_file": "desc-lb.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "desc-lb_script",
+      "community": 2,
+      "norm_label": "desc-lb.sh"
+    },
+    {
+      "label": "get-broker-status.sh",
+      "file_type": "code",
+      "source_file": "get-broker-status.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "get-broker-status_script",
+      "community": 2,
+      "norm_label": "get-broker-status.sh"
+    },
+    {
+      "label": "get-op-status.sh",
+      "file_type": "code",
+      "source_file": "get-op-status.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "get-op-status_script",
+      "community": 43,
+      "norm_label": "get-op-status.sh"
+    },
+    {
+      "label": "logs-op.sh",
+      "file_type": "code",
+      "source_file": "logs-op.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "logs-op_script",
+      "community": 2,
+      "norm_label": "logs-op.sh"
+    },
+    {
+      "label": "watch.sh",
+      "file_type": "code",
+      "source_file": "watch.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "watch_script",
+      "community": 44,
+      "norm_label": "watch.sh"
+    },
+    {
+      "label": "copy-files-from-broker.sh",
+      "file_type": "code",
+      "source_file": "copy-files-from-broker.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "copy-files-from-broker_script",
+      "community": 45,
+      "norm_label": "copy-files-from-broker.sh"
+    },
+    {
+      "label": "copy-files-into-broker.sh",
+      "file_type": "code",
+      "source_file": "copy-files-into-broker.sh",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "copy-files-into-broker_script",
+      "community": 46,
+      "norm_label": "copy-files-into-broker.sh"
+    },
+    {
+      "label": "solace-yaml-generator.html",
+      "file_type": "code",
+      "source_file": "solace-yaml-generator.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "solace-yaml-generator_html",
+      "community": 2,
+      "norm_label": "solace-yaml-generator.html"
+    },
+    {
+      "label": "env/sample template",
+      "file_type": "code",
+      "source_file": "env/sample",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "env_sample_file",
+      "community": 2,
+      "norm_label": "env/sample template"
     },
     {
       "label": "CLAUDE.md",
@@ -1798,9 +1863,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "claude.md",
-      "id": "doc_claude_md"
+      "id": "CLAUDE_doc",
+      "community": 2,
+      "norm_label": "claude.md"
     },
     {
       "label": "README.md",
@@ -1811,25 +1876,38 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "README_doc",
       "community": 0,
-      "norm_label": "readme.md",
-      "id": "doc_readme"
+      "norm_label": "readme.md"
     },
     {
-      "label": "solace-yaml-generator.html",
-      "file_type": "document",
-      "source_file": "solace-yaml-generator.html",
+      "label": "PubSubPlusEventBroker CRD",
+      "file_type": "rationale",
+      "source_file": "CLAUDE.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "concept_PubSubPlusEventBroker_CRD",
+      "community": 0,
+      "norm_label": "pubsubpluseventbroker crd"
+    },
+    {
+      "label": "Solace EventBroker Operator",
+      "file_type": "rationale",
+      "source_file": "CLAUDE.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_Solace_Operator",
       "community": 2,
-      "norm_label": "solace-yaml-generator.html",
-      "id": "tool_yaml_generator"
+      "norm_label": "solace eventbroker operator"
     },
     {
-      "label": "Env File Pattern (--env arg sources env/<name>)",
+      "label": "Env-file pattern (--env <name>)",
       "file_type": "rationale",
       "source_file": "CLAUDE.md",
       "source_location": null,
@@ -1837,51 +1915,12 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
-      "norm_label": "env file pattern (--env arg sources env/<name>)",
-      "id": "concept_env_file_pattern"
-    },
-    {
-      "label": "Numbered Script Convention (Category/Action/Sequence)",
-      "file_type": "rationale",
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "numbered script convention (category/action/sequence)",
-      "id": "concept_numbered_script_convention"
-    },
-    {
-      "label": "Mandatory Env Vars (SOLBK_NAME/NS/IMAGE/IMG_TAG/STORAGE_MSGNODE)",
-      "file_type": "rationale",
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 0,
-      "norm_label": "mandatory env vars (solbk_name/ns/image/img_tag/storage_msgnode)",
-      "id": "concept_mandatory_env_vars"
-    },
-    {
-      "label": "gen_yaml() Heredoc Pattern",
-      "file_type": "rationale",
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
+      "id": "concept_env_file_pattern",
       "community": 2,
-      "norm_label": "gen_yaml() heredoc pattern",
-      "id": "concept_gen_yaml_pattern"
+      "norm_label": "env-file pattern (--env <name>)"
     },
     {
-      "label": "PubSubPlusEventBroker CR Schema",
+      "label": "pick_pod helper concept",
       "file_type": "rationale",
       "source_file": "CLAUDE.md",
       "source_location": null,
@@ -1889,38 +1928,25 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "concept_pick_pod_helper",
       "community": 2,
-      "norm_label": "pubsubpluseventbroker cr schema",
-      "id": "concept_pubsubplus_cr_schema"
+      "norm_label": "pick_pod helper concept"
     },
     {
-      "label": "Solace YAML Generator (interactive)",
+      "label": "File-naming convention (Category/Action/Sequence)",
       "file_type": "rationale",
-      "source_file": "solace-yaml-generator.html",
+      "source_file": "CLAUDE.md",
       "source_location": null,
       "source_url": null,
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 2,
-      "norm_label": "solace yaml generator (interactive)",
-      "id": "concept_solace_yaml_generator"
-    },
-    {
-      "label": "Env Var Validation (OK/INFO/ERROR pre-checks)",
-      "file_type": "rationale",
-      "source_file": "001-check-env.sh",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
+      "id": "concept_file_naming_convention",
       "community": 0,
-      "norm_label": "env var validation (ok/info/error pre-checks)",
-      "id": "concept_env_validation"
+      "norm_label": "file-naming convention (category/action/sequence)"
     },
     {
-      "label": "Canonical Deploy Sequence",
+      "label": "Canonical New-Deployment run order",
       "file_type": "rationale",
       "source_file": "README.md",
       "source_location": null,
@@ -1928,73 +1954,103 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+      "id": "concept_run_order",
       "community": 0,
-      "norm_label": "canonical deploy sequence",
-      "id": "concept_deploy_sequence"
+      "norm_label": "canonical new-deployment run order"
+    },
+    {
+      "label": "Canonical Delete run order",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_delete_order",
+      "community": 0,
+      "norm_label": "canonical delete run order"
+    },
+    {
+      "label": "Pod-role argument (p/b/m)",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "concept_pod_role_argument",
+      "community": 0,
+      "norm_label": "pod-role argument (p/b/m)"
+    },
+    {
+      "label": "SOLBK_NAME",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "envvar_SOLBK_NAME",
+      "community": 0,
+      "norm_label": "solbk_name"
+    },
+    {
+      "label": "SOLBK_NS",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "envvar_SOLBK_NS",
+      "community": 0,
+      "norm_label": "solbk_ns"
+    },
+    {
+      "label": "SOLBK_REDUNDANCY",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "envvar_SOLBK_REDUNDANCY",
+      "community": 0,
+      "norm_label": "solbk_redundancy"
+    },
+    {
+      "label": "SOLBK_DIAG_DIR",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "envvar_SOLBK_DIAG_DIR",
+      "community": 0,
+      "norm_label": "solbk_diag_dir"
+    },
+    {
+      "label": "KUBE",
+      "file_type": "rationale",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "envvar_KUBE",
+      "community": 0,
+      "norm_label": "kube"
     }
   ],
   "links": [
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "000-env.sh",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "000_env_sh",
-      "target": "c_users_hamly_git_solace_k8_scripts_000_env_sh__entry",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "000-env.sh",
-      "source_location": "L6",
-      "weight": 1.0,
-      "source": "000_env_sh",
-      "target": "solace_k8_scripts_000_env_pick_pod",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "009-check-storage-class.sh",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "009_check_storage_class_sh",
-      "target": "c_users_hamly_git_solace_k8_scripts_009_check_storage_class_sh__entry",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "010-deploy-operator.sh",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "010_deploy_operator_sh",
-      "target": "c_users_hamly_git_solace_k8_scripts_010_deploy_operator_sh__entry",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "010-deploy-operator.sh",
-      "source_location": "L14",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "010_deploy_operator_sh",
-      "target": "solace_k8_scripts_010_deploy_operator_gen_yaml"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "010-deploy-operator.sh",
-      "source_location": "L2049",
-      "weight": 1.0,
-      "context": "call",
-      "source": "c_users_hamly_git_solace_k8_scripts_010_deploy_operator_sh__entry",
-      "target": "solace_k8_scripts_010_deploy_operator_gen_yaml",
-      "confidence_score": 1.0
-    },
     {
       "relation": "defines",
       "confidence": "EXTRACTED",
@@ -2033,8 +2089,139 @@
       "weight": 1.0,
       "context": "call",
       "confidence_score": 1.0,
-      "source": "solace_k8_scripts_013_label_nodes_extract_custom_labels",
-      "target": "solace_k8_scripts_013_label_nodes_is_builtin_label"
+      "source": "solace_k8_scripts_013_label_nodes_is_builtin_label",
+      "target": "solace_k8_scripts_013_label_nodes_extract_custom_labels"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "003-local-images.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "003_local_images_md",
+      "target": "solace_k8_scripts_003_local_images_using_local_tar_images_for_kubectl_setup"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "003-local-images.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "003_local_images_md",
+      "target": "solace_k8_scripts_003_local_images_steps"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "003-local-images.md",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "003_local_images_md",
+      "target": "solace_k8_scripts_003_local_images_minikube_steps"
+    },
+    {
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "source_file": "058-setup-data-replication.sh",
+      "source_location": "L36",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "058_setup_data_replication_sh",
+      "target": "solace_k8_scripts_058_setup_data_replication_gen_yaml"
+    },
+    {
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "source_file": "05A-generate-data-replication-for-vpn.sh",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "05a_generate_data_replication_for_vpn_sh",
+      "target": "solace_k8_scripts_05a_generate_data_replication_for_vpn_gen_yaml"
+    },
+    {
+      "relation": "explains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "003-local-images.md",
+      "source_location": "Steps section",
+      "weight": 1.0,
+      "source": "doc_local_images",
+      "target": "concept_local_image_mirror"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "000-env.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "000_env_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_000_env_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "source_file": "000-env.sh",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "000_env_sh",
+      "target": "solace_k8_scripts_000_env_pick_pod",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "001-check-env.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "001_check_env_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_001_check_env_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "009-check-storage-class.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "009_check_storage_class_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_009_check_storage_class_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "010_deploy_operator_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_010_deploy_operator_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "010_deploy_operator_sh",
+      "target": "solace_k8_scripts_010_deploy_operator_gen_yaml",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "L2049",
+      "weight": 1.0,
+      "context": "call",
+      "source": "c_users_hamly_git_solace_k8_scripts_010_deploy_operator_sh__entry",
+      "target": "solace_k8_scripts_010_deploy_operator_gen_yaml",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -2052,9 +2239,9 @@
       "source_file": "020-deploy-broker.sh",
       "source_location": "L19",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "020_deploy_broker_sh",
-      "target": "solace_k8_scripts_020_deploy_broker_gen_yaml"
+      "target": "solace_k8_scripts_020_deploy_broker_gen_yaml",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -2130,6 +2317,16 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "061_test_redundancy_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_061_test_redundancy_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "069-gather-configs.sh",
       "source_location": "L1",
       "weight": 1.0,
@@ -2143,9 +2340,9 @@
       "source_file": "069-gather-configs.sh",
       "source_location": "L11",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "069_gather_configs_sh",
-      "target": "solace_k8_scripts_069_gather_configs_echousage"
+      "target": "solace_k8_scripts_069_gather_configs_echousage",
+      "confidence_score": 1.0
     },
     {
       "relation": "defines",
@@ -2153,9 +2350,9 @@
       "source_file": "069-gather-configs.sh",
       "source_location": "L184",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "069_gather_configs_sh",
-      "target": "solace_k8_scripts_069_gather_configs_nodes"
+      "target": "solace_k8_scripts_069_gather_configs_nodes",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -2184,9 +2381,9 @@
       "source_file": "110-delete-operator.sh",
       "source_location": "L14",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "110_delete_operator_sh",
-      "target": "solace_k8_scripts_110_delete_operator_gen_yaml"
+      "target": "solace_k8_scripts_110_delete_operator_gen_yaml",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -2208,26 +2405,6 @@
       "source": "120_delete_broker_sh",
       "target": "c_users_hamly_git_solace_k8_scripts_120_delete_broker_sh__entry",
       "confidence_score": 1.0
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "copy-files-from-broker.sh",
-      "source_location": "L11",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "copy_files_from_broker_sh",
-      "target": "solace_k8_scripts_copy_files_from_broker_echousage"
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "copy-files-into-broker.sh",
-      "source_location": "L11",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "copy_files_into_broker_sh",
-      "target": "solace_k8_scripts_copy_files_into_broker_echousage"
     },
     {
       "relation": "contains",
@@ -2270,854 +2447,734 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "replicas-start-broker.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "replicas_start_broker_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_replicas_start_broker_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "show-all-brokers.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "show_all_brokers_sh",
+      "target": "c_users_hamly_git_solace_k8_scripts_show_all_brokers_sh__entry",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "defines",
       "confidence": "EXTRACTED",
       "source_file": "show-all-brokers.sh",
-      "source_location": "L17",
+      "source_location": "L19",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "show_all_brokers_sh",
-      "target": "solace_k8_scripts_show_all_brokers_stores"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "003-local-images.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "003_local_images_md",
-      "target": "solace_k8_scripts_003_local_images_using_local_tar_images_for_kubectl_setup",
+      "target": "solace_k8_scripts_show_all_brokers_stores",
       "confidence_score": 1.0
     },
     {
-      "relation": "contains",
+      "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "003-local-images.md",
-      "source_location": "L10",
-      "weight": 1.0,
-      "source": "003_local_images_md",
-      "target": "solace_k8_scripts_003_local_images_steps",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "003-local-images.md",
-      "source_location": "L17",
-      "weight": 1.0,
-      "source": "003_local_images_md",
-      "target": "solace_k8_scripts_003_local_images_minikube_steps",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "claude_md",
-      "target": "solace_k8_scripts_claude_claude_md",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_what_this_repo_is",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_running_a_script",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L20",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_how_the_scripts_compose",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L36",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_file_naming_convention",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L50",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_gen_yaml_pattern_large_scripts",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L56",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_cli_scripts_directory",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L60",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_claude_md",
-      "target": "solace_k8_scripts_claude_knowledge_graph",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L13",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_running_a_script",
-      "target": "solace_k8_scripts_claude_codeblock_1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L24",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_claude_how_the_scripts_compose",
-      "target": "solace_k8_scripts_claude_codeblock_2",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "source": "readme_md",
-      "target": "solace_k8_scripts_readme_solace_kubernetes_deployment_with_operator_overview",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L14",
-      "weight": 1.0,
-      "source": "readme_md",
-      "target": "solace_k8_scripts_readme_file_organization_system",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L26",
-      "weight": 1.0,
-      "source": "readme_md",
-      "target": "solace_k8_scripts_readme_how_to_use",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L58",
-      "weight": 1.0,
-      "source": "readme_md",
-      "target": "solace_k8_scripts_readme_configuration_variables",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L126",
-      "weight": 1.0,
-      "source": "readme_md",
-      "target": "solace_k8_scripts_readme_additional_helper_scripts",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L28",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_how_to_use",
-      "target": "solace_k8_scripts_readme_prepare_configuration_file_s",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L33",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_how_to_use",
-      "target": "solace_k8_scripts_readme_new_deployment",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L50",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_how_to_use",
-      "target": "solace_k8_scripts_readme_redeployment_delete_deployment",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L60",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_configuration_variables",
-      "target": "solace_k8_scripts_readme_common_kubernetes_environment",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L70",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_configuration_variables",
-      "target": "solace_k8_scripts_readme_operator",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L79",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_configuration_variables",
-      "target": "solace_k8_scripts_readme_solace_event_broker",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L130",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_additional_helper_scripts",
-      "target": "solace_k8_scripts_readme_pod_role_argument",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L148",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_additional_helper_scripts",
-      "target": "solace_k8_scripts_readme_inspection",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L162",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_additional_helper_scripts",
-      "target": "solace_k8_scripts_readme_interactive_access",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L171",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_additional_helper_scripts",
-      "target": "solace_k8_scripts_readme_lifecycle",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "README.md",
-      "source_location": "L140",
-      "weight": 1.0,
-      "source": "solace_k8_scripts_readme_pod_role_argument",
-      "target": "solace_k8_scripts_readme_codeblock_1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "058-setup-data-replication.sh",
-      "source_location": "L36",
-      "weight": 1.0,
       "confidence_score": 1.0,
-      "source": "058_setup_data_replication_sh",
-      "target": "solace_k8_scripts_058_setup_data_replication_gen_yaml"
-    },
-    {
-      "relation": "defines",
-      "confidence": "EXTRACTED",
-      "source_file": "05A-generate-data-replication-for-vpn.sh",
-      "source_location": "L31",
+      "source_file": "001-check-env.sh",
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "05a_generate_data_replication_for_vpn_sh",
-      "target": "solace_k8_scripts_05a_generate_data_replication_for_vpn_gen_yaml"
+      "source": "000env_bootstrap",
+      "target": "001check_env"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "009-check-storage-class.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s009_check_storage_class",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "009check_storage_class"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "011-create-namespace.sh",
-      "source_location": null,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s011_create_namespace",
-      "target": "s000_env"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "013-label-nodes.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s013_label_nodes",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "010deploy_operator"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "020-deploy-broker.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s020_deploy_broker",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "020deploy_broker"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "050-assert-leader.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s050_assert_leader",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "050assert_leader"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "051-load-server-cert.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s051_load_server_cert",
-      "target": "s000_env"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "052-load-domain-certs.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s052_load_domain_certs",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "051load_server_cert"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "053-disable-default-vpn.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s053_disable_default_vpn",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "053disable_default_vpn"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "054-disable-all-default-usernames.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s054_disable_all_default_usernames",
-      "target": "s000_env"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "057-configure-product-keys.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s057_configure_product_keys",
-      "target": "s000_env"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "058-setup-data-replication.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s058_setup_data_replication",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "054disable_all_default_usernames"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "059-execute-cli.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s059_execute_cli",
-      "target": "s000_env"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "05A-generate-data-replication-for-vpn.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s05A_generate_data_replication_for_vpn",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "059execute_cli"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "060-test-semp-login.sh",
-      "source_location": null,
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s060_test_semp_login",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "060test_semp_login"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "061-test-redundancy.sh",
-      "source_location": null,
+      "source_file": "110-delete-operator.sh",
+      "source_location": "lines 3-9",
       "weight": 1.0,
-      "source": "s061_test_redundancy",
-      "target": "s000_env"
+      "source": "000env_bootstrap",
+      "target": "110delete_operator"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh",
+      "source_location": "lines 6-17",
+      "weight": 1.0,
+      "source": "000env_bootstrap",
+      "target": "000env_pick_pod"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh",
+      "source_location": "lines 19-36",
+      "weight": 1.0,
+      "source": "000env_bootstrap",
+      "target": "000env_env_file_loader"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh",
+      "source_location": "lines 42-103",
+      "weight": 1.0,
+      "source": "000env_bootstrap",
+      "target": "000env_defaults_block"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh",
+      "source_location": "lines 52-62",
+      "weight": 1.0,
+      "source": "000env_bootstrap",
+      "target": "000env_solop_ns_derivation"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh",
+      "source_location": "lines 105-117",
+      "weight": 1.0,
+      "source": "000env_bootstrap",
+      "target": "000env_mandatory_check"
     },
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "069-gather-configs.sh",
-      "source_location": null,
+      "source_file": "060-test-semp-login.sh",
+      "source_location": "line 11",
       "weight": 1.0,
-      "source": "s069_gather_configs",
-      "target": "s000_env"
+      "source": "000env_pick_pod",
+      "target": "060test_semp_login"
     },
     {
-      "relation": "calls",
+      "relation": "implements",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "000-env.sh",
+      "source_location": "lines 6-17",
+      "weight": 1.0,
+      "source": "000env_pick_pod",
+      "target": "concept_pod_name_convention"
+    },
+    {
+      "relation": "shares_data_with",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "111-delete-namespace.sh",
-      "source_location": null,
+      "source_file": "009-check-storage-class.sh",
+      "source_location": "line 12",
       "weight": 1.0,
-      "source": "s111_delete_namespace",
-      "target": "s000_env"
+      "source": "000env_defaults_block",
+      "target": "009check_storage_class"
     },
     {
-      "relation": "calls",
+      "relation": "shares_data_with",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "120-delete-broker.sh",
+      "source_file": "010-deploy-operator.sh",
       "source_location": null,
       "weight": 1.0,
-      "source": "s120_delete_broker",
-      "target": "s000_env"
+      "source": "000env_solop_ns_derivation",
+      "target": "010deploy_operator"
     },
     {
-      "relation": "calls",
-      "confidence": "AMBIGUOUS",
-      "confidence_score": 0.3,
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "110-delete-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "000env_solop_ns_derivation",
+      "target": "110delete_operator"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
       "source_file": "001-check-env.sh",
-      "source_location": "line 5",
+      "source_location": "line 33",
       "weight": 1.0,
-      "source": "s001_check_env",
-      "target": "s000_env"
+      "source": "000env_solop_ns_derivation",
+      "target": "001check_env"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "020-deploy-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "000env_mandatory_check",
+      "target": "020deploy_broker"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "001-check-env.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "001check_env",
+      "target": "009check_storage_class"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "line 14",
+      "weight": 1.0,
+      "source": "010deploy_operator",
+      "target": "010deploy_gen_yaml"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 22",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": "last line",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s000_env"
+      "source": "010deploy_operator",
+      "target": "concept_kubectl_apply"
     },
     {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "150-remove-domain-certs.sh",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "010-deploy-operator.sh",
       "source_location": null,
       "weight": 1.0,
-      "source": "s_150_remove_domain_certs",
-      "target": "e_000_env"
+      "source": "010deploy_operator",
+      "target": "110delete_operator"
     },
     {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "copy-files-from-broker.sh",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "020-deploy-broker.sh",
       "source_location": null,
       "weight": 1.0,
-      "source": "s_copy_files_from_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "copy-files-into-broker.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_copy_files_into_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "d037-assign-ip.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_d037_assign_ip",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "d137-delete-ip.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_d137_delete_ip",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "desc-broker.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_desc_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "desc-lb.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_desc_lb",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "desc-op.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_desc_op",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "enter-solace-cli.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_enter_solace_cli",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "enter-solace-shell.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_enter_solace_shell",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "get-broker-status.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_get_broker_status",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "get-op-status.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_get_op_status",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "logs-broker.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_logs_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "logs-op.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_logs_op",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "replicas-start-broker.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_replicas_start_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "replicas-stop-broker.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_replicas_stop_broker",
-      "target": "e_000_env"
-    },
-    {
-      "relation": "depends_on",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "show-all-brokers.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_show_all_brokers",
-      "target": "e_000_env"
+      "source": "010deploy_operator",
+      "target": "020deploy_broker"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 36",
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s009_check_storage_class"
+      "source": "010deploy_gen_yaml",
+      "target": "concept_solace_operator_manifest_bundle"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "010deploy_gen_yaml",
+      "target": "concept_gen_yaml_pattern"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "010deploy_gen_yaml",
+      "target": "110delete_gen_yaml"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "110-delete-operator.sh",
+      "source_location": "line 14",
+      "weight": 1.0,
+      "source": "110delete_operator",
+      "target": "110delete_gen_yaml"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 52",
+      "source_file": "110-delete-operator.sh",
+      "source_location": "last line",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s010_deploy_operator"
+      "source": "110delete_operator",
+      "target": "concept_kubectl_delete"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
+      "source_file": "110-delete-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "110delete_gen_yaml",
+      "target": "concept_solace_operator_manifest_bundle"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "110-delete-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "110delete_gen_yaml",
+      "target": "concept_gen_yaml_pattern"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "020-deploy-broker.sh",
+      "source_location": "lines 19-234",
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "020deploy_gen_yaml"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "020-deploy-broker.sh",
+      "source_location": "line 258",
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "concept_kubectl_apply"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "050-assert-leader.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "050assert_leader"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "051-load-server-cert.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "051load_server_cert"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "053-disable-default-vpn.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "053disable_default_vpn"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "054-disable-all-default-usernames.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "054disable_all_default_usernames"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "059-execute-cli.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "059execute_cli"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "060-test-semp-login.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_broker",
+      "target": "060test_semp_login"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "020-deploy-broker.sh",
+      "source_location": "lines 20-21",
+      "weight": 1.0,
+      "source": "020deploy_gen_yaml",
+      "target": "concept_pubsubplus_event_broker_cr"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "020-deploy-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "020deploy_gen_yaml",
+      "target": "concept_gen_yaml_pattern"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.65,
+      "source_file": "059-execute-cli.sh",
+      "source_location": "line 31",
+      "weight": 1.0,
+      "source": "020deploy_gen_yaml",
+      "target": "059execute_cli"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "050-assert-leader.sh",
+      "source_location": "lines 25, 46, 54",
+      "weight": 1.0,
+      "source": "050assert_leader",
+      "target": "concept_kubectl_exec_cli"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "050-assert-leader.sh",
+      "source_location": "lines 24, 29, 40, 62",
+      "weight": 1.0,
+      "source": "050assert_leader",
+      "target": "concept_kubectl_cp"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "050-assert-leader.sh",
+      "source_location": "lines 24-25",
+      "weight": 1.0,
+      "source": "050assert_leader",
+      "target": "concept_pod_name_convention"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "051-load-server-cert.sh",
       "source_location": "line 37",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s010_deploy_operator"
+      "source": "051load_server_cert",
+      "target": "concept_kubectl_exec_cli"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 39",
+      "source_file": "051-load-server-cert.sh",
+      "source_location": "lines 32, 34",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s011_create_namespace"
+      "source": "051load_server_cert",
+      "target": "concept_kubectl_cp"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 40",
+      "source_file": "051-load-server-cert.sh",
+      "source_location": "line 32",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s012_create_secrets"
+      "source": "051load_server_cert",
+      "target": "concept_pod_name_convention"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 15",
+      "source_file": "053-disable-default-vpn.sh",
+      "source_location": "lines 50, 59",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s020_deploy_broker"
+      "source": "053disable_default_vpn",
+      "target": "concept_kubectl_exec_cli"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 41",
+      "source_file": "053-disable-default-vpn.sh",
+      "source_location": "lines 49, 58",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s020_deploy_broker"
+      "source": "053disable_default_vpn",
+      "target": "concept_kubectl_cp"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "053-disable-default-vpn.sh",
+      "source_location": "lines 49-50",
+      "weight": 1.0,
+      "source": "053disable_default_vpn",
+      "target": "concept_pod_name_convention"
     },
     {
       "relation": "semantically_similar_to",
       "confidence": "INFERRED",
       "confidence_score": 0.85,
-      "source_file": "solace-yaml-generator.html",
+      "source_file": "053-disable-default-vpn.sh",
       "source_location": null,
       "weight": 1.0,
-      "source": "tool_yaml_generator",
-      "target": "s020_deploy_broker"
+      "source": "053disable_default_vpn",
+      "target": "054disable_all_default_usernames"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 42",
+      "source_file": "054-disable-all-default-usernames.sh",
+      "source_location": "lines 16, 39",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s050_assert_leader"
+      "source": "054disable_all_default_usernames",
+      "target": "concept_kubectl_exec_cli"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 43",
+      "source_file": "054-disable-all-default-usernames.sh",
+      "source_location": "lines 15, 38",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s051_load_server_cert"
+      "source": "054disable_all_default_usernames",
+      "target": "concept_kubectl_cp"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 44",
+      "source_file": "054-disable-all-default-usernames.sh",
+      "source_location": "lines 15-16",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s052_load_domain_certs"
+      "source": "054disable_all_default_usernames",
+      "target": "concept_pod_name_convention"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "059-execute-cli.sh",
+      "source_location": "line 59",
+      "weight": 1.0,
+      "source": "059execute_cli",
+      "target": "concept_kubectl_exec_cli"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "059-execute-cli.sh",
+      "source_location": "line 56",
+      "weight": 1.0,
+      "source": "059execute_cli",
+      "target": "concept_kubectl_cp"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "059-execute-cli.sh",
+      "source_location": "lines 56, 59",
+      "weight": 1.0,
+      "source": "059execute_cli",
+      "target": "concept_pod_name_convention"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "060-test-semp-login.sh",
+      "source_location": "lines 24-25",
+      "weight": 1.0,
+      "source": "060test_semp_login",
+      "target": "concept_kubectl_exec_cli"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "060-test-semp-login.sh",
+      "source_location": "line 24",
+      "weight": 1.0,
+      "source": "060test_semp_login",
+      "target": "concept_pod_name_convention"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "010-deploy-operator.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "concept_solace_operator_manifest_bundle",
+      "target": "concept_pubsubplus_event_broker_cr"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "line 52",
+      "source_location": "line 50-54",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s058_setup_data_replication"
+      "source": "concept_gen_yaml_pattern",
+      "target": "CLAUDE_doc"
     },
     {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 58",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": null,
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s059_execute_cli"
+      "source": "061-test-redundancy_script",
+      "target": "000-env_script"
     },
     {
-      "relation": "references",
+      "relation": "shares_data_with",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 45",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": "line 16",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s059_execute_cli"
+      "source": "061-test-redundancy_script",
+      "target": "envvar_SOLBK_REDUNDANCY"
     },
     {
-      "relation": "references",
+      "relation": "shares_data_with",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 52",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": null,
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s05A_generate_data_replication_for_vpn"
+      "source": "061-test-redundancy_script",
+      "target": "envvar_SOLBK_NS"
     },
     {
-      "relation": "references",
+      "relation": "shares_data_with",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 46",
+      "source_file": "061-test-redundancy.sh",
+      "source_location": null,
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s060_test_semp_login"
+      "source": "061-test-redundancy_script",
+      "target": "envvar_SOLBK_NAME"
     },
     {
       "relation": "references",
@@ -3126,8 +3183,68 @@
       "source_file": "README.md",
       "source_location": "line 47",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s061_test_redundancy"
+      "source": "061-test-redundancy_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "061-test-redundancy.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "061-test-redundancy_script",
+      "target": "060-test-semp-login_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "069-gather-configs.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "069-gather-configs_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "069-gather-configs.sh",
+      "source_location": "line 185",
+      "weight": 1.0,
+      "source": "069-gather-configs_script",
+      "target": "envvar_SOLBK_REDUNDANCY"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "069-gather-configs.sh",
+      "source_location": "line 187",
+      "weight": 1.0,
+      "source": "069-gather-configs_script",
+      "target": "envvar_SOLBK_DIAG_DIR"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "069-gather-configs.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "069-gather-configs_script",
+      "target": "envvar_SOLBK_NS"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "069-gather-configs.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "069-gather-configs_script",
+      "target": "envvar_SOLBK_NAME"
     },
     {
       "relation": "references",
@@ -3136,8 +3253,328 @@
       "source_file": "README.md",
       "source_location": "line 48",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s069_gather_configs"
+      "source": "069-gather-configs_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "120-delete-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "120-delete-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "envvar_SOLBK_NS"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "120-delete-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "envvar_SOLBK_NAME"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "120-delete-broker.sh",
+      "source_location": "line 66",
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "envvar_SOLBK_REDUNDANCY"
+    },
+    {
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "120-delete-broker.sh",
+      "source_location": "line 22-23",
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "concept_PubSubPlusEventBroker_CRD"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "120-delete-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "020-deploy-broker_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 54",
+      "weight": 1.0,
+      "source": "120-delete-broker_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "desc-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "desc-broker_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "desc-broker.sh",
+      "source_location": "line 11",
+      "weight": 1.0,
+      "source": "desc-broker_script",
+      "target": "000-env_pick_pod"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "desc-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "desc-broker_script",
+      "target": "desc-op_script"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "desc-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "desc-broker_script",
+      "target": "desc-lb_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 46",
+      "weight": 1.0,
+      "source": "desc-broker_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "enter-solace-cli.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "enter-solace-cli_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "enter-solace-cli.sh",
+      "source_location": "line 11",
+      "weight": 1.0,
+      "source": "enter-solace-cli_script",
+      "target": "000-env_pick_pod"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "enter-solace-cli.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "enter-solace-cli_script",
+      "target": "enter-solace-shell_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 46",
+      "weight": 1.0,
+      "source": "enter-solace-cli_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "enter-solace-shell.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "enter-solace-shell_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "enter-solace-shell.sh",
+      "source_location": "line 11",
+      "weight": 1.0,
+      "source": "enter-solace-shell_script",
+      "target": "000-env_pick_pod"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "logs-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "logs-broker_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "logs-broker.sh",
+      "source_location": "line 11",
+      "weight": 1.0,
+      "source": "logs-broker_script",
+      "target": "000-env_pick_pod"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "logs-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "logs-broker_script",
+      "target": "logs-op_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 46",
+      "weight": 1.0,
+      "source": "logs-broker_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "replicas-start-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "replicas-start-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "replicas-stop-broker_script"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "replicas-start-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "envvar_SOLBK_NAME"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "replicas-start-broker.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "envvar_SOLBK_NS"
+    },
+    {
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "replicas-start-broker.sh",
+      "source_location": "line 17",
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "envvar_SOLBK_REDUNDANCY"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 46",
+      "weight": 1.0,
+      "source": "replicas-start-broker_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "show-all-brokers.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "show-all-brokers_script",
+      "target": "000-env_script"
+    },
+    {
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "show-all-brokers.sh",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "show-all-brokers_script",
+      "target": "get-broker-status_script"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 22-32",
+      "weight": 1.0,
+      "source": "000-env_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 34",
+      "weight": 1.0,
+      "source": "000-env_pick_pod",
+      "target": "concept_pick_pod_helper"
     },
     {
       "relation": "references",
@@ -3146,8 +3583,48 @@
       "source_file": "CLAUDE.md",
       "source_location": "line 52",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s110_delete_operator"
+      "source": "020-deploy-broker_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 41",
+      "weight": 1.0,
+      "source": "020-deploy-broker_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 52",
+      "weight": 1.0,
+      "source": "010-deploy-operator_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 37",
+      "weight": 1.0,
+      "source": "010-deploy-operator_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 52",
+      "weight": 1.0,
+      "source": "110-delete-operator_script",
+      "target": "CLAUDE_doc"
     },
     {
       "relation": "references",
@@ -3156,8 +3633,8 @@
       "source_file": "README.md",
       "source_location": "line 56",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s111_delete_namespace"
+      "source": "111-delete-namespace_script",
+      "target": "README_doc"
     },
     {
       "relation": "references",
@@ -3166,58 +3643,8 @@
       "source_file": "README.md",
       "source_location": "line 55",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s112_delete_secrets"
-    },
-    {
-      "relation": "references",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "README.md",
-      "source_location": "line 54",
-      "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s120_delete_broker"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "watch.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_watch",
-      "target": "s_get_broker_status"
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "watch.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "s_watch",
-      "target": "s_get_op_status"
-    },
-    {
-      "relation": "explains",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "003-local-images.md",
-      "source_location": "Steps section",
-      "weight": 1.0,
-      "source": "doc_local_images",
-      "target": "concept_local_image_mirror"
-    },
-    {
-      "relation": "references",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 14",
-      "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "s001_check_env"
+      "source": "112-delete-secrets_script",
+      "target": "README_doc"
     },
     {
       "relation": "references",
@@ -3226,28 +3653,118 @@
       "source_file": "README.md",
       "source_location": "line 35",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "s001_check_env"
+      "source": "001-check-env_script",
+      "target": "README_doc"
     },
     {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "001-check-env.sh",
-      "source_location": null,
+      "source_file": "README.md",
+      "source_location": "line 36",
       "weight": 1.0,
-      "source": "s001_check_env",
-      "target": "concept_env_validation"
+      "source": "009-check-storage-class_script",
+      "target": "README_doc"
     },
     {
-      "relation": "semantically_similar_to",
-      "confidence": "INFERRED",
-      "confidence_score": 0.95,
-      "source_file": "001-check-env.sh",
-      "source_location": null,
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 39",
       "weight": 1.0,
-      "source": "s001_check_env",
-      "target": "concept_mandatory_env_vars"
+      "source": "011-create-namespace_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 40",
+      "weight": 1.0,
+      "source": "012-create-secrets_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 42",
+      "weight": 1.0,
+      "source": "050-assert-leader_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 43",
+      "weight": 1.0,
+      "source": "051-load-server-cert_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 44",
+      "weight": 1.0,
+      "source": "052-load-domain-certs_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 58",
+      "weight": 1.0,
+      "source": "059-execute-cli_script",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 45",
+      "weight": 1.0,
+      "source": "059-execute-cli_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 46",
+      "weight": 1.0,
+      "source": "060-test-semp-login_script",
+      "target": "README_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 54",
+      "weight": 1.0,
+      "source": "solace-yaml-generator_html",
+      "target": "CLAUDE_doc"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md",
+      "source_location": "line 18",
+      "weight": 1.0,
+      "source": "env_sample_file",
+      "target": "CLAUDE_doc"
     },
     {
       "relation": "references",
@@ -3256,178 +3773,247 @@
       "source_file": "CLAUDE.md",
       "source_location": "line 7",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "doc_readme"
+      "source": "CLAUDE_doc",
+      "target": "concept_PubSubPlusEventBroker_CRD"
     },
     {
-      "relation": "cites",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "line 54",
+      "source_location": "line 7",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "tool_yaml_generator"
+      "source": "CLAUDE_doc",
+      "target": "concept_Solace_Operator"
     },
     {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
       "source_location": "line 11-18",
       "weight": 1.0,
-      "source": "doc_claude_md",
+      "source": "CLAUDE_doc",
       "target": "concept_env_file_pattern"
     },
     {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "line 38-46",
+      "source_location": "line 34",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "concept_numbered_script_convention"
+      "source": "CLAUDE_doc",
+      "target": "concept_pick_pod_helper"
     },
     {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "line 32",
+      "source_location": "line 36-46",
       "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "concept_mandatory_env_vars"
+      "source": "CLAUDE_doc",
+      "target": "concept_file_naming_convention"
     },
     {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "line 50-54",
-      "weight": 1.0,
-      "source": "doc_claude_md",
-      "target": "concept_gen_yaml_pattern"
-    },
-    {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
       "source_location": "line 33-48",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "concept_deploy_sequence"
+      "source": "README_doc",
+      "target": "concept_run_order"
     },
     {
-      "relation": "rationale_for",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 50-56",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "concept_delete_order"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 130-146",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "concept_pod_role_argument"
+    },
+    {
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
       "source_location": "line 14-23",
       "weight": 1.0,
-      "source": "doc_readme",
-      "target": "concept_numbered_script_convention"
+      "source": "README_doc",
+      "target": "concept_file_naming_convention"
     },
     {
-      "relation": "rationale_for",
-      "confidence": "INFERRED",
-      "confidence_score": 0.95,
-      "source_file": "README.md",
-      "source_location": "line 30",
-      "weight": 1.0,
-      "source": "doc_readme",
-      "target": "concept_env_file_pattern"
-    },
-    {
-      "relation": "implements",
-      "confidence": "INFERRED",
-      "confidence_score": 0.95,
-      "source_file": "solace-yaml-generator.html",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "tool_yaml_generator",
-      "target": "concept_pubsubplus_cr_schema"
-    },
-    {
-      "relation": "rationale_for",
+      "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "solace-yaml-generator.html",
-      "source_location": null,
+      "source_file": "README.md",
+      "source_location": "line 65",
       "weight": 1.0,
-      "source": "tool_yaml_generator",
-      "target": "concept_solace_yaml_generator"
+      "source": "README_doc",
+      "target": "envvar_KUBE"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 83",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "envvar_SOLBK_NAME"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 84",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "envvar_SOLBK_NS"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 87",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "envvar_SOLBK_REDUNDANCY"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 118",
+      "weight": 1.0,
+      "source": "README_doc",
+      "target": "envvar_SOLBK_DIAG_DIR"
     },
     {
       "relation": "conceptually_related_to",
       "confidence": "INFERRED",
-      "confidence_score": 0.95,
+      "confidence_score": 0.85,
       "source_file": "README.md",
       "source_location": null,
       "weight": 1.0,
-      "source": "concept_deploy_sequence",
-      "target": "concept_numbered_script_convention"
-    },
-    {
-      "relation": "conceptually_related_to",
-      "confidence": "INFERRED",
-      "confidence_score": 0.95,
-      "source_file": "001-check-env.sh",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "concept_env_validation",
-      "target": "concept_mandatory_env_vars"
-    },
-    {
-      "relation": "semantically_similar_to",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "concept_solace_yaml_generator",
-      "target": "concept_gen_yaml_pattern"
-    },
-    {
-      "relation": "semantically_similar_to",
-      "confidence": "INFERRED",
-      "confidence_score": 0.95,
-      "source_file": "solace-yaml-generator.html",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "concept_solace_yaml_generator",
-      "target": "concept_pubsubplus_cr_schema"
+      "source": "concept_file_naming_convention",
+      "target": "concept_run_order"
     }
   ],
   "hyperedges": [
     {
-      "id": "he_doc_entry_points",
-      "label": "Documentation Entry Points",
+      "id": "all_scripts_source_000env",
+      "label": "All scripts source 000-env.sh as bootstrap",
       "nodes": [
-        "doc_readme",
-        "doc_claude_md",
-        "s001_check_env"
+        "001check_env",
+        "009check_storage_class",
+        "010deploy_operator",
+        "020deploy_broker",
+        "050assert_leader",
+        "051load_server_cert",
+        "053disable_default_vpn",
+        "054disable_all_default_usernames",
+        "059execute_cli",
+        "060test_semp_login",
+        "110delete_operator",
+        "000env_bootstrap"
       ],
       "relation": "participate_in",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "source_file": null
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh"
     },
     {
-      "id": "he_yaml_generation_surfaces",
-      "label": "Broker YAML Generation Surfaces",
+      "id": "gen_yaml_pattern_users",
+      "label": "Scripts using the gen_yaml() heredoc-to-kubectl pattern",
       "nodes": [
-        "tool_yaml_generator",
-        "s020_deploy_broker",
-        "concept_gen_yaml_pattern",
-        "concept_pubsubplus_cr_schema"
+        "010deploy_operator",
+        "020deploy_broker",
+        "110delete_operator",
+        "concept_gen_yaml_pattern"
+      ],
+      "relation": "implement",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "010-deploy-operator.sh"
+    },
+    {
+      "id": "broker_pod_cli_executors",
+      "label": "Post-config scripts that copy CLI into pod and exec it",
+      "nodes": [
+        "050assert_leader",
+        "051load_server_cert",
+        "053disable_default_vpn",
+        "054disable_all_default_usernames",
+        "059execute_cli",
+        "concept_kubectl_exec_cli",
+        "concept_kubectl_cp"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "050-assert-leader.sh"
+    },
+    {
+      "id": "scripts_calling_pick_pod",
+      "label": "Scripts that call pick_pod helper",
+      "nodes": [
+        "desc-broker_script",
+        "enter-solace-cli_script",
+        "enter-solace-shell_script",
+        "logs-broker_script"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "000-env.sh"
+    },
+    {
+      "id": "operational_helpers_no_prefix",
+      "label": "Operational helper scripts (no number prefix)",
+      "nodes": [
+        "desc-broker_script",
+        "enter-solace-cli_script",
+        "enter-solace-shell_script",
+        "logs-broker_script",
+        "replicas-start-broker_script",
+        "show-all-brokers_script"
       ],
       "relation": "form",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "source_file": null
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CLAUDE.md"
+    },
+    {
+      "id": "post_check_scripts_action_band_6",
+      "label": "Post-check scripts (action band 6)",
+      "nodes": [
+        "060-test-semp-login_script",
+        "061-test-redundancy_script",
+        "069-gather-configs_script"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md"
     }
   ],
-  "built_at_commit": "8bfd0ec66e99db9899bb35bab2b861e6491d521c"
+  "built_at_commit": "34cae9ea3f0e5afe767523b281e44febf09296c5"
 }
