@@ -1,5 +1,10 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [p|b|m]
+  Open an interactive Solace CLI session on the chosen broker pod (p=primary, b=backup, m=monitor). Default: p."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

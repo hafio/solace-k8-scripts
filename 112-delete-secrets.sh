@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Delete the broker secrets (admin credentials, TLS server cert, image-pull secret) from
+  \$SOLBK_NS. Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

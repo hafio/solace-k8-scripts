@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  (HA only) Restore redundancy and assert the Primary node as config-sync leader for the router
+  and all message-VPNs. No-op for standalone deployments. Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

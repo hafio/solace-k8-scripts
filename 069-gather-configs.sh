@@ -1,5 +1,13 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [OPTIONS]
+  Run a series of Solace CLI \"show\" commands and a gather-diagnostics on the broker (Kubernetes
+  deployment only), then zip and transfer the output to the \$SOLBK_DIAG_DIR folder.
+  OPTIONS:
+    --days <days> : number of days of gather-diagnostic logs to collect. Default: 3."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"
@@ -8,28 +16,8 @@ else
 	exit 1
 fi
 
-echoUsage() {
-  echo "Usage: $0 [OPTIONS]
-  
-  Description:
-    
-    IMPORTANT: THIS SCRIPT IS FOR SOLACE KUBERNETES DEPLOYMENT ONLY
-    
-    Execute a series of Solace CLI \"show\" commands and save their output to \"configs/.out\" folder.
-    Also execute gather diagnositcs on the broker. Zips the output of \"shows\" and transfer them to
-    \$SOLBK_DIAG_DIR folder.
-  
-  OPTIONS:
-  --days <days>: specify number of days for gather-diagnostic logs. Default = 3 (if not specified)
-"
-  exit
-}
-
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		-h|--h*|\?*)
-			echoUsage
-			;;
 		--days)
       DAYS="$2"
 			shift 2

@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Deploy the Solace PubSub+ Event Broker Operator (CRDs, RBAC and operator deployment).
+  Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

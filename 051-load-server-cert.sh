@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Load the TLS server certificate (\$SOLBK_TLS_CERT + \$SOLBK_TLS_CERTKEY) into the broker
+  node(s) and apply it. Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

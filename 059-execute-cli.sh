@@ -1,5 +1,13 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [OPTIONS] [cli-file]
+  Execute a Solace CLI script from \$SOLBK_CLISCRIPTS_FOLDER inside a broker pod. If no cli-file
+  is given, choose one from a menu.
+  OPTIONS:
+    --pod (p|b|m) : broker pod to run the script in. Default: p."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

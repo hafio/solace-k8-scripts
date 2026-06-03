@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Scale the broker statefulset(s) up to 1 replica (primary, plus backup and monitor in HA),
+  waiting for each to become Running. Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

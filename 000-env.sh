@@ -16,6 +16,21 @@ pick_pod() {
   esac
 }
 
+# Central help handling. If the caller passed '?', '-?', '-h' or '--help' anywhere on the
+# command line, print the calling script's usage (its echoUsage function, if defined) and
+# exit. This runs BEFORE the env file is sourced/validated, so help works even when no env
+# is configured. Because 000-env.sh is sourced, 'exit' exits the calling script.
+for arg in "$@"; do
+  case "$arg" in
+    \?|-\?|-h|--help)
+      if declare -F echoUsage >/dev/null; then echoUsage; else echo "Usage: $0"; fi
+      echo ""
+      echo "Common: all scripts accept '--env <name>' (env file in env/, default 'default')."
+      exit 0
+      ;;
+  esac
+done
+
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--env)
@@ -100,6 +115,27 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
 
   SOLBK_DIAG_DIR=${SOLBK_DIAG_DIR:-diag-configs}
   SOLBK_CLISCRIPTS_FOLDER=${SOLBK_CLISCRIPTS_FOLDER:-cli}
+
+  if [[ -z "${SOLBK_PORTS[*]}" ]]; then
+    SOLBK_PORTS=(
+      "tcp-semp=8080"
+      "tls-semp=1943"
+      "tcp-smf=55555"
+      "tcp-smfcomp=55003"
+      "tls-smf=55443"
+      "tcp-smfroute=55556"
+      "tcp-web=8008"
+      "tls-web=1443"
+      "tcp-rest=9000"
+      "tls-rest=9443"
+      "tcp-amqp=5672"
+      "tls-amqp=5671"
+      "tcp-mqtt=1883"
+      "tls-mqtt=8883"
+      "tcp-mqttweb=8000"
+      "tls-mqttweb=8443"
+    )
+  fi
 
   ######################################################################
   # MANDATORY VALUES CHECK                                             #

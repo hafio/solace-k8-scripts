@@ -124,6 +124,19 @@ SOLBK_DIAG_DIR="/path/to/diag-configs/dir"
 #)
 #SOLBK_IPPOOL="sample-ip-pool"
 
+# OPTIONAL. PORTS PUBLISHED BY THE BROKER SERVICE.
+# Format per entry: "name=port[/protocol]"
+#   - port: single number (containerPort == servicePort) OR "containerPort:servicePort" if they differ
+#   - /protocol is optional; defaults to TCP if omitted
+# LEAVE COMMENTED to use the 16 default Solace ports applied by 000-env.sh.
+#SOLBK_PORTS=(
+#  "tcp-semp=8080"
+#  "tls-semp=1943"
+#  "tcp-smf=55555"
+#  "tls-smf=55443"
+#  "my-custom=9999/TCP"
+#)
+
 SOLBK_DOMAINCERT_FOLDER="/path/to/domain/ca"
 # associative array for domain certificates [CA-NAME] = 'cert filename'
 declare -A SOLBK_DOMAINCERT_FILES=(

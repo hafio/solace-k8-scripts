@@ -1,19 +1,19 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [OPTIONS]
+  Delete the Solace broker deployment and (by default) its Persistent Volume Claims.
+  OPTIONS:
+    --no-prompt : do not prompt for confirmation before removing the broker and PVCs
+    --keep-pvc  : keep the broker's Persistent Volume Claims"
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else
 	echo "Environment file '${SELECT_ENV_FILE}' not found"
 	exit 1
-fi
-
-if [[ "${1:0:1}" == "?" ]] || [[ "${1:0:2}" == "-h" ]] || [[ "${1:0:3}" == "--h" ]]; then
-	echo "Usage: $0 [OPTIONS]"
-	echo "	OPTIONS:"
-  echo "    --no-prompt: does not prompt the user for confirmation. Removes Solace Broker deployment and PVCs."
-  echo "    --keep-pvc: does not remove Persistent Volume Claims of the broker."
-	exit
 fi
 
 TMPFILE=.tmp-${BASHPID}

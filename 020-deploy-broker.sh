@@ -1,19 +1,19 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [OPTIONS]
+  Generate the PubSubPlusEventBroker manifest from the env file and deploy the broker.
+  OPTIONS:
+    --only-gen-yaml : generate the YAML file but do not deploy
+    --keep-yaml     : do not remove the generated '.broker.yaml' file after deploying"
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
   source "$(dirname "$0")/${SELECT_ENV_FILE}"
 else 
   echo "Environment file '${SELECT_ENV_FILE}' not found"
   exit 1
-fi
-
-if [[ "${1:0:1}" == "?" ]] || [[ "${1:0:2}" == "-h" ]] || [[ "${1:0:3}" == "--h" ]]; then
-	echo "Usage: $0 [OPTIONS]"
-	echo "	OPTIONS:"
-	echo "    --only-gen-yaml: generates the yaml file but does not deploy"
-  echo "    --keep-yaml: does not remove the generated yaml file '.broker.yaml'"
-	exit
 fi
 
 gen_yaml() {
@@ -166,71 +166,20 @@ spec:
       done
     fi
         
-    echo "    ports:
-    - containerPort: 8080
-      name: tcp-semp
-      protocol: TCP
-      servicePort: 8080
-    - containerPort: 1943
-      name: tls-semp
-      protocol: TCP
-      servicePort: 1943
-    - containerPort: 55555
-      name: tcp-smf
-      protocol: TCP
-      servicePort: 55555
-    - containerPort: 55003
-      name: tcp-smfcomp
-      protocol: TCP
-      servicePort: 55003
-    - containerPort: 55443
-      name: tls-smf
-      protocol: TCP
-      servicePort: 55443
-    - containerPort: 55556
-      name: tcp-smfroute
-      protocol: TCP
-      servicePort: 55556
-    - containerPort: 8008
-      name: tcp-web
-      protocol: TCP
-      servicePort: 8008
-    - containerPort: 1443
-      name: tls-web
-      protocol: TCP
-      servicePort: 1443
-    - containerPort: 9000
-      name: tcp-rest
-      protocol: TCP
-      servicePort: 9000
-    - containerPort: 9443
-      name: tls-rest
-      protocol: TCP
-      servicePort: 9443
-    - containerPort: 5672
-      name: tcp-amqp
-      protocol: TCP
-      servicePort: 5672
-    - containerPort: 5671
-      name: tls-amqp
-      protocol: TCP
-      servicePort: 5671
-    - containerPort: 1883
-      name: tcp-mqtt
-      protocol: TCP
-      servicePort: 1883
-    - containerPort: 8883
-      name: tls-mqtt
-      protocol: TCP
-      servicePort: 8883
-    - containerPort: 8000
-      name: tcp-mqttweb
-      protocol: TCP
-      servicePort: 8000
-    - containerPort: 8443
-      name: tls-mqttweb
-      protocol: TCP
-      servicePort: 8443"
+    echo "    ports:"
+    for entry in "${SOLBK_PORTS[@]}"; do
+      pname="${entry%%=*}"
+      pp="${entry#*=}"
+      proto=""
+      [[ "${pp}" == */* ]] && { proto="${pp##*/}"; pp="${pp%/*}"; }
+      proto="${proto:-TCP}"
+      cport="${pp%%:*}"
+      sport="${pp##*:}"
+      echo "    - containerPort: ${cport}
+      name: ${pname}
+      protocol: ${proto}
+      servicePort: ${sport}"
+    done
 }
 
 while [[ $# -gt 0 ]]; do

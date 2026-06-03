@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [kubectl-logs-args...]
+  Show logs for the Solace operator pod. Any extra arguments are passed through to
+  'kubectl logs' (e.g. -f, --tail=100)."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

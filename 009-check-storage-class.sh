@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Check the broker's StorageClass (\$SOLBK_STORAGECLASS or the cluster default) for
+  VolumeBindingMode=WaitForFirstConsumer and AllowVolumeExpansion=true. Takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

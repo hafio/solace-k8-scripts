@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0
+  Interactively label cluster nodes with the custom labels from the SOLBK_NODELABEL_PRI/BKP/MON
+  arrays (built-in kubernetes.io labels are skipped). Prompts for a node per role; takes no positional arguments."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"

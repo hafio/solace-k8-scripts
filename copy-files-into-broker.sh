@@ -1,5 +1,13 @@
 #!/bin/bash
 
+echoUsage() {
+  echo "Usage: $0 [OPTIONS] <filename(s)>
+  Copy file(s) INTO a broker pod. Wildcards are not supported.
+  OPTIONS:
+    --pod (p|b|m)  : broker pod to copy files into. Default: p.
+    --dir <dir>    : target directory inside the pod. Default: '.' (the shell login directory)."
+}
+
 SELECT_ENV_FILE="000-env.sh"
 if [[ -f "$(dirname "$0")/${SELECT_ENV_FILE}" ]]; then
 	source "$(dirname "$0")/${SELECT_ENV_FILE}"
@@ -8,22 +16,8 @@ else
 	exit 1
 fi
 
-echoUsage() {
-	echo "$0 [OPTIONS] <filename(s)>
-	
-	<filename(s)> : Specify the file(s) to be copied into the broker. Does not support wildcard filenames.
-	
-	OPTIONS:
-		--pod (p|b|m): specifies the Solace pod to copy files into. Default is 'p'.
-		--dir directory: specifies the target directory for files to be copied into. Default is '.' (default directory when logging into shell)"
-	exit 1
-}
-
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		?)
-			echoUsage
-			;;
 		--dir)
 			dir="$2"
 			shift 2
@@ -32,7 +26,7 @@ while [[ $# -gt 0 ]]; do
 			if [[ "$2" =~ ^[pbm]$ ]]; then
 				pod="$2"
 			else
-				echoUsage
+				echoUsage; exit 1
 			fi
 			shift 2
 			;;
@@ -52,7 +46,7 @@ pod=${pod:-p}
 dir=${dir:-.}
 
 if [[ ${#FILE[@]} -eq 0 ]]; then
-	echoUsage
+	echoUsage; exit 1
 fi
 
 for f in "${FILE[@]}"; do
