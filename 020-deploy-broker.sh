@@ -33,7 +33,8 @@ spec:
     
   echo "  adminCredentialsSecret: ${SOLBK_USR_SECRET}
   monitoringCredentialsSecret: ${SOLBK_USR_SECRET}
-  redundancy: ${SOLBK_REDUNDANCY}"
+  redundancy: ${SOLBK_REDUNDANCY}
+  updateStrategy: ${SOLBK_UPDATE_STRATEGY}"
   echo "  podDisruptionBudgetForHA: true
   systemScaling:
     system_scaling_maxconnectioncount: ${SOLBK_SCALING_MAXCONN}

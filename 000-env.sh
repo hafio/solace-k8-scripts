@@ -86,6 +86,7 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
   SOLOP_MEM=${SOLOP_MEM:-512Mi}
 
   SOLBK_REDUNDANCY=${SOLBK_REDUNDANCY:-false}
+  SOLBK_UPDATE_STRATEGY=${SOLBK_UPDATE_STRATEGY:-automatedRolling}
 
   SOLBK_ADM_PASS=${SOLBK_ADM_PASS:-adm1nPA@55w0rD}
   SOLBK_USR_SECRET=${SOLBK_USR_SECRET:-solace-admin-secret}
@@ -151,7 +152,12 @@ if [[ -f "${EXDIR}/env/${ENV_FILE}" ]]; then
     echo "These variables cannot be empty: ${EMPTY_VAR[@]}"
     exit 1
   fi
-  
+
+  case "${SOLBK_UPDATE_STRATEGY}" in
+    automatedRolling|manualPodRestart) ;;
+    *) echo "SOLBK_UPDATE_STRATEGY must be 'automatedRolling' or 'manualPodRestart' (got: '${SOLBK_UPDATE_STRATEGY}')"; exit 1 ;;
+  esac
+
 else
 	echo "Error: ${ENV_FILE} not found in '${EXDIR}/env' folder.
 
