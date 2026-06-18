@@ -52,7 +52,7 @@ while ! [[ "${CONF,,}" =~ [yn] ]]; do
 done
 
 if [[ "${CONF}" == "y" ]]; then
-  ${KUBE} delete -f ${TMPFILE}
+  ${KUBE} delete -f ${TMPFILE} --ignore-not-found
   
   while ! [[ "${DEL_PVC,,}" =~ [yn] ]]; do
     echo -n "Delete PVCs? [y/n] "

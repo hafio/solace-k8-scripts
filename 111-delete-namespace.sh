@@ -13,4 +13,4 @@ else
 	exit 1
 fi
 
-${KUBE} delete ns ${SOLBK_NS}
+${KUBE} delete ns ${SOLBK_NS} --ignore-not-found

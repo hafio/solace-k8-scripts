@@ -2054,4 +2054,4 @@ echo '      securityContext:
 
 gen_yaml > ${TMPFILE}
 
-${KUBE} delete -f ${TMPFILE}
+${KUBE} delete -f ${TMPFILE} --ignore-not-found

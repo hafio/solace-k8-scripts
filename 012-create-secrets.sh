@@ -28,7 +28,7 @@ for up in "${SOLBK_USR_PASS[@]}"; do
 	pass="${up#*=}"
 	CLI_USR_PASS+=(--from-literal="username_${user}_password=${pass}")
 done
-${KUBE} create secret generic "${SOLBK_USR_SECRET}" -n "${SOLBK_NS}" "${CLI_USR_PASS[@]}"
+${KUBE} create secret generic "${SOLBK_USR_SECRET}" -n "${SOLBK_NS}" "${CLI_USR_PASS[@]}" --dry-run=client -o yaml | ${KUBE} apply -f -
 if [[ $? -eq 0 ]]; then
 	echo "Solace Admin Secret '${SOLBK_USR_SECRET}' created successfully."
 else
@@ -37,7 +37,7 @@ else
 fi
 
 if [[ -n "${SOLBK_SVR_SECRET}" ]]; then
-  ${KUBE} create secret tls ${SOLBK_SVR_SECRET} -n ${SOLBK_NS} --cert <(cat ${SOLBK_TLS_CERT} ${SOLBK_TLS_CERTCAS[@]}) --key=${SOLBK_TLS_CERTKEY}
+  ${KUBE} create secret tls ${SOLBK_SVR_SECRET} -n ${SOLBK_NS} --cert <(cat ${SOLBK_TLS_CERT} ${SOLBK_TLS_CERTCAS[@]}) --key=${SOLBK_TLS_CERTKEY} --dry-run=client -o yaml | ${KUBE} apply -f -
   if [[ $? -eq 0 ]]; then
     echo "Solace TLS Certificate Secret '${SOLBK_SVR_SECRET}' created successfully."
   else
@@ -47,7 +47,7 @@ if [[ -n "${SOLBK_SVR_SECRET}" ]]; then
 fi
 
 if [[ -n "${IMAGEREPO_SECRET}" ]]; then
-  ${KUBE} create secret docker-registry ${IMAGEREPO_SECRET} -n ${SOLBK_NS} --docker-server="${IMAGEREPO_HOST}" --docker-username="${IMAGEREPO_USER}" --docker-password="${IMAGEREPO_PASS}"
+  ${KUBE} create secret docker-registry ${IMAGEREPO_SECRET} -n ${SOLBK_NS} --docker-server="${IMAGEREPO_HOST}" --docker-username="${IMAGEREPO_USER}" --docker-password="${IMAGEREPO_PASS}" --dry-run=client -o yaml | ${KUBE} apply -f -
   if [[ $? -eq 0 ]]; then
     echo "Image Repository Secret '${IMAGEREPO_SECRET}' created successfully."
   else

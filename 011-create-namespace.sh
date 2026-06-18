@@ -13,4 +13,4 @@ else
 	exit 1
 fi
 
-${KUBE} create ns ${SOLBK_NS}
+${KUBE} create ns ${SOLBK_NS} --dry-run=client -o yaml | ${KUBE} apply -f -

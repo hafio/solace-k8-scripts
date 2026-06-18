@@ -2,8 +2,10 @@
 
 echoUsage() {
   echo "Usage: $0
-  Load the TLS server certificate (\$SOLBK_TLS_CERT + \$SOLBK_TLS_CERTKEY) into the broker
-  node(s) and apply it. Takes no positional arguments."
+  Load the TLS server certificate (\$SOLBK_TLS_CERT + \$SOLBK_TLS_CERTKEY).
+  If \$SOLBK_SVR_SECRET is set, update that Kubernetes TLS secret instead (the operator
+  reconciles the new certificate onto the broker); otherwise copy the certificate into each
+  broker node and apply it via CLI. Takes no positional arguments."
 }
 
 SELECT_ENV_FILE="000-env.sh"
@@ -23,6 +25,17 @@ if [[ -z "${SOLBK_TLS_CERT}" ]] || [[ -z "${SOLBK_TLS_CERTKEY}" ]]; then
 elif [[ ! -f "${SOLBK_TLS_CERT}" ]] || [[ ! -f "${SOLBK_TLS_CERTKEY}" ]]; then
   echo '[Error] Both $SOLBK_TLS_CERT & $SOLBK_TLS_CERTKEY must be valid files!'
   exit 1
+elif [[ -n "${SOLBK_SVR_SECRET}" ]]; then
+  # Secret-managed TLS: update the Kubernetes TLS secret and let the operator
+  # reconcile the new certificate onto the broker (no CLI / pod access needed).
+  echo "Updating TLS server secret '${SOLBK_SVR_SECRET}' in namespace '${SOLBK_NS}'..."
+  ${KUBE} create secret tls ${SOLBK_SVR_SECRET} -n ${SOLBK_NS} --cert <(cat ${SOLBK_TLS_CERT} ${SOLBK_TLS_CERTCAS[@]}) --key=${SOLBK_TLS_CERTKEY} --dry-run=client -o yaml | ${KUBE} apply -f -
+  if [[ $? -eq 0 ]]; then
+    echo "TLS server secret '${SOLBK_SVR_SECRET}' updated. The operator will roll the new certificate onto the broker."
+  else
+    echo "[Error] Unable to update TLS server secret '${SOLBK_SVR_SECRET}'."
+    exit 1
+  fi
 else
     echo "enable
 configure
