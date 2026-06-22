@@ -1,9 +1,10 @@
 #!/bin/bash
 
 echoUsage() {
-  echo "Usage: $0
+  echo "Usage: $0 [OPTIONS]
   Deploy the Solace PubSub+ Event Broker Operator (CRDs, RBAC and operator deployment).
-  Takes no positional arguments."
+  OPTIONS:
+    --only-gen-yaml : print the generated manifest to stdout instead of applying it"
 }
 
 SELECT_ENV_FILE="000-env.sh"
@@ -2051,6 +2052,11 @@ echo '      securityContext:
       serviceAccountName: pubsubplus-eventbroker-operator
       terminationGracePeriodSeconds: 10'
 }
+
+if [[ "${GENONLY}" == "true" ]]; then
+  gen_yaml
+  exit 0
+fi
 
 gen_yaml > ${TMPFILE}
 

@@ -40,7 +40,7 @@ Scripts are prefixed with a 3-digit number system:
    - `012-create-secrets.sh`
    - `020-deploy-broker.sh`
    - `050-assert-leader.sh` (if HA deployment. Script will prompt either ways)
-   - `051-load-server-cert.sh` (if SSL/TLS Certificates are not specified as part of deployment yaml)
+   - `051-load-server-cert.sh` (loads/updates the TLS server certificate: updates the `$SOLBK_SVR_SECRET` secret if set, otherwise applies it via CLI)
    - `052-load-domain-certs.sh` (if required)
    - `059-execute-cli.sh`
    - `060-test-semp-login.sh`

@@ -26,6 +26,8 @@ for arg in "$@"; do
       if declare -F echoUsage >/dev/null; then echoUsage; else echo "Usage: $0"; fi
       echo ""
       echo "Common: all scripts accept '--env <name>' (env file in env/, default 'default')."
+      echo "        deploy/create scripts also accept '--only-gen-yaml' to print the generated"
+      echo "        manifest to stdout without applying it."
       exit 0
       ;;
   esac
@@ -36,6 +38,10 @@ while [[ $# -gt 0 ]]; do
 		--env)
 			ENV_FILE="$2"
 			shift 2
+			;;
+		--only-gen-yaml)
+			GENONLY=true
+			shift
 			;;
 		*)
 			PARAMS="${PARAMS} $1"

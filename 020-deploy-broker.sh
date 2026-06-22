@@ -4,7 +4,7 @@ echoUsage() {
   echo "Usage: $0 [OPTIONS]
   Generate the PubSubPlusEventBroker manifest from the env file and deploy the broker.
   OPTIONS:
-    --only-gen-yaml : generate the YAML file but do not deploy
+    --only-gen-yaml : print the generated manifest to stdout instead of applying it
     --keep-yaml     : do not remove the generated '.broker.yaml' file after deploying"
 }
 
@@ -189,21 +189,20 @@ while [[ $# -gt 0 ]]; do
 			KEEP=true
 			shift 1
 			;;
-    --only-gen-yaml)
-       GENONLY=true
-       shift 1
-       ;;
 		*)
 			shift
 			;;
 	esac
 done
 
+if [[ "${GENONLY}" == "true" ]]; then
+  gen_yaml
+  exit 0
+fi
+
 gen_yaml > .broker.yaml
 
-if [[ "${GENONLY}" != "true" ]]; then
-  # Remove .broker.yaml only if apply succeeded and the user did not pass --keep-yaml.
-  # On apply failure the file is preserved so the user can inspect / re-apply.
-  trap '[[ $? -eq 0 && "${KEEP}" != "true" ]] && rm -f .broker.yaml' EXIT
-  ${KUBE} apply -f .broker.yaml
-fi
+# Remove .broker.yaml only if apply succeeded and the user did not pass --keep-yaml.
+# On apply failure the file is preserved so the user can inspect / re-apply.
+trap '[[ $? -eq 0 && "${KEEP}" != "true" ]] && rm -f .broker.yaml' EXIT
+${KUBE} apply -f .broker.yaml

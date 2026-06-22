@@ -1,8 +1,10 @@
 #!/bin/bash
 
 echoUsage() {
-  echo "Usage: $0
-  Create the broker Kubernetes namespace (\$SOLBK_NS). Takes no positional arguments."
+  echo "Usage: $0 [OPTIONS]
+  Create the broker Kubernetes namespace (\$SOLBK_NS).
+  OPTIONS:
+    --only-gen-yaml : print the generated manifest to stdout instead of applying it"
 }
 
 SELECT_ENV_FILE="000-env.sh"
@@ -13,4 +15,13 @@ else
 	exit 1
 fi
 
-${KUBE} create ns ${SOLBK_NS} --dry-run=client -o yaml | ${KUBE} apply -f -
+gen_yaml() {
+  ${KUBE} create ns ${SOLBK_NS} --dry-run=client -o yaml
+}
+
+if [[ "${GENONLY}" == "true" ]]; then
+  gen_yaml
+  exit 0
+fi
+
+gen_yaml | ${KUBE} apply -f -
