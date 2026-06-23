@@ -71,6 +71,10 @@ SOLBK_USR_SECRET="solace-cli-secret"
 #  "user=password"
 #)
 
+# OPTIONAL. Name of an EXISTING ServiceAccount for the broker pods.
+# LEAVE COMMENTED/BLANK to let the operator create one automatically.
+#SOLBK_SVC_ACCOUNT="solace-broker-sa"
+
 # TO CREATE A SECRET CONTAINING SSL/TLS CERTIFICATES, ${SOLBK_SVR_SECRET} MUST HAVE A VALUE
 #SOLBK_SVR_SECRET="solace-server-secret"
 SOLBK_TLS_CERT="/path/to/tls.crt"

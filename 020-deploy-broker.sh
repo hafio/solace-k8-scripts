@@ -31,6 +31,9 @@ spec:
   [[ -n ${IMAGEREPO_SECRET} ]] && echo "    pullSecrets:
     - name: ${IMAGEREPO_SECRET}"
     
+  [[ -n "${SOLBK_SVC_ACCOUNT}" ]] && echo "  serviceAccount:
+    name: ${SOLBK_SVC_ACCOUNT}"
+
   echo "  adminCredentialsSecret: ${SOLBK_USR_SECRET}
   monitoringCredentialsSecret: ${SOLBK_USR_SECRET}
   redundancy: ${SOLBK_REDUNDANCY}
