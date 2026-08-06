@@ -17,8 +17,9 @@ DIST_DIR="${REPO_ROOT}/dist"
 COV_DIR="${REPO_ROOT}/coverage"
 BIN_NAME="solace"
 
-# Pinned tool versions (dependencies pinned and patched).
-GOVULN_VERSION="${GOVULN_VERSION:-v1.1.4}"
+# govulncheck is a go.mod `tool` dependency, so its version is pinned by go.sum
+# rather than by a variable here. Bump it with:
+#   go get -tool golang.org/x/vuln/cmd/govulncheck@vX.Y.Z
 
 # Local convenience cross-compile set (`dist`). CI does not use it: tag.yml
 # matrixes over `build` with TARGET_OS/TARGET_ARCH from BUILD_TARGETS instead.
@@ -112,8 +113,18 @@ task_cov() {
 # One task, every applicable check: govulncheck over source + deps. FATAL on
 # findings, standalone or inside an aggregate; local and CI behave the same.
 # (No image half: this project ships binaries only.)
+#
+# `go tool`, not `go run pkg@version`: the latter resolves in an empty synthetic
+# module, so the scanner is compiled by whatever Go is on PATH -- and a checker
+# built by an older toolchain refuses to type-check a module declaring a newer
+# `go` line ("package requires newer Go version"). A tool dependency builds as
+# part of this module, so it gets the same toolchain build/vet/test already use.
+#
+# Note govulncheck's text mode exits non-zero for ANY finding, so an unfixable
+# CVE fails the gate too; splitting those out would need -format json + OSV
+# parsing here.
 task_scan() {
-  cap go run "golang.org/x/vuln/cmd/govulncheck@${GOVULN_VERSION}" ./...
+  cap go tool govulncheck ./...
 }
 
 # Local only: the graph is a developer artifact, not a CI output.
@@ -140,14 +151,14 @@ Tasks:
            pick the target, unset means host
   test     go test ${RACE_FLAG[*]:-} -count=1 ./...
   cov      coverage profile -> coverage/coverage.html + printed total
-  scan     govulncheck (fatal on findings)
+  scan     govulncheck via 'go tool' (fatal on findings)
   dist     cross-compile ${DIST_TARGETS[*]}
   graphify refresh graphify-out/ (local only; skipped when CI is set)
   all      ${ALL}   (what CI runs, as: all scan)
   full     ${FULL}   (pre-tag sweep)
 
-Env: SOLACE_RACE=0 disables -race; GOVULN_VERSION overrides the pinned govulncheck;
-     TARGET_OS/TARGET_ARCH cross-compile a single \`build\`.
+Env: SOLACE_RACE=0 disables -race; TARGET_OS/TARGET_ARCH cross-compile a single \`build\`.
+     govulncheck's version lives in go.mod (tool directive), not an env var.
 Logs: ${LOG_DIR}/<task>.log (each run closes with a timestamped footer)
 EOF
 }

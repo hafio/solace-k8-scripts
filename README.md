@@ -333,7 +333,7 @@ build/test/scan command. The workflows call task names only, so local runs match
 | `build` | Compile -> `dist/solace-<os>-<arch>[.exe]`. `TARGET_OS`/`TARGET_ARCH` pick the target; unset means the host |
 | `test` | `go test -count=1 ./...` (race on by default on `dev.sh`; opt-in on `dev.ps1`) |
 | `cov` | Coverage profile -> `coverage/coverage.html` + `.out`, prints the total |
-| `scan` | `govulncheck` -- **fatal** on findings, standalone or inside an aggregate |
+| `scan` | `go tool govulncheck` (version pinned in `go.mod`/`go.sum`) -- **fatal** on findings, standalone or inside an aggregate |
 | `dist` | Local convenience: cross-compile all four release targets into `dist/` |
 | `graphify` | Refresh `graphify-out/`. Local only; skipped when `CI` is set |
 | `all` | `build vet test` -- the fast inner loop; CI runs `all scan` |

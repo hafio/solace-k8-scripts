@@ -1,0 +1,12 @@
+# Line endings: LF in the repository AND in every working tree.
+#
+# Without this, a fresh clone on Windows (core.autocrlf=true, the Git for
+# Windows default, including on GitHub's windows runners) converts text files
+# to CRLF on checkout, and two things break:
+#
+#   - internal/k8s/assets/*.tmpl and internal/{k8s,render}/testdata/*.golden
+#     gain \r, so renders no longer match the LF strings the tests assert on
+#   - scripts/dev.sh stops running under a POSIX shell
+#
+# text=auto still lets git detect binary content and leave it untouched.
+* text=auto eol=lf
