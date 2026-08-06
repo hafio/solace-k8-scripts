@@ -294,21 +294,6 @@
     "ast_hash": "e6a941d514e4cfb0186b8b5145196e60",
     "semantic_hash": "e6a941d514e4cfb0186b8b5145196e60"
   },
-  "solace-repl-gen-assessment.md": {
-    "mtime": 1781224910.1795406,
-    "ast_hash": "233ae2971ec15fd00da409e8d783c836",
-    "semantic_hash": "233ae2971ec15fd00da409e8d783c836"
-  },
-  "solace-repl-gen.html": {
-    "mtime": 1779930965.8823516,
-    "ast_hash": "471f426fd803645d4117017c5616655b",
-    "semantic_hash": "471f426fd803645d4117017c5616655b"
-  },
-  "solace-replication-generator.html": {
-    "mtime": 1781498232.0744061,
-    "ast_hash": "132aa22464adff3f02fc002efa0fc46a",
-    "semantic_hash": "132aa22464adff3f02fc002efa0fc46a"
-  },
   ".github/dependabot.yml": {
     "mtime": 1785988142.524399,
     "ast_hash": "608ccb95d7263f7269bc34f5463184df",
