@@ -1,0 +1,98 @@
+apiVersion: pubsubplus.solace.com/v1beta1
+kind: PubSubPlusEventBroker
+metadata:
+  namespace: solace
+  name: dev-broker
+spec:
+  image:
+    repository: registry.example.com/solace-pubsub-standard
+    tag: 10.10.1.128
+    pullPolicy: IfNotPresent
+    pullSecrets:
+    - name: solace-image-pull
+  serviceAccount:
+    name: solace-sa
+  adminCredentialsSecret: solace-admin-secret
+  monitoringCredentialsSecret: solace-admin-secret
+  redundancy: true
+  updateStrategy: automatedRolling
+  podDisruptionBudgetForHA: true
+  systemScaling:
+    system_scaling_maxconnectioncount: 100
+    system_scaling_maxqueuemessagecount: 100
+    system_scaling_maxkafkabridgecount: 0
+    system_scaling_maxkafkabrokerconnectioncount: 0
+    system_scaling_maxbridgecount: 25
+    system_scaling_maxsubscriptioncount: 50000
+    system_scaling_maxguaranteedmessagesize: 10
+    maxSpoolUsage: 10000
+    messagingNodeCpu: "2"
+    messagingNodeMemory: 3410Mi
+  storage:
+    useStorageClass: standard
+    messagingNodeStorageSize: 30Gi
+    monitorNodeStorageSize: 5Gi
+  timezone: "Asia/Singapore"
+  tls:
+    serverTlsConfigSecret: solace-tls-secret
+    enabled: true
+    certFilename: tls.crt
+    certKeyFilename: tls.key
+  nodeAssignment:
+  - name: Primary
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: pubsubpluseventbroker
+              namespaces:
+              - solace
+  - name: Backup
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: pubsubpluseventbroker
+              namespaces:
+              - solace
+  - name: Monitor
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: pubsubpluseventbroker
+              namespaces:
+              - solace
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.universe.tf/loadBalancerIPs: 10.0.0.50
+      metallb.io/loadBalancerIPs: 10.0.0.50
+    ports:
+    - containerPort: 8080
+      name: tcp-semp
+      protocol: TCP
+      servicePort: 8080
+    - containerPort: 55555
+      name: tcp-smf
+      protocol: TCP
+      servicePort: 55556
+    - containerPort: 55443
+      name: tls-smf
+      protocol: TCP
+      servicePort: 55443

@@ -1,0 +1,82 @@
+# env/sample.yaml -- unified config for the `solace` CLI. Copy to env/<name>.yaml
+# and edit; run any command with `--env <name>`. One file drives all three
+# platforms (k8s, docker, podman); each reads only the sections it needs.
+#
+# This is a TEMPLATE with placeholder secrets. Replace admin.pass, the image
+# credentials, and nodes.psk before real use, and never commit real secrets.
+
+# HA topology, unified across platforms: yes = redundancy group (primary+backup
+# +monitor); no = a single standalone broker.
+redundancy: yes
+
+image:
+  repo: solace-pubsub-standard
+  tag: "10.10.1.128"
+  registry: registry.example.com   # optional prefix; omit for docker.io
+  pullSecret: solace-image-pull     # k8s: name of the image-pull secret
+  user: repo-user                   # registry login (prep secrets / docker login)
+  pass: CHANGE-ME-registry          # secret
+
+admin:
+  user: admin                       # container admin username (k8s admin is "admin")
+  pass: CHANGE-ME-admin             # secret, mandatory on every platform
+  monitorPass: CHANGE-ME-monitor    # k8s monitor user secret
+  userSecret: solace-admin-secret   # k8s secret name holding admin/monitor creds
+
+tls:
+  cert: certs/tls.crt               # server certificate (enables broker TLS listeners)
+  certKey: certs/tls.key
+  serverSecret: solace-tls-secret   # k8s: TLS secret name (enables the CR tls block)
+  # cas:                            # trusted domain CA files (config domain-certs)
+  #   - certs/ca.crt
+
+# scaling: omit to take platform defaults (k8s and container differ). Override any:
+# scaling:
+#   maxConnections: 1000
+
+k8s:
+  name: dev-broker
+  namespace: solace
+  updateStrategy: automatedRolling  # automatedRolling | manualPodRestart
+  serviceAccount: solace-sa         # optional
+  storage:
+    class: standard                 # StorageClass; omit to use the cluster default
+    msgNode: 30Gi                   # mandatory
+    monNode: 5Gi
+  loadBalancer:
+    ip: 10.0.0.50                   # MetalLB requested IP (optional)
+  ports:                            # name=containerPort[:servicePort][/proto]
+    - tcp-semp=8080
+    - tcp-smf=55555:55556
+    - tls-smf=55443/TCP
+  # placement:                      # optional pod scheduling
+  #   labelsPrimary: ["nodetype: solace"]
+  #   tolerationsPrimary: ["dedicated=solace:NoSchedule"]
+  # productKeys: []                 # config product-keys
+  # domainCerts:
+  #   folder: certs
+  #   files: {}
+
+docker:
+  mode: compose                     # compose | run
+  container:
+    dataDir: /opt/solace/data       # host bind mount, mandatory
+  # network:
+  #   mode: host                    # host | bridge (bridge needs a ports list)
+
+podman:
+  rootless: false
+  container:
+    dataDir: /opt/solace/data
+
+nodes:                              # redundancy group -- identical on all hosts
+  primary:
+    name: solace-primary
+    ip: 10.0.0.11
+  backup:
+    name: solace-backup
+    ip: 10.0.0.12
+  monitor:
+    name: solace-monitor
+    ip: 10.0.0.13
+  psk: Q0hBTkdFLU1FLXByZXNoYXJlZC1rZXktYmFzZTY0     # secret; host-prep generates one

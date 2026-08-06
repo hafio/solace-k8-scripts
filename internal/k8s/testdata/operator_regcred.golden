@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: regcred
+  namespace: pubsubplus-operator-system
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5leGFtcGxlLmNvbSI6eyJ1c2VybmFtZSI6InJlcG8tdXNlciIsInBhc3N3b3JkIjoiQ0hBTkdFLU1FLXJlZ2lzdHJ5IiwiYXV0aCI6ImNtVndieTExYzJWeU9rTklRVTVIUlMxTlJTMXlaV2RwYzNSeWVRPT0ifX19

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "env_sample_yaml", "label": "env/sample.yaml", "file_type": "code", "source_file": "env/sample.yaml"}], "edges": [{"source": "env_sample_yaml", "target": "solace_yaml_generator_html", "relation": "shares_data_with", "confidence": "INFERRED", "confidence_score": 0.8, "source_file": "env/sample.yaml"}], "hyperedges": []}

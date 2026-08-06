@@ -1,124 +1,190 @@
-# Graph Report - C:/Users/hamly/git/solace-k8-scripts  (2026-05-27)
+# Graph Report - solace-k8-scripts  (2026-08-06)
 
 ## Corpus Check
-- Corpus is ~29,577 words - fits in a single context window. You may not need a graph.
+- 57 files · ~79,948 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 155 nodes · 186 edges · 47 communities (21 shown, 26 thin omitted)
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 25 edges (avg confidence: 0.86)
-- Token cost: 126,081 input · 14,010 output
+- 1015 nodes · 2932 edges · 26 communities (25 shown, 1 thin omitted)
+- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 495 edges (avg confidence: 0.8)
+- Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `d76ba16b`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Deploy + Post-Config Pipeline|Deploy + Post-Config Pipeline]]
-- [[_COMMUNITY_000-env Bootstrap & Defaults|000-env Bootstrap & Defaults]]
-- [[_COMMUNITY_Pod CLI  Operator Lifecycle|Pod CLI / Operator Lifecycle]]
-- [[_COMMUNITY_gen_yaml Manifest Pattern|gen_yaml Manifest Pattern]]
-- [[_COMMUNITY_Local Image Mirroring (Minikube)|Local Image Mirroring (Minikube)]]
-- [[_COMMUNITY_Config Gather Helper (069)|Config Gather Helper (069)]]
-- [[_COMMUNITY_Node Labeling Helper (013)|Node Labeling Helper (013)]]
-- [[_COMMUNITY_Operator Deploy Script (010)|Operator Deploy Script (010)]]
-- [[_COMMUNITY_Env Bootstrap Wrapper (000)|Env Bootstrap Wrapper (000)]]
-- [[_COMMUNITY_Broker Deploy Script (020)|Broker Deploy Script (020)]]
-- [[_COMMUNITY_Operator Delete Script (110)|Operator Delete Script (110)]]
-- [[_COMMUNITY_Show All Brokers Helper|Show All Brokers Helper]]
-- [[_COMMUNITY_Env Check Script (001)|Env Check Script (001)]]
-- [[_COMMUNITY_Assert Leader Script (050)|Assert Leader Script (050)]]
-- [[_COMMUNITY_Server Cert Loader (051)|Server Cert Loader (051)]]
-- [[_COMMUNITY_Disable Default VPN (053)|Disable Default VPN (053)]]
-- [[_COMMUNITY_Broker Delete Script (120)|Broker Delete Script (120)]]
-- [[_COMMUNITY_Storage Class Check (009)|Storage Class Check (009)]]
-- [[_COMMUNITY_Disable Default Users (054)|Disable Default Users (054)]]
-- [[_COMMUNITY_Execute CLI Script (059)|Execute CLI Script (059)]]
-- [[_COMMUNITY_SEMP Login Test (060)|SEMP Login Test (060)]]
-- [[_COMMUNITY_Redundancy Test (061)|Redundancy Test (061)]]
-- [[_COMMUNITY_desc-broker Helper|desc-broker Helper]]
-- [[_COMMUNITY_enter-solace-shell Helper|enter-solace-shell Helper]]
-- [[_COMMUNITY_replicas-start Helper|replicas-start Helper]]
-- [[_COMMUNITY_Local Tar Image Concept|Local Tar Image Concept]]
-- [[_COMMUNITY_enter-solace-cli Helper|enter-solace-cli Helper]]
-- [[_COMMUNITY_logs-broker Helper|logs-broker Helper]]
-- [[_COMMUNITY_Node Labeling Concept|Node Labeling Concept]]
-- [[_COMMUNITY_Solace Product Keys Concept|Solace Product Keys Concept]]
-- [[_COMMUNITY_Broker Replication Concept|Broker Replication Concept]]
-- [[_COMMUNITY_VPN Replication Concept|VPN Replication Concept]]
+- App
+- scripts.go
+- manager_test.go
+- Role
+- cli_test.go
+- config_test.go
+- Platform
+- Manager
+- render.go
+- runner_test.go
+- broker_test.go
+- newLocalOps
+- RenderOperator
+- .validateContainer
+- NewCluster
+- Load
+- config.go
+- Transport Test Doubles
+- dev.sh
+- recRunner
+- dev.ps1
+- CLAUDE.md
+- Cluster
+- Go Module Definition
 
 ## God Nodes (most connected - your core abstractions)
-1. `000-env.sh bootstrap script` - 16 edges
-2. `020-deploy-broker.sh - deploys PubSubPlusEventBroker CR` - 11 edges
-3. `Pod naming convention: {SOLBK_NAME}-pubsubplus-{p|b|m}-0` - 7 edges
-4. `010-deploy-operator.sh - deploys Solace operator` - 6 edges
-5. `053-disable-default-vpn.sh - disables built-in 'default' VPN` - 6 edges
-6. `054-disable-all-default-usernames.sh - disables 'default' client-username in every VPN` - 6 edges
-7. `059-execute-cli.sh - executes a CLI script inside a broker pod` - 6 edges
-8. `kubectl exec + cli -Apes pattern (run Solace CLI in pod)` - 6 edges
-9. `110-delete-operator.sh - deletes Solace operator` - 5 edges
-10. `050-assert-leader.sh - asserts config-sync leader on HA broker` - 5 edges
+1. `App` - 113 edges
+2. `Role` - 73 edges
+3. `bg()` - 64 edges
+4. `ctrCfg()` - 51 edges
+5. `newCapMgr()` - 47 edges
+6. `newTestOps()` - 42 edges
+7. `Manager` - 39 edges
+8. `k8sCluster()` - 32 edges
+9. `NewCluster()` - 32 edges
+10. `eqArgs()` - 32 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `001-check-env.sh - environment variable summary` --semantically_similar_to--> `009-check-storage-class.sh - StorageClass validation`  [INFERRED] [semantically similar]
-  001-check-env.sh → 009-check-storage-class.sh
-- `010-deploy-operator.sh - deploys Solace operator` --semantically_similar_to--> `110-delete-operator.sh - deletes Solace operator`  [INFERRED] [semantically similar]
-  010-deploy-operator.sh → 110-delete-operator.sh
-- `gen_yaml() in 010-deploy-operator.sh (operator manifest bundle)` --semantically_similar_to--> `gen_yaml() in 110-delete-operator.sh (mirror of 010)`  [INFERRED] [semantically similar]
-  010-deploy-operator.sh → 110-delete-operator.sh
-- `053-disable-default-vpn.sh - disables built-in 'default' VPN` --semantically_similar_to--> `054-disable-all-default-usernames.sh - disables 'default' client-username in every VPN`  [INFERRED] [semantically similar]
-  053-disable-default-vpn.sh → 054-disable-all-default-usernames.sh
-- `pick_pod() helper` --rationale_for--> `pick_pod helper concept`  [EXTRACTED]
-  000-env.sh → CLAUDE.md
+- `main()` --calls--> `Execute()`  [INFERRED]
+  main.go → internal/cli/root.go
+- `ctrOps()` --calls--> `New()`  [INFERRED]
+  internal/cli/ops_container.go → internal/broker/broker.go
+- `k8sOps()` --calls--> `New()`  [INFERRED]
+  internal/cli/ops_k8s.go → internal/broker/broker.go
+- `TestTransportEchoHidesUploadBody()` --calls--> `New()`  [INFERRED]
+  internal/container/transport_test.go → internal/broker/broker.go
+- `TestOperatorNSDefaultOnError()` --calls--> `New()`  [INFERRED]
+  internal/k8s/cluster_test.go → internal/broker/broker.go
+
+## Import Cycles
+- None detected.
 
 ## Hyperedges (group relationships)
-- **All scripts source 000-env.sh as bootstrap** — 001check_env, 009check_storage_class, 010deploy_operator, 020deploy_broker, 050assert_leader, 051load_server_cert, 053disable_default_vpn, 054disable_all_default_usernames, 059execute_cli, 060test_semp_login, 110delete_operator, 000env_bootstrap [EXTRACTED 1.00]
-- **Scripts using the gen_yaml() heredoc-to-kubectl pattern** — 010deploy_operator, 020deploy_broker, 110delete_operator, concept_gen_yaml_pattern [EXTRACTED 1.00]
-- **Post-config scripts that copy CLI into pod and exec it** — 050assert_leader, 051load_server_cert, 053disable_default_vpn, 054disable_all_default_usernames, 059execute_cli, concept_kubectl_exec_cli, concept_kubectl_cp [EXTRACTED 1.00]
-- **Scripts that call pick_pod helper** — desc-broker_script, enter-solace-cli_script, enter-solace-shell_script, logs-broker_script [EXTRACTED 1.00]
-- **Operational helper scripts (no number prefix)** — desc-broker_script, enter-solace-cli_script, enter-solace-shell_script, logs-broker_script, replicas-start-broker_script, show-all-brokers_script [EXTRACTED 1.00]
-- **Post-check scripts (action band 6)** — 060-test-semp-login_script, 061-test-redundancy_script, 069-gather-configs_script [EXTRACTED 1.00]
+- **Solace Go CLI Architecture** — internal_config, internal_engine, internal_render, internal_broker, internal_k8s, internal_cli [EXTRACTED 1.00]
+- **Web-based Configuration Generators** — solace_repl_gen_html, solace_replication_generator_html, solace_yaml_generator_html [INFERRED 0.90]
+- **Legacy Bash Script Family** — bash_000_env_sh, bash_010_deploy_operator_sh, bash_020_deploy_broker_sh, bash_059_execute_cli_sh [EXTRACTED 1.00]
 
-## Communities (47 total, 26 thin omitted)
+## Communities (26 total, 1 thin omitted)
 
-### Community 0 - "Deploy + Post-Config Pipeline"
-Cohesion: 0.12
-Nodes (10): PubSubPlusEventBroker CRD, Canonical Delete run order, File-naming convention (Category/Action/Sequence), Pod-role argument (p/b/m), Canonical New-Deployment run order, KUBE, SOLBK_DIAG_DIR, SOLBK_NAME (+2 more)
+### Community 0 - "App"
+Cohesion: 0.05
+Nodes (136): App, opFunc, roleOpFunc, Command, newContainerCmd(), newCtrConfigCmd(), newCtrDeleteCmd(), newCtrDeployCmd() (+128 more)
 
-### Community 1 - "000-env Bootstrap & Defaults"
-Cohesion: 0.23
-Nodes (22): 000-env.sh bootstrap script, Default values block (KUBE, SOLOP_IMAGE, SOLBK_REDUNDANCY defaults), env/<name> file loader, Mandatory variable validation (SOLBK_NAME, SOLBK_NS, SOLBK_IMAGE, SOLBK_IMG_TAG, SOLBK_STORAGE_MSGNODE), pick_pod() helper, SOLOP_DERIVED_NS auto-detection via kubectl, 001-check-env.sh - environment variable summary, 009-check-storage-class.sh - StorageClass validation (+14 more)
+### Community 1 - "scripts.go"
+Cohesion: 0.08
+Nodes (43): showCmd, field(), TestHTTPStatusHelpers(), assertLeaderScript(), disableDefaultUsersScript(), disableDefaultVPNScript(), gatherConfigsScript(), noReleaseActivityScript() (+35 more)
 
-### Community 2 - "Pod CLI / Operator Lifecycle"
+### Community 2 - "manager_test.go"
+Cohesion: 0.13
+Nodes (60): fileExists(), ctrCfg(), Buffer, Config, T, hasCall(), newCapMgr(), newEchoMgr() (+52 more)
+
+### Community 3 - "Role"
+Cohesion: 0.05
+Nodes (40): fakeTransport, recDownload, recOutput, recRun, recUpload, recUploadFile, runErrTransport, Role (+32 more)
+
+### Community 4 - "cli_test.go"
+Cohesion: 0.09
+Nodes (55): capture(), captureStderr(), captureStdout(), collectPaths(), findCmd(), firstLine(), Command, File (+47 more)
+
+### Community 5 - "config_test.go"
 Cohesion: 0.14
-Nodes (5): pick_pod() helper, Solace EventBroker Operator, Env-file pattern (--env <name>), pick_pod helper concept, env/sample template
+Nodes (33): assertContainerBlockDefaults(), assertContainerScaling(), Config, T, haNodesConfig(), TestApplyDefaultsDocker(), TestApplyDefaultsK8s(), TestApplyDefaultsK8sTLS() (+25 more)
 
-### Community 3 - "gen_yaml Manifest Pattern"
-Cohesion: 0.53
-Nodes (6): gen_yaml() in 010-deploy-operator.sh (operator manifest bundle), gen_yaml() in 020-deploy-broker.sh (broker CR YAML), gen_yaml() in 110-delete-operator.sh (mirror of 010), gen_yaml() heredoc-to-kubectl pattern, PubSubPlusEventBroker CRD (pubsubplus.solace.com/v1beta1), Solace operator manifest bundle (CRD + RBAC + Deployment)
+### Community 6 - "Platform"
+Cohesion: 0.20
+Nodes (10): Platform, TestResolveEnvPath(), TestValidateUnknownPlatform(), applyContainerBlockDefaults(), defaultK8sPorts(), Config, ResolveEnvPath(), setDefault() (+2 more)
 
-### Community 4 - "Local Image Mirroring (Minikube)"
-Cohesion: 0.50
-Nodes (3): Minikube Steps, Steps, Using local tar images for kubectl setup
+### Community 7 - "Manager"
+Cohesion: 0.15
+Nodes (12): Manager, Runner, defaultGenPSK(), Config, Context, Reader, Writer, NewManager() (+4 more)
 
-### Community 5 - "Config Gather Helper (069)"
-Cohesion: 0.67
-Nodes (3): 069-gather-configs.sh script, echoUsage(), nodes
+### Community 8 - "render.go"
+Cohesion: 0.11
+Nodes (33): Builder, NodeIdentity, Config, Context, Cluster, boolStr(), BrokerCR(), Compose() (+25 more)
+
+### Community 9 - "runner_test.go"
+Cohesion: 0.14
+Nodes (22): Echo, Exec, Context, Writer, Quote(), quoteTok(), captureStdout(), T (+14 more)
+
+### Community 10 - "broker_test.go"
+Cohesion: 0.05
+Nodes (86): Transport, Duration, containsAnyFold(), countContains(), Ops, Config, Context, Writer (+78 more)
+
+### Community 11 - "newLocalOps"
+Cohesion: 0.22
+Nodes (26): uploadedForRole(), Buffer, Config, Ops, T, localCfg(), newLocalOps(), rd() (+18 more)
+
+### Community 12 - "RenderOperator"
+Cohesion: 0.14
+Nodes (13): Context, Cluster, orNone(), orValue(), setOrMissing(), setOrNone(), GenOperator(), Config (+5 more)
+
+### Community 13 - ".validateContainer"
+Cohesion: 0.42
+Nodes (5): Config, missingErr(), platformKey(), requireAll(), sortStrings()
+
+### Community 14 - "NewCluster"
+Cohesion: 0.06
+Nodes (94): T, TestCheckDryRun(), TestCheckEnvNoSecretLeak(), TestCheckStorageClass(), TestReachable(), TestResolveStorageClass(), NewCluster(), Cluster (+86 more)
+
+### Community 15 - "Load"
+Cohesion: 0.36
+Nodes (8): TestLoadParseError(), TestLoadReadError(), TestLoadSuccess(), TestLoadUnknownField(), TestLoadValidationError(), writeTempYAML(), Config, Load()
+
+### Community 16 - "config.go"
+Cohesion: 0.16
+Nodes (20): Admin, Container, DockerConfig, DomainCerts, Image, K8sConfig, LoadBalancer, Network (+12 more)
+
+### Community 17 - "Transport Test Doubles"
+Cohesion: 0.22
+Nodes (15): capCall, capRunner, Config, NewTransport(), dockerCfg(), eqArgs(), Config, Context (+7 more)
+
+### Community 19 - "dev.sh"
+Cohesion: 0.18
+Nodes (20): finish(), log_init(), main(), NO_COLOR, dev.sh script, build_one(), cap(), die() (+12 more)
+
+### Community 20 - "recRunner"
+Cohesion: 0.22
+Nodes (11): Config, NewTransport(), Context, T, TestTransportCopy(), TestTransportEchoHidesUploadBody(), TestTransportExecArgs(), TestTransportUpload() (+3 more)
+
+### Community 21 - "dev.ps1"
+Cohesion: 0.18
+Nodes (16): Get-Log(), Get-Now(), Build-One(), Cap(), Ok(), Step(), Task-build(), Task-cov() (+8 more)
+
+### Community 22 - "CLAUDE.md"
+Cohesion: 0.12
+Nodes (11): bash/000-env.sh, bash/010-deploy-operator.sh, bash/020-deploy-broker.sh, bash/059-execute-cli.sh, docker-podman/000-env.sh, internal/broker, internal/cli, internal/config (+3 more)
+
+### Community 25 - "Cluster"
+Cohesion: 0.22
+Nodes (5): Config, Context, Cluster, Reader, Writer
 
 ## Knowledge Gaps
-- **28 isolated node(s):** `Using local tar images for kubectl setup`, `Steps`, `Minikube Steps`, `Label Cluster Nodes for Broker Pods`, `Apply Solace Product Keys` (+23 more)
+- **16 isolated node(s):** `solace`, `showCmd`, `Config`, `operatorTmplVars`, `NO_COLOR` (+11 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **26 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `gen_yaml() heredoc-to-kubectl pattern` connect `gen_yaml Manifest Pattern` to `Pod CLI / Operator Lifecycle`?**
-  _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `gen_yaml() in 020-deploy-broker.sh (broker CR YAML)` connect `gen_yaml Manifest Pattern` to `000-env Bootstrap & Defaults`?**
-  _High betweenness centrality (0.065) - this node is a cross-community bridge._
-- **Why does `020-deploy-broker.sh - deploys PubSubPlusEventBroker CR` connect `000-env Bootstrap & Defaults` to `gen_yaml Manifest Pattern`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
-- **Are the 8 inferred relationships involving `020-deploy-broker.sh - deploys PubSubPlusEventBroker CR` (e.g. with `Mandatory variable validation (SOLBK_NAME, SOLBK_NS, SOLBK_IMAGE, SOLBK_IMG_TAG, SOLBK_STORAGE_MSGNODE)` and `010-deploy-operator.sh - deploys Solace operator`) actually correct?**
-  _`020-deploy-broker.sh - deploys PubSubPlusEventBroker CR` has 8 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 2 inferred relationships involving `010-deploy-operator.sh - deploys Solace operator` (e.g. with `110-delete-operator.sh - deletes Solace operator` and `020-deploy-broker.sh - deploys PubSubPlusEventBroker CR`) actually correct?**
-  _`010-deploy-operator.sh - deploys Solace operator` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 2 inferred relationships involving `053-disable-default-vpn.sh - disables built-in 'default' VPN` (e.g. with `020-deploy-broker.sh - deploys PubSubPlusEventBroker CR` and `054-disable-all-default-usernames.sh - disables 'default' client-username in every VPN`) actually correct?**
-  _`053-disable-default-vpn.sh - disables built-in 'default' VPN` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Using local tar images for kubectl setup`, `Steps`, `Minikube Steps` to the rest of the system?**
-  _35 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `Role` connect `Role` to `App`, `scripts.go`, `Manager`, `render.go`, `broker_test.go`, `newLocalOps`?**
+  _High betweenness centrality (0.309) - this node is a cross-community bridge._
+- **Why does `App` connect `App` to `cli_test.go`, `Platform`, `Manager`?**
+  _High betweenness centrality (0.256) - this node is a cross-community bridge._
+- **Why does `Platform` connect `Platform` to `App`, `manager_test.go`, `config_test.go`, `Manager`, `render.go`, `.validateContainer`, `Load`, `config.go`, `Transport Test Doubles`?**
+  _High betweenness centrality (0.165) - this node is a cross-community bridge._
+- **Are the 22 inferred relationships involving `bg()` (e.g. with `ctrLogin()` and `opCtrCheck()`) actually correct?**
+  _`bg()` has 22 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `solace`, `showCmd`, `Config` to the rest of the system?**
+  _16 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `App` be split into smaller, more focused modules?**
+  _Cohesion score 0.05167055167055167 - nodes in this community are weakly interconnected._
+- **Should `scripts.go` be split into smaller, more focused modules?**
+  _Cohesion score 0.07548076923076923 - nodes in this community are weakly interconnected._

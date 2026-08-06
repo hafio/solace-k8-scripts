@@ -5,3 +5,20 @@ EventBrokerOperatorUserGuide.md
 solace-theme-reference.md
 product key.txt
 customer-sample
+
+# docker-podman: generated compose file + real env files (hold admin password / PSK)
+docker-podman/docker-compose.yml
+docker-podman/env/*
+!docker-podman/env/sample
+
+# Go build / dev tooling (scripts/dev.sh|dev.ps1)
+/dist/
+/coverage/
+coverage.out
+coverage.html
+scripts/logs/
+# root-built binary from `go build .`
+/solace
+/solace.exe
+bash/*
+solace-repl*
