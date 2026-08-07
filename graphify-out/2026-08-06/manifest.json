@@ -1,7 +1,7 @@
 {
   "README.md": {
-    "mtime": 1785988457.1873622,
-    "ast_hash": "f8050173ae95cb5b5a4bf16014cb3fdc",
+    "mtime": 1785993112.3994095,
+    "ast_hash": "66378de0b3eab213bd84417e2078dbed",
     "semantic_hash": ""
   },
   "solace-yaml-generator.html": {
@@ -20,9 +20,9 @@
     "semantic_hash": ""
   },
   "go.mod": {
-    "mtime": 1785403596.0928826,
-    "ast_hash": "d0232c19b2d8b8c6ea435a15fe5603f9",
-    "semantic_hash": "d0232c19b2d8b8c6ea435a15fe5603f9"
+    "mtime": 1785993084.7748985,
+    "ast_hash": "3c1fca0252085fa0419f70d7fee7bb01",
+    "semantic_hash": ""
   },
   "internal/broker/broker.go": {
     "mtime": 1785734692.8825705,
@@ -275,13 +275,13 @@
     "semantic_hash": "fe74a49f647d8e7db1b6cd84a7e1ca7b"
   },
   "scripts/dev.ps1": {
-    "mtime": 1785988231.4251974,
-    "ast_hash": "1aa03d0699bb38f3ec7daeca6ab45b8e",
+    "mtime": 1785991760.2109432,
+    "ast_hash": "1c849c7d614e0c5fca448d56d9aad6ba",
     "semantic_hash": ""
   },
   "scripts/dev.sh": {
-    "mtime": 1785988179.9308658,
-    "ast_hash": "c995444a2bdd5f29085818052edfb6db",
+    "mtime": 1785991757.9017954,
+    "ast_hash": "c44e5b72883041753e16366bb1f1ca13",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {

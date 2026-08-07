@@ -8,7 +8,9 @@ A single Go binary, `solace`, that deploys and operates Solace PubSub+ Event Bro
 
 ## Go implementation (`solace` binary)
 
-The `solace` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,cli}` + `main.go`.
+The `solace` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,cli}` + `main.go`,
+plus `internal/tools/vulnjudge` -- a dev-only command the `scan` task pipes govulncheck's
+JSON through, so a fixable vulnerability fails the gate and one with no released fix warns.
 
 ### Container platform (`internal/container`)
 

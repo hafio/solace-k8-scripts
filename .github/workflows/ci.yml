@@ -39,8 +39,9 @@ jobs:
         # This pins the OS VERSION only. The label still tracks the newest
         # build of that image, so preinstalled tool versions DO move --
         # windows-2025 was switched from Visual Studio 2022 to 2026 in June
-        # 2026 without the label changing. Use .tool-versions if you need the
-        # toolchain itself pinned.
+        # 2026 without the label changing. Pin the toolchain in-repo if it
+        # matters: go.mod `toolchain` / rust-toolchain.toml (self-honouring,
+        # no workflow edits) or .tool-versions where no such pin exists.
         #
         # Labels also expire, unlike action SHAs: GitHub keeps two GA images
         # per OS, and brownouts precede removal. ubuntu-22.04 deprecates from

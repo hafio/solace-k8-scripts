@@ -2,6 +2,12 @@ module solace
 
 go 1.26
 
+// Pinned so builds use a patched stdlib. `go 1.26` alone is only a floor, so
+// GOTOOLCHAIN=auto selects go1.26.0 on a machine with an older Go -- which is
+// what CI has, and what shipped a net panic bug into release binaries. Bump
+// this whenever `scan` reports a standard-library vulnerability.
+toolchain go1.26.5
+
 require (
 	github.com/spf13/cobra v1.8.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -18,7 +24,4 @@ require (
 	golang.org/x/vuln v1.6.0 // indirect
 )
 
-tool (
-	golang.org/x/vuln/cmd/govulncheck
-	solace
-)
+tool golang.org/x/vuln/cmd/govulncheck

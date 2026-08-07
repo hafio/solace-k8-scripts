@@ -42,6 +42,17 @@ $DistTargets = @(
 $RaceFlag = @(); $CoverMode = 'count'
 if ($env:SOLACE_RACE -eq '1') { $RaceFlag = @('-race'); $CoverMode = 'atomic' }
 
+# Toolchain parity: go.mod's `toolchain` pin is what local and CI must agree on,
+# but an exported GOTOOLCHAIN (`local` especially) silently overrides it and
+# builds against whatever Go is on PATH. Apply the pin only when unset, so an
+# explicit value still wins -- same when-unset rule as the env defaults.
+if (-not $env:GOTOOLCHAIN) {
+  # @() forces an array: -match on a single hit returns a bare string, and
+  # indexing that would yield its first character instead of the line.
+  $tcLines = @((Get-Content (Join-Path $RepoRoot 'go.mod')) -match '^toolchain\s+\S+')
+  if ($tcLines.Count -gt 0) { $env:GOTOOLCHAIN = ($tcLines[0] -split '\s+')[1] }
+}
+
 # Keep captured logs clean: no color / progress from tools.
 $env:NO_COLOR = '1'
 
@@ -51,7 +62,12 @@ function Ok($m)   { Write-Host "[ ok ] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[warn] $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host "[fail] $m" -ForegroundColor Red; exit 1 }
 
-function Get-Now { (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz') }
+# Matches dev.sh's `date +%Y-%m-%dT%H:%M:%S%z`: .NET 'zzz' renders the offset as
+# +08:00, so strip the colon or the two scripts' footers would not match.
+function Get-Now {
+  $d = Get-Date
+  return $d.ToString('yyyy-MM-ddTHH:mm:ss') + $d.ToString('zzz').Replace(':', '')
+}
 function Get-Log($task) { Join-Path $LogDir "$task.log" }
 
 $script:LogFile = $null
@@ -153,9 +169,9 @@ function Task-cov {
   return 0
 }
 
-# One task, every applicable check: govulncheck over source + deps. FATAL on
-# findings, standalone or inside an aggregate; local and CI behave the same.
-# (No image half: this project ships binaries only.)
+# One task, every applicable check: govulncheck over source + deps. FATAL on a
+# fixable finding, standalone or inside an aggregate; local and CI behave the
+# same. (No image half: this project ships binaries only.)
 #
 # `go tool`, not `go run pkg@version`: the latter resolves in an empty synthetic
 # module, so the scanner is compiled by whatever Go is on PATH -- and a checker
@@ -163,11 +179,35 @@ function Task-cov {
 # `go` line ("package requires newer Go version"). A tool dependency builds as
 # part of this module, so it gets the same toolchain build/vet/test already use.
 #
-# Note govulncheck's text mode exits non-zero for ANY finding, so an unfixable
-# CVE fails the gate too; splitting those out would need -format json + OSV
-# parsing here.
+# `-format json` + vulnjudge, not text mode: text mode exits non-zero for ANY
+# finding, so a CVE with no released fix would block a release on someone else's
+# patch schedule. The JSON stream carries fixed_version per finding, so the judge
+# can fail on what is actionable and warn on what is not -- see
+# internal/tools/vulnjudge.
 function Task-scan {
-  return (Cap go tool govulncheck ./...)
+  $raw = Join-Path $LogDir 'scan.json'
+  # 5.1 decodes native output with the console codepage, which would corrupt a
+  # non-ASCII byte in a vulnerability summary and leave the judge's json.Decoder
+  # to choke on it. Read as UTF-8, then put the console back as it was.
+  $prevEnc = [Console]::OutputEncoding
+  try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    # `-format json` always exits 0, even with findings, so a non-zero code here
+    # is a real tool failure (bad flags, packages that will not load) and stays
+    # fatal. stderr is left on the console so those errors reach the CI step log.
+    $json = (& go tool govulncheck -format json ./...) -join "`n"
+    $code = $LASTEXITCODE
+  } finally {
+    [Console]::OutputEncoding = $prevEnc
+  }
+  if ($code -ne 0) {
+    Warn 'govulncheck failed to run; see the output above'
+    return $code
+  }
+  # WriteAllText with a BOM-less encoder: 5.1's utf8 writers prepend a BOM and
+  # json.Decoder rejects it.
+  [System.IO.File]::WriteAllText($raw, $json, (New-Object System.Text.UTF8Encoding($false)))
+  return (Cap go run ./internal/tools/vulnjudge $raw)
 }
 
 # Local only: the graph is a developer artifact, not a CI output.
@@ -198,13 +238,15 @@ Tasks:
            pick the target, unset means host
   test     go test $raceDesc -count=1 ./...
   cov      coverage profile -> coverage/coverage.html + printed total
-  scan     govulncheck via 'go tool' (fatal on findings)
+  scan     govulncheck (fatal on a fixable vulnerability this module calls;
+           one with no released fix warns and passes)
   dist     cross-compile $targetsDesc
   graphify refresh graphify-out/ (local only; skipped when CI is set)
   all      $($All -join ' ')   (what CI runs, as: all scan)
   full     $($Full -join ' ')   (pre-tag sweep)
 
 Env: SOLACE_RACE=1 enables -race; TARGET_OS/TARGET_ARCH cross-compile a single ``build``.
+     GOTOOLCHAIN defaults to go.mod's ``toolchain`` pin; export it to override.
      govulncheck's version lives in go.mod (tool directive), not an env var.
 Logs: $LogDir\<task>.log (each run closes with a timestamped footer)
 "@

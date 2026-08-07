@@ -1,7 +1,7 @@
 {
   "README.md": {
-    "mtime": 1786006591.8500147,
-    "ast_hash": "da7b9892338c47c398f3e3459ffc667b",
+    "mtime": 1785994970.81875,
+    "ast_hash": "7457f57bbcfea99c9af9ba90df602b57",
     "semantic_hash": ""
   },
   "solace-yaml-generator.html": {
@@ -10,8 +10,8 @@
     "semantic_hash": "4037b255296339b8bc7e0cca34853447"
   },
   "CLAUDE.md": {
-    "mtime": 1786006593.913457,
-    "ast_hash": "c9d0de63af6d519bdfad2c5e8ddf1601",
+    "mtime": 1785979722.5264008,
+    "ast_hash": "87d0a52609cdf33650541ed6b59d4252",
     "semantic_hash": ""
   },
   ".claude/settings.json": {
@@ -275,13 +275,13 @@
     "semantic_hash": "fe74a49f647d8e7db1b6cd84a7e1ca7b"
   },
   "scripts/dev.ps1": {
-    "mtime": 1786006578.3151455,
-    "ast_hash": "62385bceda8dd9b01055f944f091e089",
+    "mtime": 1785994963.8297071,
+    "ast_hash": "dd236fcf49d11bd07038df7a837c91b9",
     "semantic_hash": ""
   },
   "scripts/dev.sh": {
-    "mtime": 1786006576.708839,
-    "ast_hash": "c1b6b46a2618ffaef0cd151da726dad5",
+    "mtime": 1785994961.649927,
+    "ast_hash": "01aabe7c2eaba87bed93f3869d422c41",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
@@ -302,31 +302,6 @@
   ".github/workflows/tag.yml": {
     "mtime": 1785994918.4858196,
     "ast_hash": "7b1409c514d2df1d051f7498f20b8a02",
-    "semantic_hash": ""
-  },
-  "internal/tools/vulnjudge/main.go": {
-    "mtime": 1786006384.006119,
-    "ast_hash": "4ac541528017086b08b4545a4f7a0112",
-    "semantic_hash": ""
-  },
-  "internal/tools/vulnjudge/main_test.go": {
-    "mtime": 1786006434.7180324,
-    "ast_hash": "d016bda145b35ae949fb9eab0473fb0b",
-    "semantic_hash": ""
-  },
-  "internal/tools/vulnjudge/testdata/called_fixable.json": {
-    "mtime": 1786006404.6347153,
-    "ast_hash": "e6a43b6a53f4c35c71601c16bfa13897",
-    "semantic_hash": ""
-  },
-  "internal/tools/vulnjudge/testdata/called_unfixable.json": {
-    "mtime": 1786006408.6528625,
-    "ast_hash": "7081e10d0285163cc6f41f12666457d5",
-    "semantic_hash": ""
-  },
-  "internal/tools/vulnjudge/testdata/uncalled_only.json": {
-    "mtime": 1786006412.696673,
-    "ast_hash": "290108742f83191343145174a17a2363",
     "semantic_hash": ""
   }
 }
