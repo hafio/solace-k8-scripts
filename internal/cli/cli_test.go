@@ -17,7 +17,8 @@ import (
 const sampleEnv = "../../env/sample.yaml"
 
 // withEnv appends the sample --env so a command reaching PersistentPreRunE loads
-// a valid config instead of the missing env/default.yaml.
+// a valid config instead of the missing env.yaml. The value carries a separator,
+// so it resolves verbatim rather than through the base-dir/env lookup.
 func withEnv(args ...string) []string {
 	return append(append([]string{}, args...), "--env", sampleEnv)
 }
@@ -180,29 +181,77 @@ func collectPaths(c *cobra.Command, acc *[]string) {
 	}
 }
 
-func TestResolveEnvPath(t *testing.T) {
-	cases := []struct {
-		name    string
-		envName string
-		baseDir string
-		want    string
-	}{
-		{"empty defaults to default.yaml under cwd", "", "", filepath.Join(".", "env", "default.yaml")},
-		{"bare name resolves under env", "dev", "", filepath.Join(".", "env", "dev.yaml")},
-		{"bare name honors base dir", "dev", "/tmp/x", filepath.Join("/tmp/x", "env", "dev.yaml")},
-		{"value with slash used as-is", "path/to/foo.yaml", "", "path/to/foo.yaml"},
-		{"value with backslash used as-is", `a\b`, "", `a\b`},
-		{"yaml suffix used as-is", "foo.yaml", "", "foo.yaml"},
-		{"yml suffix used as-is", "foo.yml", "", "foo.yml"},
+// runStatusStderr runs `k8s status --dry-run` with the given flags and returns
+// what reached stderr, where the resolved-env-file line is echoed.
+func runStatusStderr(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	var runErr error
+	errOut := captureStderr(t, func() {
+		_, runErr = runRoot(t, append([]string{"k8s", "status", "--dry-run"}, args...))
+	})
+	return errOut, runErr
+}
+
+// TestEnvFileLookup covers the resolver as the CLI wires it: -e names a file,
+// searched in the base dir then <base-dir>/env, and the winner is echoed so a
+// base-dir copy shadowing the env/ copy is visible.
+func TestEnvFileLookup(t *testing.T) {
+	body, err := os.ReadFile(writeStandaloneEnv(t))
+	if err != nil {
+		t.Fatalf("read standalone env: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			a := &App{EnvName: tc.envName, BaseDir: tc.baseDir}
-			if got := a.resolveEnvPath(); got != tc.want {
-				t.Errorf("resolveEnvPath() = %q, want %q", got, tc.want)
-			}
-		})
+	root := t.TempDir()
+	put := func(rel string) string {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(p, body, 0o600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		return p
 	}
+
+	t.Run("falls back to the env dir", func(t *testing.T) {
+		want := put("env/dev.yaml")
+		out, err := runStatusStderr(t, "--base-dir", root, "-e", "dev.yaml")
+		if err != nil {
+			t.Fatalf("status err = %v", err)
+		}
+		if !strings.Contains(out, "==> env file: "+want) {
+			t.Errorf("stderr = %q, want the env file line for %q", out, want)
+		}
+	})
+
+	t.Run("base dir shadows the env dir", func(t *testing.T) {
+		want := put("dev.yaml")
+		out, err := runStatusStderr(t, "--base-dir", root, "-e", "dev.yaml")
+		if err != nil {
+			t.Fatalf("status err = %v", err)
+		}
+		if !strings.Contains(out, "==> env file: "+want) {
+			t.Errorf("stderr = %q, want the env file line for %q", out, want)
+		}
+	})
+
+	t.Run("no extension is inferred", func(t *testing.T) {
+		_, err := runStatusStderr(t, "--base-dir", root, "-e", "dev")
+		if err == nil || !strings.Contains(err.Error(), `env file "dev" not found`) {
+			t.Fatalf("-e dev err = %v, want a not-found error", err)
+		}
+	})
+
+	t.Run("long and short flags agree", func(t *testing.T) {
+		want := filepath.Join(root, "dev.yaml")
+		out, err := runStatusStderr(t, "--base-dir", root, "--env", "dev.yaml")
+		if err != nil {
+			t.Fatalf("status err = %v", err)
+		}
+		if !strings.Contains(out, "==> env file: "+want) {
+			t.Errorf("stderr = %q, want the env file line for %q", out, want)
+		}
+	})
 }
 
 func TestFirstArg(t *testing.T) {
@@ -297,6 +346,7 @@ func TestTreeStructure(t *testing.T) {
 		"solace docker deploy",
 		"solace docker gen",
 		"solace podman gen",
+		"solace convert",
 	}
 	for _, want := range wantLeaves {
 		if !have[want] {
@@ -875,9 +925,11 @@ func TestPromptYes(t *testing.T) {
 
 func TestErrorPaths(t *testing.T) {
 	t.Run("bad env path", func(t *testing.T) {
+		// A value with a separator names one file: no env/ retry, so the error
+		// lists that single candidate.
 		_, err := runRoot(t, []string{"k8s", "status", "--env", "/no/such/file.yaml"})
-		if err == nil {
-			t.Fatal("bad --env err = nil, want a config load error")
+		if err == nil || !strings.Contains(err.Error(), "not found: looked for") {
+			t.Fatalf("bad --env err = %v, want a not-found error", err)
 		}
 	})
 	t.Run("bad container role", func(t *testing.T) {
@@ -1042,6 +1094,138 @@ func TestCtrExecCLIPathSeparator(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
 	if _, err := runCtr(t, path, "docker", "config", "exec-cli", "sub/dir/x.cli"); err != nil {
 		t.Fatalf("exec-cli with a path arg err = %v, want nil", err)
+	}
+}
+
+// bashEnv is a minimal legacy container env file used by the convert tests.
+const bashEnv = "#!/bin/bash\n" +
+	"SOLBK_IMAGE=\"solace-pubsub-standard\"\n" +
+	"SOLBK_IMG_TAG=\"10.10.1.128\"\n" +
+	"SOLBK_ADM_PASS=\"" + smokeAdminPass + "\"\n" +
+	"SOLBK_REDUNDANCY=\"no\"\n" +
+	"SOLBK_NODE_PRI_NAME=\"pri-host\"\n" +
+	"DOCKER_MODE=\"compose\"\n" +
+	"SOMETHING_UNKNOWN=\"x\"\n"
+
+// writeBashEnv writes bashEnv to a temp file and returns its path.
+func writeBashEnv(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "legacy-env")
+	if err := os.WriteFile(path, []byte(bashEnv), 0o600); err != nil {
+		t.Fatalf("write bash env: %v", err)
+	}
+	return path
+}
+
+// TestConvertToStdout covers the default path: the YAML lands on stdout, and the
+// unmapped-variable warning goes to stderr so it never pollutes the artifact.
+func TestConvertToStdout(t *testing.T) {
+	src := writeBashEnv(t)
+	var out string
+	errOut := captureStderr(t, func() {
+		var err error
+		out, err = runRoot(t, []string{"convert", src})
+		if err != nil {
+			t.Fatalf("convert err = %v, want nil", err)
+		}
+	})
+	for _, want := range []string{"redundancy: \"no\"", "repo: solace-pubsub-standard", "name: pri-host"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("converted YAML missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "SOMETHING_UNKNOWN") {
+		t.Errorf("the unmapped-variable note must not reach stdout:\n%s", out)
+	}
+	if !strings.Contains(errOut, "SOMETHING_UNKNOWN") {
+		t.Errorf("stderr = %q, want the unmapped-variable warning", errOut)
+	}
+}
+
+// TestConvertToFile covers -o, including the refusal to clobber an existing file
+// and the --force override.
+func TestConvertToFile(t *testing.T) {
+	src := writeBashEnv(t)
+	dst := filepath.Join(t.TempDir(), "converted.yaml")
+
+	_ = captureStderr(t, func() {
+		if _, err := runRoot(t, []string{"convert", src, "-o", dst}); err != nil {
+			t.Fatalf("convert -o err = %v, want nil", err)
+		}
+	})
+	body, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read converted file: %v", err)
+	}
+	if !strings.Contains(string(body), "image:") {
+		t.Errorf("converted file looks wrong:\n%s", body)
+	}
+
+	_ = captureStderr(t, func() {
+		_, err := runRoot(t, []string{"convert", src, "-o", dst})
+		if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+			t.Fatalf("second convert err = %v, want a refusal", err)
+		}
+	})
+	_ = captureStderr(t, func() {
+		if _, err := runRoot(t, []string{"convert", src, "-o", dst, "--force"}); err != nil {
+			t.Fatalf("convert --force err = %v, want nil", err)
+		}
+	})
+}
+
+// TestConvertRoundTrip proves the converter's output is loadable: convert, then
+// drive a real command with -e against the result.
+func TestConvertRoundTrip(t *testing.T) {
+	src := writeBashEnv(t)
+	dst := filepath.Join(t.TempDir(), "converted.yaml")
+	_ = captureStderr(t, func() {
+		if _, err := runRoot(t, []string{"convert", src, "-o", dst}); err != nil {
+			t.Fatalf("convert err = %v, want nil", err)
+		}
+	})
+	out, err := runCtr(t, dst, "docker", "status")
+	if err != nil {
+		t.Fatalf("docker status against the converted env err = %v, want nil", err)
+	}
+	if !strings.Contains(out, "+ docker") {
+		t.Errorf("converted env did not drive a real command:\n%s", out)
+	}
+}
+
+func TestConvertErrorPaths(t *testing.T) {
+	src := writeBashEnv(t)
+	t.Run("bad platform", func(t *testing.T) {
+		_, err := runRoot(t, []string{"convert", src, "--platform", "bogus"})
+		if err == nil || !strings.Contains(err.Error(), "invalid --platform") {
+			t.Fatalf("err = %v, want an invalid-platform error", err)
+		}
+	})
+	t.Run("missing source file", func(t *testing.T) {
+		_, err := runRoot(t, []string{"convert", filepath.Join(t.TempDir(), "nope")})
+		if err == nil || !strings.Contains(err.Error(), "read bash env file") {
+			t.Fatalf("err = %v, want a read error", err)
+		}
+	})
+	t.Run("no source file", func(t *testing.T) {
+		if _, err := runRoot(t, []string{"convert"}); err == nil {
+			t.Fatal("convert with no argument should fail")
+		}
+	})
+}
+
+// TestBashEnvGivenToEnvFlag is the other half of the migration story: pointing
+// -e at a legacy bash file must say it is not YAML and name the converter.
+func TestBashEnvGivenToEnvFlag(t *testing.T) {
+	src := writeBashEnv(t)
+	_, err := runRoot(t, []string{"k8s", "status", "--dry-run", "-e", src})
+	if err == nil {
+		t.Fatal("a bash env file should not load")
+	}
+	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace convert"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err.Error(), want)
+		}
 	}
 }
 

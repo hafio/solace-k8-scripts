@@ -1,17 +1,23 @@
 # env/sample.yaml -- unified config for the `solace` CLI. Copy to env/<name>.yaml
-# and edit; run any command with `--env <name>`. One file drives all three
+# and edit; run any command with `-e <file>`. One file drives all three
 # platforms (k8s, docker, podman); each reads only the sections it needs.
 #
 # This is a TEMPLATE with placeholder secrets. Replace admin.pass, the image
 # credentials, and nodes.psk before real use, and never commit real secrets.
+#
+# EVERY key the schema accepts appears below. A commented-out key is optional --
+# the value shown is the default that applies when it is omitted. Keys marked
+# "mandatory" must be set, or the load fails loud naming every one that is
+# missing. Decoding is strict: an unknown or misspelled key is a hard error, so
+# a typo can never pass silently.
 
 # HA topology, unified across platforms: yes = redundancy group (primary+backup
 # +monitor); no = a single standalone broker.
 redundancy: yes
 
 image:
-  repo: solace-pubsub-standard
-  tag: "10.10.1.128"
+  repo: solace-pubsub-standard      # mandatory
+  tag: "10.10.1.128"                # mandatory
   registry: registry.example.com   # optional prefix; omit for docker.io
   pullSecret: solace-image-pull     # k8s: name of the image-pull secret
   user: repo-user                   # registry login (prep secrets / docker login)
@@ -22,6 +28,8 @@ admin:
   pass: CHANGE-ME-admin             # secret, mandatory on every platform
   monitorPass: CHANGE-ME-monitor    # k8s monitor user secret
   userSecret: solace-admin-secret   # k8s secret name holding admin/monitor creds
+  # userPasswords:                  # k8s: extra CLI users, "user=password" (secrets)
+  #   - appuser=CHANGE-ME-appuser
 
 tls:
   cert: certs/tls.crt               # server certificate (enables broker TLS listeners)
@@ -32,51 +40,113 @@ tls:
 
 # scaling: omit to take platform defaults (k8s and container differ). Override any:
 # scaling:
-#   maxConnections: 1000
+#   maxConnections: 100             # k8s default 100, container default 1000
+#   maxQueueMessages: 100           # both platforms
+#   maxSpoolUsageMB: 100000         # container only
+#   maxPool: 10000                  # k8s only
+#   maxKafkaBridge: 0               # k8s only
+#   maxKafkaConnections: 0          # k8s only
+#   maxBridges: 25                  # k8s only
+#   maxSubscriptions: 50000         # k8s only
+#   maxGuaranteedMsgMB: 10          # k8s only
+
+# replication: inputs for the data-replication CLI generator. Omit if unused.
+# replication:
+#   mate: mate-router-name          # remote mate router ("v:" prefix optional)
+#   connSsl:                        # mate-link host:port entries
+#     - remote-host:55443
+#   psk: ""                         # secret; generated when left blank
 
 k8s:
-  name: dev-broker
-  namespace: solace
+  name: dev-broker                  # mandatory
+  namespace: solace                 # mandatory
   updateStrategy: automatedRolling  # automatedRolling | manualPodRestart
   serviceAccount: solace-sa         # optional
+  # cliScriptsFolder: cli           # local folder holding .cli scripts (config exec-cli)
+  # diagDir: diag-configs           # local folder for verify diagnostics output
   storage:
     class: standard                 # StorageClass; omit to use the cluster default
     msgNode: 30Gi                   # mandatory
     monNode: 5Gi
+  # msgNode:                        # message-node pod resources
+  #   cpu: "2"
+  #   mem: 3410Mi
+  # operator:                       # cluster-scoped EventBroker Operator
+  #   image: docker.io/solace/pubsubplus-eventbroker-operator:1.4.0
+  #   namespace: pubsubplus-operator-system  # omit to discover the running one
+  #   watchNamespaces: ""           # comma-separated list; empty = the broker ns only
+  #   watchBrokerNs: true           # also watch k8s.namespace
+  #   cpu: 500m
+  #   mem: 512Mi
   loadBalancer:
     ip: 10.0.0.50                   # MetalLB requested IP (optional)
-  ports:                            # name=containerPort[:servicePort][/proto]
-    - tcp-semp=8080
-    - tcp-smf=55555:55556
-    - tls-smf=55443/TCP
+  #   ipPool: sample-ip-pool        # MetalLB address-pool name
+  #   annotations:                  # extra service annotations, "key: value"
+  #     - "external-dns.alpha.kubernetes.io/hostname: broker.example.com"
+  # ports:                            # name=containerPort[:servicePort][/proto]
+  #  - tcp-semp=8080
+  #  - tcp-smf=55555:55556
+  #  - tls-smf=55443/TCP
   # placement:                      # optional pod scheduling
   #   labelsPrimary: ["nodetype: solace"]
+  #   labelsBackup: []
+  #   labelsMonitor: []
   #   tolerationsPrimary: ["dedicated=solace:NoSchedule"]
+  #   tolerationsBackup: []
+  #   tolerationsMonitor: []
+  #   antiAffinityNamespaces: []    # default: [k8s.namespace]
+  #   antiAffinityWeight: 100
   # productKeys: []                 # config product-keys
   # domainCerts:
   #   folder: certs
-  #   files: {}
+  #   files: {}                     # CA-NAME: cert filename
 
 docker:
+  # runtime: docker                 # binary to exec (a path, or a drop-in like nerdctl)
   mode: compose                     # compose | run
+  # composeFile: docker-compose.yml # path of the generated compose file
   container:
     dataDir: /opt/solace/data       # host bind mount, mandatory
+  #   name: solace                  # container name
+  #   runUser: "0:0"                # uid:gid the container runs as
+  #   tz: UTC
+  #   shmSize: 1g
+  #   ulimits:
+  #     nofile: "2448:1048576"
+  #     memlock: "-1"
+  #     core: "-1"
   # network:
   #   mode: host                    # host | bridge (bridge needs a ports list)
+  #   ports:                        # host:container, mandatory when mode is bridge
+  #     - 8080:8080
 
 podman:
-  rootless: false
+  # runtime: podman                 # binary to exec
+  rootless: false                   # true = rootless: user systemd + `podman unshare` chown
+  # quadletDir: /etc/containers/systemd   # rootless: $XDG_CONFIG_HOME/containers/systemd
   container:
-    dataDir: /opt/solace/data
+    dataDir: /opt/solace/data       # mandatory
+  #   name: solace
+  #   runUser: "0:0"
+  #   tz: UTC
+  #   shmSize: 1g
+  #   ulimits:
+  #     nofile: "2448:1048576"
+  #     memlock: "-1"
+  #     core: "-1"
+  # network:
+  #   mode: host
+  #   ports:
+  #     - 8080:8080
 
 nodes:                              # redundancy group -- identical on all hosts
   primary:
-    name: solace-primary
-    ip: 10.0.0.11
+    name: solace-primary            # mandatory on containers (the broker's routername)
+    ip: 10.0.0.11                   # mandatory on containers in HA
   backup:
-    name: solace-backup
+    name: solace-backup             # mandatory on containers in HA
     ip: 10.0.0.12
   monitor:
-    name: solace-monitor
+    name: solace-monitor            # mandatory on containers in HA
     ip: 10.0.0.13
   psk: Q0hBTkdFLU1FLXByZXNoYXJlZC1rZXktYmFzZTY0     # secret; host-prep generates one

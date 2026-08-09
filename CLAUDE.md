@@ -8,9 +8,26 @@ A single Go binary, `solace`, that deploys and operates Solace PubSub+ Event Bro
 
 ## Go implementation (`solace` binary)
 
-The `solace` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,cli}` + `main.go`,
+The `solace` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,convert,cli}` + `main.go`,
 plus `internal/tools/vulnjudge` -- a dev-only command the `scan` task pipes govulncheck's
 JSON through, so a fixable vulnerability fails the gate and one with no released fix warns.
+
+`internal/convert` is the one-way migration aid behind `solace convert`: it parses a legacy
+bash env file (the pre-Go `bash/env/<name>` format), maps the `SOLBK_*`/`SOLOP_*`/
+`IMAGEREPO_*`/`REPL_*` variables onto the YAML schema, and emits only what the source
+actually set. It depends on `internal/config` (schema + validation) and nothing else, so
+`config` must never import it -- the invalid-YAML hint in `config.Load` therefore carries its
+own bash-file sniff rather than calling into `convert`.
+
+Every test in the repo is catalogued in [docs/test.md](docs/test.md) -- what each one proves,
+the per-package fixtures and doubles to reuse, and the injectable seams. Update it in the
+same change when you add or remove a test.
+
+[docs/commands.md](docs/commands.md) is the full CLI reference and is **generated** from the
+cobra tree by `internal/cli/commanddoc_test.go`. It is a golden: `test` fails while it is
+stale, so any command, flag, or `Short` change means regenerating it in the same change with
+`go test ./internal/cli -update`. Never hand-edit it. The `--gen` column comes from the
+`genAnnotation` marker, so a command that honours `--gen` must be wrapped in `genCapable`.
 
 ### Container platform (`internal/container`)
 

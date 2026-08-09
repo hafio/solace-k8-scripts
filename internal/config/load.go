@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,7 +23,7 @@ func Load(path string, p Platform) (*Config, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true) // fail loud on typo'd keys
 	if err := dec.Decode(&c); err != nil {
-		return nil, fmt.Errorf("parse env file %q: %w", path, err)
+		return nil, parseError(path, raw, err)
 	}
 	c.ApplyDefaults(p)
 	if err := c.Validate(p); err != nil {
@@ -30,12 +32,70 @@ func Load(path string, p Platform) (*Config, error) {
 	return &c, nil
 }
 
-// ResolveEnvPath turns an --env name into env/<name>.yaml under baseDir.
-func ResolveEnvPath(baseDir, name string) string {
-	if name == "" {
-		name = "default"
+// bashAssignRE matches a shell variable assignment at the start of a line -- the
+// shape of the legacy bash env files, which are the one thing users are likely
+// to hand to -e by mistake.
+var bashAssignRE = regexp.MustCompile(`(?m)^\s*(declare\s+(-[Aa]\s+)?|export\s+)?[A-Z][A-Z0-9_]*=`)
+
+// parseError turns a decode failure into an actionable one. A file that is not
+// YAML at all is the interesting case: say so plainly, and point at `solace
+// convert` when it looks like a legacy bash env file. A file that *is* valid
+// YAML but carries an unknown key keeps the plain strict-decoding error, since
+// the schema, not the format, is the problem.
+func parseError(path string, raw []byte, err error) error {
+	var probe map[string]any
+	if yaml.Unmarshal(raw, &probe) == nil {
+		return fmt.Errorf("parse env file %q: %w", path, err)
 	}
-	return filepath.Join(baseDir, "env", name+".yaml")
+	if bashAssignRE.Match(raw) || bytes.HasPrefix(raw, []byte("#!")) {
+		return fmt.Errorf("parse env file %q: not valid YAML -- this looks like a legacy bash env file: %w\n"+
+			"  convert it first:  solace convert %s -o <name>.yaml", path, err, path)
+	}
+	return fmt.Errorf("parse env file %q: not valid YAML: %w\n"+
+		"  the env file must be YAML -- see env/sample.yaml for the schema.\n"+
+		"  converting a legacy bash env file:  solace convert <bash-env-file> -o <name>.yaml", path, err)
+}
+
+// EnvFileDefault is the env file name used when -e/--env is omitted.
+const EnvFileDefault = "env.yaml"
+
+// ResolveEnvPath finds the env file named by -e/--env and returns its path. The
+// name is taken literally -- no extension is ever inferred, so "dev" and
+// "dev.yaml" name different files. A bare file name is searched in baseDir, then
+// in baseDir/env (the layout the bash scripts hard-wired). A value carrying a
+// directory component is used exactly as typed and never falls back to env/, so
+// `-e env/dev.yaml` reads that one file and `-e ../shared/prod.yaml` leaves the
+// project tree deliberately.
+func ResolveEnvPath(baseDir, name string) (string, error) {
+	if name == "" {
+		name = EnvFileDefault
+	}
+	// The resolved path is echoed to the terminal, so reject control characters
+	// at the boundary rather than printing them (§3).
+	if strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return "", fmt.Errorf("invalid env file name %q: control characters are not allowed", name)
+	}
+	var candidates []string
+	if name != filepath.Base(name) {
+		candidates = []string{name} // has a directory component -> verbatim, no env/ fallback
+	} else {
+		base := baseDir
+		if base == "" {
+			base = "."
+		}
+		candidates = []string{filepath.Join(base, name), filepath.Join(base, "env", name)}
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			return p, nil
+		}
+	}
+	quoted := make([]string, len(candidates))
+	for i, p := range candidates {
+		quoted[i] = fmt.Sprintf("%q", p)
+	}
+	// Actionable: name every place that was tried (§4).
+	return "", fmt.Errorf("env file %q not found: looked for %s", name, strings.Join(quoted, " then "))
 }
 
 // ApplyDefaults fills unset optional fields, applying the platform's defaults.

@@ -50,6 +50,20 @@ func TestGolden(t *testing.T) {
 			gen:  func(t *testing.T) []byte { return BrokerCR(load(t, config.K8s)) },
 		},
 		{
+			// The sample leaves k8s.ports commented, so the case above renders the
+			// 16 defaults. An explicit list here covers the other branch of
+			// ApplyDefaults' port handling, and with it the two forms only a custom
+			// list uses: a container port differing from the service port, and an
+			// explicit protocol.
+			name: "k8s broker CR with custom ports",
+			file: "k8s_broker_cr_ports.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.K8s)
+				c.K8s.Ports = []string{"tcp-semp=8080", "tcp-smf=55555:55556", "tls-smf=55443/TCP"}
+				return BrokerCR(c)
+			},
+		},
+		{
 			name: "podman quadlet primary",
 			file: "podman_quadlet_primary.golden",
 			gen: func(t *testing.T) []byte {

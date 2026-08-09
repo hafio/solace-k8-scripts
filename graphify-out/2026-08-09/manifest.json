@@ -265,9 +265,9 @@
     "semantic_hash": "4bc9d6a8f1a139ff2f047243605a60b3"
   },
   "internal/render/render_test.go": {
-    "mtime": 1786288807.5986187,
-    "ast_hash": "e4b07686d1e64fa583693bfd091fcacd",
-    "semantic_hash": ""
+    "mtime": 1785489212.7495828,
+    "ast_hash": "53b0f505fd7c9e5f6d81006d33e2812d",
+    "semantic_hash": "53b0f505fd7c9e5f6d81006d33e2812d"
   },
   "main.go": {
     "mtime": 1785404256.3336606,
@@ -290,8 +290,8 @@
     "semantic_hash": ""
   },
   "env/sample.yaml": {
-    "mtime": 1786251234.100864,
-    "ast_hash": "82e451846250aa843a5a38521770ee3f",
+    "mtime": 1786247695.9911363,
+    "ast_hash": "170b66d002a7f8ff78e7d5adf4d828b1",
     "semantic_hash": ""
   },
   ".github/dependabot.yml": {
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "docs/test.md": {
-    "mtime": 1786288814.543814,
-    "ast_hash": "5587790d1b513f4b6fb88c30b3a3b4c3",
+    "mtime": 1786247406.7033784,
+    "ast_hash": "127d8da1f7d351949612a0e4af04a443",
     "semantic_hash": ""
   },
   "internal/cli/commanddoc_test.go": {

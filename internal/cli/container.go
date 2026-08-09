@@ -59,8 +59,11 @@ func newCtrPrepCmd(app *App) *cobra.Command {
 	return prep
 }
 
+// deploy honors --gen: opCtrDeploy renders the artifact instead of applying it.
+// The annotation is what the generated command reference reads, so it is set
+// here even though only the k8s tree enforces it via rejectGenIfUnsupported.
 func newCtrDeployCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	return genCapable(&cobra.Command{
 		Use:   "deploy [primary|backup|monitor]",
 		Short: "Deploy the broker on this host (role required in HA, ignored in standalone)",
 		Args:  cobra.MaximumNArgs(1),
@@ -71,7 +74,7 @@ func newCtrDeployCmd(app *App) *cobra.Command {
 			}
 			return opCtrDeploy(app, role)
 		},
-	}
+	})
 }
 
 func newCtrConfigCmd(app *App) *cobra.Command {
@@ -140,7 +143,7 @@ func newCtrVerifyCmd(app *App) *cobra.Command {
 }
 
 func newCtrGenCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	return genCapable(&cobra.Command{
 		Use:   "gen [primary|backup|monitor]",
 		Short: "Render the deploy artifact (quadlet/compose/run) to stdout without applying",
 		Args:  cobra.MaximumNArgs(1),
@@ -151,7 +154,7 @@ func newCtrGenCmd(app *App) *cobra.Command {
 			}
 			return opCtrGen(app, role)
 		},
-	}
+	})
 }
 
 func newCtrDeleteCmd(app *App) *cobra.Command {

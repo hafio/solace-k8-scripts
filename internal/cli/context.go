@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"solace/internal/config"
 	"solace/internal/engine"
@@ -15,8 +13,8 @@ import (
 // It replaces the bash "source 000-env.sh" bootstrap — one load, reused by the
 // whole command tree (§4: explicit context, no globals).
 type App struct {
-	EnvName  string // --env value
-	BaseDir  string // dir that holds env/ (defaults to CWD)
+	EnvName  string // -e/--env value: an env file name, or a path
+	BaseDir  string // dir searched for the env file, and holding env/ (defaults to CWD)
 	GenOnly  bool   // --gen: render artifact, don't apply
 	DryRun   bool   // --dry-run: echo commands instead of running them
 	Yes      bool   // --yes: skip confirmations (never implies data purge)
@@ -41,8 +39,14 @@ type App struct {
 // errors surface before any subcommand work, and help still works without a
 // valid env (cobra skips PreRun for --help).
 func (a *App) load() error {
-	path := a.resolveEnvPath()
+	path, err := config.ResolveEnvPath(a.BaseDir, a.EnvName)
+	if err != nil {
+		return err
+	}
 	a.envPath = path
+	// Echo the winner: a file in the base dir shadows the env/ copy of the same
+	// name, and that has to be visible rather than silent.
+	step("env file: %s", path)
 	cfg, err := config.Load(path, a.Platform)
 	if err != nil {
 		return err
@@ -54,24 +58,6 @@ func (a *App) load() error {
 		a.Runner = engine.Exec{}
 	}
 	return nil
-}
-
-// resolveEnvPath maps --env to a file. A value that looks like a path (has a
-// separator or a .yaml/.yml suffix) is used as-is; otherwise it resolves to
-// <BaseDir>/env/<name>.yaml.
-func (a *App) resolveEnvPath() string {
-	name := a.EnvName
-	if name == "" {
-		name = "default"
-	}
-	if strings.ContainsAny(name, "/\\") || strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-		return name
-	}
-	base := a.BaseDir
-	if base == "" {
-		base = "."
-	}
-	return filepath.Join(base, "env", name+".yaml")
 }
 
 // warn prints a non-fatal warning to stderr in the house [WARN] style.

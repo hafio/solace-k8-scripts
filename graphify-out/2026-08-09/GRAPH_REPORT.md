@@ -1,7 +1,7 @@
 # Graph Report - solace-k8-scripts  (2026-08-09)
 
 ## Corpus Check
-- 68 files · ~89,610 words
+- 68 files · ~89,036 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary

@@ -58,46 +58,86 @@ when set, which is how the release pipeline drives it.
    At minimum set `image.repo`, `image.tag`, `admin.pass`, `k8s.name`,
    `k8s.namespace`, and `k8s.storage.msgNode`.
 
-2. Dry-run first to see exactly what would happen (no cluster needed):
+2. Dry-run first to see exactly what would happen (no cluster needed). `-e` takes the
+   file name; it is found under `env/` because there is no `./dev.yaml`:
 
    ```
-   solace k8s check --env dev --dry-run
+   solace k8s check -e dev.yaml --dry-run
    ```
 
 3. Bring the broker up (check -> prep -> deploy -> config leader if HA):
 
    ```
-   solace k8s up --env dev
+   solace k8s up -e dev.yaml
    ```
 
 4. Verify and inspect:
 
    ```
-   solace k8s verify --env dev
-   solace k8s status --env dev
+   solace k8s verify -e dev.yaml
+   solace k8s status -e dev.yaml
    ```
 
 5. Tear it down (persistent volumes are **kept** by default):
 
    ```
-   solace k8s down --env dev            # keeps PVCs
-   solace k8s down --env dev --purge    # also clears PVCs (irreversible)
+   solace k8s down -e dev.yaml            # keeps PVCs
+   solace k8s down -e dev.yaml --purge    # also clears PVCs (irreversible)
    ```
 
-## Configuration (`--env`)
+## Configuration (`-e`/`--env`)
 
-Every command reads one YAML env file, selected with `--env`:
+Every command reads one YAML env file, selected with `-e`/`--env`. The value is an actual
+**file name**, taken literally -- no extension is ever inferred, so `-e dev` and
+`-e dev.yaml` name different files:
 
-- A **bare name** resolves to `<base-dir>/env/<name>.yaml` -- e.g. `--env dev` loads
-  `env/dev.yaml`. `--base-dir` sets the directory containing `env/` (default: current
-  directory).
-- A value containing a path separator or ending in `.yaml`/`.yml` is used **as a path**
-  as-is -- e.g. `--env ./configs/prod.yaml`.
-- The default name is `default` (`env/default.yaml`). That file is not shipped; copy
-  `env/sample.yaml` to create your own.
+- A **bare file name** is searched in the base directory, then in `<base-dir>/env` -- so
+  `-e dev.yaml` finds `./dev.yaml` if it exists, otherwise `./env/dev.yaml`. The first hit
+  wins, which means a copy in the base directory **shadows** the `env/` copy of the same
+  name. Every run echoes the file it resolved to (`==> env file: ...`, on stderr), so the
+  winner is never a surprise.
+- `--base-dir` replaces the current directory for both lookups (default: current directory).
+- A value carrying a **directory component** is used exactly as typed and is *not* retried
+  under `env/` or joined with `--base-dir` -- e.g. `-e ./configs/prod.yaml`,
+  `-e ../shared/prod.yaml`, or an absolute path.
+- The default name is `env.yaml`, so a bare `solace k8s status` looks for `./env.yaml` then
+  `./env/env.yaml`. Neither is shipped; copy `env/sample.yaml` to create your own.
+
+When no candidate exists the error names every path that was tried.
 
 Decoding is **strict**: an unknown or misspelled key is a hard error, so typos fail loud
-instead of being silently ignored.
+instead of being silently ignored. A file that is not YAML at all is reported as such --
+and if it looks like a legacy bash env file, the error points at `solace convert` (below).
+
+### Migrating from the bash env files (`solace convert`)
+
+The pre-Go scripts kept their configuration in shell files under `bash/env/`, sourced by
+`000-env.sh`. `solace convert` turns one into the YAML this CLI reads:
+
+```
+solace convert bash/env/prod -o prod.yaml                 # kubernetes flavour
+solace convert bash/docker-podman/env/prod -o prod.yaml   # docker/podman flavour
+solace k8s check -e prod.yaml --dry-run
+```
+
+- The **platform section** is detected from the variables present (`SOLBK_NS`/`SOLOP_*` ->
+  `k8s`, `SOLBK_NODE_*`/`DOCKER_MODE`/`PODMAN_ROOTLESS` -> `docker`/`podman`). Pass
+  `--platform k8s|docker|podman` to choose it yourself; the choice is echoed either way.
+- The source is read as an **env file, not a shell script**: one assignment per line
+  (scalars, `( ... )` arrays, `declare -A` maps, `export`/`declare` prefixes, `${VAR}`
+  references, and trailing comments are all understood). Shell constructs beyond
+  assignments are skipped.
+- Only what the env file **actually set** is written. Values the bash bootstrap defaulted
+  are left out, so the Go defaults apply instead.
+- A variable with no YAML equivalent is **named on stderr**, never dropped silently. So are
+  a non-numeric value for a numeric field and an unrecognised `SOLBK_REDUNDANCY`.
+- The converted file is re-read and validated, so a source env that was already missing
+  mandatory values says so at conversion time.
+- Without `-o` the YAML goes to stdout (warnings stay on stderr). With `-o` the file is
+  written `0600` and an existing file is **not** overwritten unless you pass `--force`.
+
+The output carries every secret from the source file verbatim -- treat it like the source,
+and never commit it.
 
 **`env/sample.yaml` is the authoritative, fully annotated schema** -- start there rather
 than from this README. The most-used keys:
@@ -133,13 +173,17 @@ These apply to every subcommand:
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--env <name\|path>` | `default` | Env file to load (`env/<name>.yaml`, or a path). |
-| `--base-dir <dir>` | current dir | Directory containing `env/`. |
+| `-e`, `--env <file>` | `env.yaml` | Env file to load: a file name searched in the base dir then `<base-dir>/env`, or a path used as-is. |
+| `--base-dir <dir>` | current dir | Directory searched for the env file, and holding `env/`. |
 | `--gen` | `false` | Render the artifact this command would apply and print it; change nothing. |
 | `--dry-run` | `false` | Print the external commands instead of running them. |
 | `-y`, `--yes` | `false` | Skip confirmation prompts. Does **not** imply `--purge`. |
 
 ## Command reference (Kubernetes)
+
+The tables below group the commands by lifecycle phase. For the **complete** surface --
+every command, its arguments, and every flag with its default -- see
+[docs/commands.md](docs/commands.md), which is generated from the command tree itself.
 
 Run `solace k8s --help` (or `--help` on any subcommand) for the live tree. A `[role]`
 positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to primary.
@@ -229,10 +273,10 @@ artifact-producing command, or the dedicated `gen` command. Both print to stdout
 change nothing:
 
 ```
-solace k8s gen broker --env dev            # the PubSubPlusEventBroker CR
-solace k8s gen operator --env dev          # the operator bundle
-solace k8s deploy --env dev --gen          # equivalent to gen broker
-solace k8s operator deploy --env dev --gen # equivalent to gen operator
+solace k8s gen broker -e dev.yaml            # the PubSubPlusEventBroker CR
+solace k8s gen operator -e dev.yaml          # the operator bundle
+solace k8s deploy -e dev.yaml --gen          # equivalent to gen broker
+solace k8s operator deploy -e dev.yaml --gen # equivalent to gen operator
 ```
 
 `--gen` is only valid on artifact commands (`deploy`, `prep operator`,
@@ -252,6 +296,9 @@ defaults to primary. In standalone mode (`redundancy: no`) it is ignored; in an 
 pass it explicitly per host on `deploy`/`up`/`gen`. For `config leader` and
 `verify redundancy` it is optional -- omitted, the role is auto-detected by matching the
 host name against the `nodes.*` table.
+
+As with Kubernetes, [docs/commands.md](docs/commands.md) carries the complete generated
+reference for both trees.
 
 ### Lifecycle
 
@@ -313,12 +360,12 @@ bakes it into the deploy artifact). Container-only knobs live under `docker.*` /
 Example (HA -- run each line on the matching host):
 
 ```
-solace podman up primary --env prod       # on the primary host
-solace podman up backup  --env prod       # on the backup host
-solace podman up monitor --env prod       # on the monitor host
-solace podman config leader --env prod    # on the primary only
+solace podman up primary -e prod.yaml       # on the primary host
+solace podman up backup  -e prod.yaml       # on the backup host
+solace podman up monitor -e prod.yaml       # on the monitor host
+solace podman config leader -e prod.yaml    # on the primary only
 # then, concurrently on the primary and backup hosts:
-solace podman verify redundancy --env prod
+solace podman verify redundancy -e prod.yaml
 ```
 
 ## Development
@@ -342,8 +389,12 @@ build/test/scan command. The workflows call task names only, so local runs match
 Run the local gate with `scripts/dev.ps1 all scan` (or `./scripts/dev.sh all scan`), and
 `full` before tagging. Per-task logs land in `scripts/logs/<task>.log`, each closing with a
 `<timestamp> | <task> | <duration>s | OK|FAILED` footer; coverage HTML in
-`coverage/coverage.html`. Current test coverage is 89.1% (recorded in
+`coverage/coverage.html`. Current test coverage is 90.4% (recorded in
 `scripts/logs/cov.log`; the previous total is the local floor, not an enforced numeric gate).
+
+[docs/test.md](docs/test.md) catalogues every test in the repo -- what each one proves, the
+per-package fixtures and doubles to reuse, and the injectable seams. Read it before adding a
+test, and update it in the same change when you add or remove one.
 
 The Go toolchain is pinned by the `toolchain` line in [go.mod](go.mod), not just the `go`
 line: `go 1.26` is a minimum, so a machine with an older Go would otherwise build against
@@ -379,6 +430,9 @@ git tag v0.1.0 && git push origin v0.1.0
 | `internal/broker` | Platform-agnostic config/verify operations over an injected transport. |
 | `internal/k8s` | Kubernetes cluster/operator operations and the kubectl transport. |
 | `internal/container` | Docker/Podman host operations (Manager) and the node-local `<runtime> exec`/`cp` transport. |
+| `internal/convert` | Legacy bash env -> YAML converter behind `solace convert`. |
 | `internal/cli` | Cobra command tree and handlers. |
+| `internal/tools/vulnjudge` | Dev-only judge the `scan` task pipes govulncheck JSON through. |
 | `env/` | Config files (`sample.yaml` is the annotated template). |
+| `docs/` | [commands.md](docs/commands.md) -- generated CLI reference; [test.md](docs/test.md) -- the catalogue of every test. |
 | `scripts/` | `dev.ps1` / `dev.sh` developer tooling. |

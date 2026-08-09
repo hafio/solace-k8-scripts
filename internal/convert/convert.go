@@ -1,0 +1,455 @@
+package convert
+
+import (
+	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"solace/internal/config"
+)
+
+// Result is a completed conversion: the YAML env file, the platform section it
+// was written for, and every assumption or dropped value worth telling the user
+// about.
+type Result struct {
+	YAML     []byte
+	Platform config.Platform
+	Warnings []string
+}
+
+// Detection markers. A legacy env file has no platform field, so the platform is
+// inferred from variables only one bootstrap ever defined. Variables both
+// bootstraps share (image, admin, tls, cli scripts, diag dir) are deliberately
+// absent from both lists -- they say nothing about the target.
+var (
+	k8sMarkers = []string{
+		"SOLBK_NAME", "SOLBK_NS", "SOLBK_STORAGE_MSGNODE", "SOLBK_STORAGE_MONNODE",
+		"SOLBK_STORAGECLASS", "SOLBK_MSGNODE_CPU", "SOLBK_MSGNODE_MEM",
+		"SOLBK_UPDATE_STRATEGY", "SOLBK_ANTIAFFINITY_NS", "SOLBK_SVR_SECRET",
+		"SOLOP_IMAGE", "SOLOP_NS", "SOLOP_CPU", "SOLOP_MEM", "SOLOP_WATCH_NS",
+	}
+	containerMarkers = []string{
+		"SOLBK_NODE_PRI_NAME", "SOLBK_NODE_BKP_NAME", "SOLBK_NODE_MON_NAME",
+		"SOLBK_DATA_DIR", "SOLBK_NETWORK_MODE", "SOLBK_SPOOL_MAXUSAGE",
+		"SOLBK_REDUNDANCY_PSK", "SOLBK_RUN_USER", "SOLBK_TZ", "SOLBK_SHM_SIZE",
+		"CONTAINER_NAME", "CONTAINER_RUNTIME",
+		"DOCKER_MODE", "DOCKER_COMPOSE_FILE", "PODMAN_ROOTLESS", "QUADLET_DIR",
+	}
+	dockerMarkers = []string{"DOCKER_MODE", "DOCKER_COMPOSE_FILE"}
+	podmanMarkers = []string{"PODMAN_ROOTLESS", "QUADLET_DIR"}
+)
+
+// bashOnly are variables the bootstraps used for their own plumbing. They have
+// no YAML equivalent by design, so they are consumed silently rather than
+// reported as unmapped.
+var bashOnly = []string{
+	"KUBE", "ENV_FILE", "EXDIR", "PARAMS", "PARM", "GENONLY", "EMPTY_VAR",
+	"RUNTIME_DEFAULT", "SOLBK_IMAGE_REF", "SOLOP_DERIVED_NS", "SYSTEMCTL_USER",
+	"QUADLET_WANTEDBY", "SELECT_ENV_FILE", "THIS_HOSTNAME", "THIS_NODETYPE",
+	"THIS_ACTIVESTANDBY",
+}
+
+// Convert parses a legacy bash env file and returns the equivalent YAML.
+//
+// platform selects which section the platform-specific variables land in; an
+// empty platform is detected from the variables present. The conversion never
+// fails on an unrecognised variable -- it is reported as a warning so nothing is
+// lost silently -- but a malformed array assignment is a hard error, since the
+// rest of the file cannot be trusted after one.
+func Convert(src []byte, source string, platform config.Platform) (Result, error) {
+	v, err := parse(string(src))
+	if err != nil {
+		return Result{}, fmt.Errorf("parse %s: %w", source, err)
+	}
+	v.ignore(bashOnly...)
+
+	p, warns := resolvePlatform(v, platform)
+	body, mapWarns := emitYAML(v, p, source)
+	warns = append(warns, mapWarns...)
+
+	if names := v.unmapped(); len(names) > 0 {
+		warns = append(warns, fmt.Sprintf("no YAML equivalent, dropped: %s", strings.Join(names, ", ")))
+	}
+	if err := validateOutput(body, p); err != nil {
+		warns = append(warns, fmt.Sprintf("the converted file is incomplete: %v", err))
+	}
+	return Result{YAML: []byte(body), Platform: p, Warnings: warns}, nil
+}
+
+// resolvePlatform honours an explicit platform, or infers one from the marker
+// variables. Every inference that was not clear-cut comes back as a warning, so
+// the user can re-run with --platform rather than discover it later.
+func resolvePlatform(v *vars, want config.Platform) (config.Platform, []string) {
+	if want != "" {
+		return want, nil
+	}
+	k8s, ctr := countMarkers(v, k8sMarkers), countMarkers(v, containerMarkers)
+	switch {
+	case ctr > 0 && k8s == 0:
+		dkr, pod := countMarkers(v, dockerMarkers), countMarkers(v, podmanMarkers)
+		switch {
+		case pod > 0 && dkr == 0:
+			return config.Podman, nil
+		case dkr > 0 && pod == 0:
+			return config.Docker, nil
+		case dkr > 0 && pod > 0:
+			return config.Docker, []string{"file carries both docker and podman settings; wrote the docker section (re-run with --platform podman for the other)"}
+		}
+		return config.Docker, []string{"container env file with no docker- or podman-specific variable; assumed docker (re-run with --platform podman if that is wrong)"}
+	case k8s > 0 && ctr == 0:
+		return config.K8s, nil
+	case k8s > 0 && ctr > 0:
+		if ctr > k8s {
+			return config.Docker, []string{"file mixes kubernetes and container variables; wrote the docker section (re-run with --platform k8s or podman to pick another)"}
+		}
+		return config.K8s, []string{"file mixes kubernetes and container variables; wrote the k8s section (re-run with --platform docker or podman to pick another)"}
+	}
+	return config.K8s, []string{"no platform-specific variable found; assumed k8s (re-run with --platform docker or podman if that is wrong)"}
+}
+
+func countMarkers(v *vars, names []string) int {
+	n := 0
+	for _, name := range names {
+		if v.has(name) {
+			n++
+		}
+	}
+	return n
+}
+
+// validateOutput decodes what was emitted and runs the platform's own defaults
+// and validation, so an env file that was already missing mandatory values says
+// so at conversion time instead of at the next command.
+func validateOutput(body string, p config.Platform) error {
+	var c config.Config
+	if err := yaml.Unmarshal([]byte(body), &c); err != nil {
+		return fmt.Errorf("re-reading the generated YAML failed: %w", err)
+	}
+	c.ApplyDefaults(p)
+	return c.Validate(p)
+}
+
+// emitYAML writes the YAML document. It reads the parsed variables directly
+// rather than round-tripping a config.Config, so a value the source file never
+// set stays absent instead of appearing as a zero.
+func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
+	var warns []string
+	// num and boolean take the destination doc because the value has to be
+	// looked up (and a bad one warned about) before anything is written.
+	num := func(d *doc, key, name string) {
+		raw := v.s(name)
+		if raw == "" {
+			return
+		}
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			warns = append(warns, fmt.Sprintf("%s=%q is not a number, dropped", name, raw))
+			return
+		}
+		d.raw(key + ": " + strconv.Itoa(n))
+	}
+	boolean := func(d *doc, key, name string) {
+		raw := v.s(name)
+		if raw == "" {
+			return
+		}
+		b, ok := boolOf(raw)
+		if !ok {
+			warns = append(warns, fmt.Sprintf("%s=%q is neither true/yes nor false/no, dropped", name, raw))
+			return
+		}
+		d.raw(key + ": " + strconv.FormatBool(b))
+	}
+
+	d := &doc{}
+	// The source name is the only free-form text in the document. It lands in a
+	// comment, where a newline would end the comment and let the rest become
+	// document structure, so strip control characters first (§4).
+	d.raw("# Generated by `solace convert` from " + commentSafe(source) + ".")
+	d.raw("# Review before use: secrets are carried over verbatim, and any value the")
+	d.raw("# bash bootstrap defaulted rather than the env file setting is absent here")
+	d.raw("# (the Go defaults apply instead). See env/sample.yaml for the full schema.")
+	d.b.WriteString("\n")
+
+	if r, w := redundancy(v); r != "" {
+		d.kv("redundancy", r)
+		warns = append(warns, w...)
+	}
+
+	d.section("image", func(d *doc) {
+		d.kv("repo", v.s("SOLBK_IMAGE"))
+		d.kv("tag", v.s("SOLBK_IMG_TAG"))
+		d.kv("registry", v.s("IMAGEREPO_HOST"))
+		d.kv("pullSecret", v.s("IMAGEREPO_SECRET"))
+		d.kv("user", v.s("IMAGEREPO_USER"))
+		d.kv("pass", v.s("IMAGEREPO_PASS"))
+	})
+
+	d.section("admin", func(d *doc) {
+		d.kv("user", v.s("SOLBK_ADM_USER"))
+		d.kv("pass", v.s("SOLBK_ADM_PASS"))
+		d.kv("monitorPass", v.s("SOLBK_MON_PASS"))
+		d.kv("userSecret", v.s("SOLBK_USR_SECRET"))
+		d.list("userPasswords", v.l("SOLBK_USR_PASS"))
+	})
+
+	d.section("tls", func(d *doc) {
+		d.kv("cert", v.s("SOLBK_TLS_CERT"))
+		d.kv("certKey", v.s("SOLBK_TLS_CERTKEY"))
+		d.list("cas", v.l("SOLBK_TLS_CERTCAS"))
+		d.kv("serverSecret", v.s("SOLBK_SVR_SECRET"))
+	})
+
+	d.section("scaling", func(d *doc) {
+		num(d, "maxConnections", "SOLBK_SCALING_MAXCONN")
+		num(d, "maxQueueMessages", "SOLBK_SCALING_MAXQMSG")
+		num(d, "maxSpoolUsageMB", "SOLBK_SPOOL_MAXUSAGE")
+		num(d, "maxPool", "SOLBK_SCALING_MAXPOOL")
+		num(d, "maxKafkaBridge", "SOLBK_SCALING_MAXKAFKABRIDGE")
+		num(d, "maxKafkaConnections", "SOLBK_SCALING_MAXKAFKACONN")
+		num(d, "maxBridges", "SOLBK_SCALING_MAXBRIDGE")
+		num(d, "maxSubscriptions", "SOLBK_SCALING_MAXSUB")
+		num(d, "maxGuaranteedMsgMB", "SOLBK_SCALING_MAXGMSSIZE")
+	})
+
+	d.section("replication", func(d *doc) {
+		d.kv("mate", v.s("REPL_MATE"))
+		d.list("connSsl", v.l("REPL_CONN_SSL"))
+		d.kv("psk", v.s("REPL_PSK"))
+	})
+
+	// The k8s section carries the operator deployment plus four fields the
+	// container platforms reuse (diagDir, cliScriptsFolder, domainCerts,
+	// productKeys), so it is written for every platform.
+	d.section("k8s", func(d *doc) {
+		if p == config.K8s {
+			d.kv("name", v.s("SOLBK_NAME"))
+			d.kv("namespace", v.s("SOLBK_NS"))
+			d.kv("updateStrategy", v.s("SOLBK_UPDATE_STRATEGY"))
+			d.kv("serviceAccount", v.s("SOLBK_SVC_ACCOUNT"))
+		}
+		d.kv("cliScriptsFolder", v.s("SOLBK_CLISCRIPTS_FOLDER"))
+		d.kv("diagDir", v.s("SOLBK_DIAG_DIR"))
+		if p == config.K8s {
+			d.block("storage", func(d *doc) {
+				d.kv("class", v.s("SOLBK_STORAGECLASS"))
+				d.kv("msgNode", v.s("SOLBK_STORAGE_MSGNODE"))
+				d.kv("monNode", v.s("SOLBK_STORAGE_MONNODE"))
+			})
+			d.block("msgNode", func(d *doc) {
+				d.kv("cpu", v.s("SOLBK_MSGNODE_CPU"))
+				d.kv("mem", v.s("SOLBK_MSGNODE_MEM"))
+			})
+			d.block("operator", func(d *doc) {
+				d.kv("image", v.s("SOLOP_IMAGE"))
+				d.kv("namespace", v.s("SOLOP_NS"))
+				d.kv("watchNamespaces", v.s("SOLOP_WATCH_NS"))
+				boolean(d, "watchBrokerNs", "SOLOP_WATCH_SOLBK_NS")
+				d.kv("cpu", v.s("SOLOP_CPU"))
+				d.kv("mem", v.s("SOLOP_MEM"))
+			})
+			d.block("placement", func(d *doc) {
+				d.list("tolerationsPrimary", v.l("SOLBK_NODETOL_PRI"))
+				d.list("tolerationsBackup", v.l("SOLBK_NODETOL_BKP"))
+				d.list("tolerationsMonitor", v.l("SOLBK_NODETOL_MON"))
+				d.list("labelsPrimary", v.l("SOLBK_NODELABEL_PRI"))
+				d.list("labelsBackup", v.l("SOLBK_NODELABEL_BKP"))
+				d.list("labelsMonitor", v.l("SOLBK_NODELABEL_MON"))
+				d.list("antiAffinityNamespaces", v.l("SOLBK_ANTIAFFINITY_NS"))
+				num(d, "antiAffinityWeight", "SOLBK_ANTIAFFINITY_WT")
+			})
+			d.block("loadBalancer", func(d *doc) {
+				d.kv("ip", v.s("SOLBK_LOADBALANCER_IP"))
+				d.list("annotations", v.l("SOLBK_LOADBALANCER_ANOTN"))
+				d.kv("ipPool", v.s("SOLBK_IPPOOL"))
+			})
+			// SOLBK_PORTS means "name=port[/proto]" for k8s and "host:container"
+			// for the container platforms, so it is read under exactly one of them.
+			d.list("ports", v.l("SOLBK_PORTS"))
+		}
+		d.list("productKeys", v.l("SOLBK_PRODUCTKEYS"))
+		d.block("domainCerts", func(d *doc) {
+			d.kv("folder", v.s("SOLBK_DOMAINCERT_FOLDER"))
+			d.pairs("files", v.m("SOLBK_DOMAINCERT_FILES"))
+		})
+	})
+
+	if p.IsContainer() {
+		d.section(string(p), func(d *doc) {
+			d.kv("runtime", v.s("CONTAINER_RUNTIME"))
+			if p == config.Docker {
+				d.kv("mode", v.s("DOCKER_MODE"))
+				d.kv("composeFile", v.s("DOCKER_COMPOSE_FILE"))
+			} else {
+				boolean(d, "rootless", "PODMAN_ROOTLESS")
+				d.kv("quadletDir", v.s("QUADLET_DIR"))
+			}
+			d.block("network", func(d *doc) {
+				d.kv("mode", v.s("SOLBK_NETWORK_MODE"))
+				d.list("ports", v.l("SOLBK_PORTS"))
+			})
+			d.block("container", func(d *doc) {
+				d.kv("name", v.s("CONTAINER_NAME"))
+				d.kv("runUser", v.s("SOLBK_RUN_USER"))
+				d.kv("tz", v.s("SOLBK_TZ"))
+				d.kv("shmSize", v.s("SOLBK_SHM_SIZE"))
+				d.kv("dataDir", v.s("SOLBK_DATA_DIR"))
+				d.block("ulimits", func(d *doc) {
+					d.kv("nofile", v.s("SOLBK_ULIMIT_NOFILE"))
+					d.kv("memlock", v.s("SOLBK_ULIMIT_MEMLOCK"))
+					d.kv("core", v.s("SOLBK_ULIMIT_CORE"))
+				})
+			})
+		})
+
+		d.section("nodes", func(d *doc) {
+			d.block("primary", func(d *doc) {
+				d.kv("name", v.s("SOLBK_NODE_PRI_NAME"))
+				d.kv("ip", v.s("SOLBK_NODE_PRI_IP"))
+			})
+			d.block("backup", func(d *doc) {
+				d.kv("name", v.s("SOLBK_NODE_BKP_NAME"))
+				d.kv("ip", v.s("SOLBK_NODE_BKP_IP"))
+			})
+			d.block("monitor", func(d *doc) {
+				d.kv("name", v.s("SOLBK_NODE_MON_NAME"))
+				d.kv("ip", v.s("SOLBK_NODE_MON_IP"))
+			})
+			d.kv("psk", v.s("SOLBK_REDUNDANCY_PSK"))
+		})
+	}
+	return d.b.String(), warns
+}
+
+// redundancy normalises the two bash spellings: the k8s bootstrap wrote
+// true/false, the container bootstrap yes/no. Anything else passes through
+// unchanged so Validate rejects it loudly rather than the converter guessing.
+func redundancy(v *vars) (string, []string) {
+	raw := strings.TrimSpace(v.s("SOLBK_REDUNDANCY"))
+	switch strings.ToLower(raw) {
+	case "":
+		return "", nil
+	case "yes", "true":
+		return "yes", nil
+	case "no", "false":
+		return "no", nil
+	}
+	return raw, []string{fmt.Sprintf("SOLBK_REDUNDANCY=%q is neither yes/true nor no/false; copied as-is", raw)}
+}
+
+// boolOf parses the true/false spellings the bootstraps used.
+func boolOf(s string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "yes":
+		return true, true
+	case "false", "no":
+		return false, true
+	}
+	return false, false
+}
+
+// --- YAML emitter -----------------------------------------------------------
+
+// doc builds the YAML document. Every writer skips an empty value, and a block
+// whose body came out empty is omitted entirely, so the output carries only what
+// the source file actually set.
+type doc struct {
+	b      strings.Builder
+	indent int
+}
+
+func (d *doc) pad() string { return strings.Repeat("  ", d.indent) }
+
+func (d *doc) raw(line string) { d.b.WriteString(d.pad() + line + "\n") }
+
+func (d *doc) kv(key, val string) {
+	if val == "" {
+		return
+	}
+	d.raw(key + ": " + scalar(val))
+}
+
+func (d *doc) list(key string, vals []string) {
+	if len(vals) == 0 {
+		return
+	}
+	d.raw(key + ":")
+	for _, val := range vals {
+		d.raw("  - " + scalar(val))
+	}
+}
+
+func (d *doc) pairs(key string, m map[string]string) {
+	if len(m) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // deterministic output from a Go map
+	d.raw(key + ":")
+	for _, k := range keys {
+		d.raw("  " + scalar(k) + ": " + scalar(m[k]))
+	}
+}
+
+// block writes a nested mapping, or nothing when it has no content.
+func (d *doc) block(key string, fill func(*doc)) {
+	sub := &doc{indent: d.indent + 1}
+	fill(sub)
+	if sub.b.Len() == 0 {
+		return
+	}
+	d.raw(key + ":")
+	d.b.WriteString(sub.b.String())
+}
+
+// section is a top-level block, separated from what precedes it by a blank line.
+func (d *doc) section(key string, fill func(*doc)) {
+	sub := &doc{indent: d.indent + 1}
+	fill(sub)
+	if sub.b.Len() == 0 {
+		return
+	}
+	if s := d.b.String(); s != "" && !strings.HasSuffix(s, "\n\n") {
+		d.b.WriteString("\n")
+	}
+	d.raw(key + ":")
+	d.b.WriteString(sub.b.String())
+}
+
+// bareRE matches the values safe to emit unquoted: a letter, then letters,
+// digits, and the separators that carry no YAML meaning.
+var bareRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]*$`)
+
+// ambiguous are the plain scalars a YAML reader could take for a bool or null.
+var ambiguous = map[string]bool{
+	"y": true, "n": true, "yes": true, "no": true, "true": true, "false": true,
+	"on": true, "off": true, "null": true, "nil": true,
+}
+
+// commentSafe makes a value safe to embed in a YAML comment line by replacing
+// every control character with a space, so nothing can break out of the comment.
+func commentSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
+// scalar renders a string value, quoting anything a YAML reader could misread as
+// a number, bool, null, comment, or structure.
+func scalar(s string) string {
+	if bareRE.MatchString(s) && !ambiguous[strings.ToLower(s)] {
+		return s
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`, "\r", `\r`)
+	return `"` + esc.Replace(s) + `"`
+}

@@ -24,13 +24,15 @@ func newRootCmd(app *App) *cobra.Command {
 			"  check -> prep -> deploy -> config -> verify   (up)\n" +
 			"  delete -> teardown                            (down)\n\n" +
 			"Pick a platform (k8s, docker, podman), then a verb. Every command takes\n" +
-			"--env <name> (env/<name>.yaml). See 'solace <platform> --help'.",
+			"-e/--env <file>, searched in the current directory then ./env.\n" +
+			"Coming from the bash scripts? 'solace convert <bash-env-file>' turns an old\n" +
+			"env file into the YAML this reads. See 'solace <platform> --help'.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
-	root.PersistentFlags().StringVar(&app.EnvName, "env", "default", "env file name (env/<name>.yaml) or path")
-	root.PersistentFlags().StringVar(&app.BaseDir, "base-dir", "", "directory containing env/ (default: current directory)")
+	root.PersistentFlags().StringVarP(&app.EnvName, "env", "e", config.EnvFileDefault, "env file name, searched in the base dir then <base-dir>/env; a value with a directory is used as-is")
+	root.PersistentFlags().StringVar(&app.BaseDir, "base-dir", "", "directory searched for the env file, and holding env/ (default: current directory)")
 	root.PersistentFlags().BoolVar(&app.GenOnly, "gen", false, "render the artifact this command would apply and print it; change nothing")
 	root.PersistentFlags().BoolVar(&app.DryRun, "dry-run", false, "print the external commands instead of running them")
 	root.PersistentFlags().BoolVarP(&app.Yes, "yes", "y", false, "skip confirmation prompts (does NOT imply --purge)")
@@ -39,6 +41,7 @@ func newRootCmd(app *App) *cobra.Command {
 		newK8sCmd(app),
 		newContainerCmd(app, config.Docker),
 		newContainerCmd(app, config.Podman),
+		newConvertCmd(app),
 	)
 	return root
 }

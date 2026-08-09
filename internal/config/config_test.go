@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -530,19 +531,139 @@ func TestValidateBadRedundancy(t *testing.T) {
 	}
 }
 
+// envTree writes the fixture layout the resolver is exercised against and
+// returns its root: a base-dir copy that shadows an env/ copy of the same name,
+// a file reachable only through the env/ fallback, the default name in env/, a
+// nested path outside env/ plus a same-named decoy inside it, and a directory
+// occupying a candidate path.
+func envTree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, rel := range []string{
+		"solo.yaml",          // base dir only
+		"dev.yaml",           // shadows env/dev.yaml
+		"env/dev.yaml",       // shadowed
+		"env/only.yaml",      // env/ fallback only
+		"env/env.yaml",       // the default name, via the fallback
+		"sub/nested.yaml",    // reached as a path
+		"env/sub/decoy.yaml", // must stay unreachable from "sub/decoy.yaml"
+	} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", p, err)
+		}
+		if err := os.WriteFile(p, []byte("redundancy: \"no\"\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile %s: %v", p, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "adir"), 0o755); err != nil {
+		t.Fatalf("MkdirAll adir: %v", err)
+	}
+	return root
+}
+
 func TestResolveEnvPath(t *testing.T) {
+	root := envTree(t)
+	at := func(rel string) string { return filepath.Join(root, filepath.FromSlash(rel)) }
+
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name    string
+		base    string
+		in      string
+		want    string
+		wantErr []string
 	}{
-		{"empty -> default", "", filepath.Join("/base", "env", "default.yaml")},
-		{"named", "dev", filepath.Join("/base", "env", "dev.yaml")},
+		{name: "bare name in the base dir", base: root, in: "solo.yaml", want: at("solo.yaml")},
+		{name: "base dir shadows env dir", base: root, in: "dev.yaml", want: at("dev.yaml")},
+		{name: "falls back to the env dir", base: root, in: "only.yaml", want: at("env/only.yaml")},
+		{name: "empty name uses the default", base: root, in: "", want: at("env/env.yaml")},
+		{
+			name: "no extension is inferred", base: root, in: "dev",
+			wantErr: []string{`env file "dev" not found`, strconv.Quote(at("env/dev"))},
+		},
+		{name: "path is used verbatim", base: root, in: at("sub/nested.yaml"), want: at("sub/nested.yaml")},
+		{
+			// A path names one file; it must not be retried under env/.
+			name: "path does not fall back to the env dir", base: root, in: at("sub/decoy.yaml"),
+			wantErr: []string{"not found", strconv.Quote(at("sub/decoy.yaml"))},
+		},
+		{
+			name: "base dir is ignored for a path", base: root, in: filepath.FromSlash("sub/nested.yaml"),
+			wantErr: []string{strconv.Quote(filepath.FromSlash("sub/nested.yaml"))},
+		},
+		{
+			name: "a directory is not a match", base: root, in: "adir",
+			wantErr: []string{`env file "adir" not found`},
+		},
+		{
+			name: "not found names both candidates", base: root, in: "missing.yaml",
+			wantErr: []string{strconv.Quote(at("missing.yaml")), strconv.Quote(at("env/missing.yaml"))},
+		},
+		{
+			name: "control characters are rejected", base: root, in: "dev\n.yaml",
+			wantErr: []string{"control characters are not allowed"},
+		},
 	}
 	for _, tc := range tests {
-		if got := ResolveEnvPath("/base", tc.in); got != tc.want {
-			t.Errorf("%s: ResolveEnvPath(/base, %q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveEnvPath(tc.base, tc.in)
+			if len(tc.wantErr) > 0 {
+				if err == nil {
+					t.Fatalf("ResolveEnvPath(%q, %q) = %q, want an error", tc.base, tc.in, got)
+				}
+				for _, want := range tc.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not contain %q", err.Error(), want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveEnvPath(%q, %q) returned error: %v", tc.base, tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("ResolveEnvPath(%q, %q) = %q, want %q", tc.base, tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// An empty baseDir means the current directory, for both candidates.
+func TestResolveEnvPathEmptyBaseDir(t *testing.T) {
+	root := envTree(t)
+	t.Chdir(root)
+
+	cases := []struct{ in, want string }{
+		{"dev.yaml", "dev.yaml"},
+		{"only.yaml", filepath.Join("env", "only.yaml")},
+		{"", filepath.Join("env", EnvFileDefault)},
+		{filepath.FromSlash("sub/nested.yaml"), filepath.FromSlash("sub/nested.yaml")},
+	}
+	for _, tc := range cases {
+		got, err := ResolveEnvPath("", tc.in)
+		if err != nil {
+			t.Errorf("ResolveEnvPath(\"\", %q) returned error: %v", tc.in, err)
+			continue
 		}
+		if got != tc.want {
+			t.Errorf("ResolveEnvPath(\"\", %q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The default name resolves in the base dir before the env/ fallback is tried.
+func TestResolveEnvPathDefaultInBaseDir(t *testing.T) {
+	root := t.TempDir()
+	want := filepath.Join(root, EnvFileDefault)
+	if err := os.WriteFile(want, []byte("redundancy: \"no\"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	got, err := ResolveEnvPath(root, "")
+	if err != nil {
+		t.Fatalf("ResolveEnvPath returned error: %v", err)
+	}
+	if got != want {
+		t.Errorf("ResolveEnvPath(%q, \"\") = %q, want %q", root, got, want)
 	}
 }
 
@@ -606,6 +727,54 @@ func TestLoadUnknownField(t *testing.T) {
 	_, err := Load(path, K8s)
 	if err == nil || !strings.Contains(err.Error(), "parse env file") {
 		t.Errorf("expected unknown-field parse error, got: %v", err)
+	}
+}
+
+// A legacy bash env file handed to -e is the likeliest way to get a file that is
+// not YAML, so the error says so and names the converter.
+func TestLoadBashEnvFileHint(t *testing.T) {
+	path := writeTempYAML(t, "#!/bin/bash\nSOLBK_NAME=\"broker\"\nSOLBK_NS=\"solace\"\n")
+	_, err := Load(path, K8s)
+	if err == nil {
+		t.Fatal("a bash env file should not load")
+	}
+	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace convert"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err.Error(), want)
+		}
+	}
+}
+
+// Any other non-YAML file still says the file must be YAML, and still points at
+// the converter as the way to migrate a bash one.
+func TestLoadNotYAMLHint(t *testing.T) {
+	path := writeTempYAML(t, "this is just a sentence, not a mapping\n")
+	_, err := Load(path, K8s)
+	if err == nil {
+		t.Fatal("a non-YAML file should not load")
+	}
+	for _, want := range []string{"not valid YAML", "env/sample.yaml", "solace convert"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err.Error(), want)
+		}
+	}
+	// The generic hint mentions converting a bash env file, so the check is for
+	// the identification phrase the bash-specific branch adds, not the words.
+	if strings.Contains(err.Error(), "this looks like a legacy bash env file") {
+		t.Errorf("a plain non-YAML file must not be identified as a bash env file: %v", err)
+	}
+}
+
+// A file that is valid YAML but carries an unknown key is a schema problem, not
+// a format one: it must not gain the convert hint.
+func TestLoadUnknownFieldHasNoConvertHint(t *testing.T) {
+	path := writeTempYAML(t, "bogusTopLevelKey: 123\n")
+	_, err := Load(path, K8s)
+	if err == nil {
+		t.Fatal("an unknown key should not load")
+	}
+	if strings.Contains(err.Error(), "solace convert") || strings.Contains(err.Error(), "not valid YAML") {
+		t.Errorf("unknown-key error should stay a schema error, got: %v", err)
 	}
 }
 
