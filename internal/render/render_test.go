@@ -64,6 +64,25 @@ func TestGolden(t *testing.T) {
 			},
 		},
 		{
+			// Timezone and both security blocks are optional and omitted by
+			// default, so the cases above prove they stay out of the CR. This one
+			// proves they land correctly when set.
+			name: "k8s broker CR with timezone and security context",
+			file: "k8s_broker_cr_security.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.K8s)
+				c.Timezone = "Asia/Singapore"
+				c.K8s.SecurityContext = config.PodSecurity{RunAsUser: "1000001", FSGroup: "1000002"}
+				readOnly := false
+				c.K8s.ContainerSecurity = config.ContainerSecurity{
+					RunAsUser:              "1000001",
+					RunAsGroup:             "1000002",
+					ReadOnlyRootFilesystem: &readOnly,
+				}
+				return BrokerCR(c)
+			},
+		},
+		{
 			name: "podman quadlet primary",
 			file: "podman_quadlet_primary.golden",
 			gen: func(t *testing.T) []byte {
@@ -88,11 +107,13 @@ func TestGolden(t *testing.T) {
 			},
 		},
 		{
+			// The sample sets no tz, so this covers the omitted-TZ branch; the
+			// standalone case below sets one and covers the other.
 			name: "container env-pairs primary HA",
 			file: "container_envpairs_primary.golden",
 			gen: func(t *testing.T) []byte {
 				c := load(t, config.Podman)
-				return envLines(EnvPairs(c, config.Podman, c.ResolveNode(config.Primary)))
+				return envLines(EnvPairs(c, c.ResolveNode(config.Primary)))
 			},
 		},
 		{
@@ -100,8 +121,10 @@ func TestGolden(t *testing.T) {
 			file: "container_envpairs_standalone.golden",
 			gen: func(t *testing.T) []byte {
 				c := load(t, config.Podman)
-				c.Redundancy = "no" // exercise the standalone branch without a second fixture
-				return envLines(EnvPairs(c, config.Podman, c.ResolveNode(config.Primary)))
+				// Exercise the standalone and TZ-present branches without a second fixture.
+				c.Redundancy = "no"
+				c.Timezone = "Asia/Singapore"
+				return envLines(EnvPairs(c, c.ResolveNode(config.Primary)))
 			},
 		},
 	}

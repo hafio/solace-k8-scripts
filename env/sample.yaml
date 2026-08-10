@@ -15,6 +15,10 @@
 # +monitor); no = a single standalone broker.
 redundancy: yes
 
+# Broker timezone, unified across platforms: the k8s CR's timezone and the
+# containers' TZ are the same knob. Omitted -> the broker keeps the image default.
+# timezone: Asia/Singapore
+
 image:
   repo: solace-pubsub-standard      # mandatory
   tag: "10.10.1.128"                # mandatory
@@ -64,6 +68,13 @@ k8s:
   serviceAccount: solace-sa         # optional
   # cliScriptsFolder: cli           # local folder holding .cli scripts (config exec-cli)
   # diagDir: diag-configs           # local folder for verify diagnostics output
+  # securityContext:                # -> spec.securityContext; omitted entirely when unset
+  #   runAsUser: "1000001"          # "0" asks OpenShift to auto-assign
+  #   fsGroup: "1000002"
+  # containerSecurity:              # -> spec.brokerContainerSecurity
+  #   runAsUser: "1000001"
+  #   runAsGroup: "1000002"
+  #   readOnlyRootFilesystem: false # broker 10.9+
   storage:
     class: standard                 # StorageClass; omit to use the cluster default
     msgNode: 30Gi                   # mandatory
@@ -109,7 +120,6 @@ docker:
     dataDir: /opt/solace/data       # host bind mount, mandatory
   #   name: solace                  # container name
   #   runUser: "0:0"                # uid:gid the container runs as
-  #   tz: UTC
   #   shmSize: 1g
   #   ulimits:
   #     nofile: "2448:1048576"
@@ -128,7 +138,6 @@ podman:
     dataDir: /opt/solace/data       # mandatory
   #   name: solace
   #   runUser: "0:0"
-  #   tz: UTC
   #   shmSize: 1g
   #   ulimits:
   #     nofile: "2448:1048576"

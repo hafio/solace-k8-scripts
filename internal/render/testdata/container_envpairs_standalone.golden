@@ -1,4 +1,4 @@
-TZ=UTC
+TZ=Asia/Singapore
 routername=solace-primary
 nodetype=message_routing
 redundancy_enable=no

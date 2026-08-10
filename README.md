@@ -162,6 +162,9 @@ Common optional knobs:
 | `k8s.storage.class` | cluster default | StorageClass for the broker PVCs |
 | `k8s.updateStrategy` | `automatedRolling` | `automatedRolling` or `manualPodRestart` |
 | `tls.serverSecret` | -- | Name of the TLS secret; its presence enables the CR's TLS block |
+| `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
+| `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |
+| `k8s.containerSecurity` | -- | `runAsUser`/`runAsGroup`/`readOnlyRootFilesystem` for the broker container |
 
 **Secrets** belong in the env file (or your own secret store). The tool never echoes
 them: under `--dry-run`, values piped to a command on stdin are shown as

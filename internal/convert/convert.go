@@ -179,6 +179,9 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		d.kv("redundancy", r)
 		warns = append(warns, w...)
 	}
+	// SOLBK_TZ was the container timezone; the YAML schema has one cross-platform
+	// key, so it lands at the top level for every platform.
+	d.kv("timezone", v.s("SOLBK_TZ"))
 
 	d.section("image", func(d *doc) {
 		d.kv("repo", v.s("SOLBK_IMAGE"))
@@ -295,7 +298,6 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 			d.block("container", func(d *doc) {
 				d.kv("name", v.s("CONTAINER_NAME"))
 				d.kv("runUser", v.s("SOLBK_RUN_USER"))
-				d.kv("tz", v.s("SOLBK_TZ"))
 				d.kv("shmSize", v.s("SOLBK_SHM_SIZE"))
 				d.kv("dataDir", v.s("SOLBK_DATA_DIR"))
 				d.block("ulimits", func(d *doc) {

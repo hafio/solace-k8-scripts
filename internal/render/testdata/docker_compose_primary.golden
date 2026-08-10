@@ -17,7 +17,6 @@ services:
       - "/opt/solace/data:/var/lib/solace:Z"
       - "certs/tls.crt:/run/secrets/tls.crt:ro"
     environment:
-      TZ: "UTC"
       routername: "solace-primary"
       nodetype: "message_routing"
       redundancy_activestandbyrole: "primary"

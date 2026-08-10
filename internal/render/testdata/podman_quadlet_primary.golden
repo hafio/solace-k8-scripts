@@ -16,7 +16,6 @@ Ulimit=core=-1
 Network=host
 Volume=/opt/solace/data:/var/lib/solace:Z
 Volume=certs/tls.crt:/run/secrets/tls.crt:ro
-Environment="TZ=UTC"
 Environment="routername=solace-primary"
 Environment="nodetype=message_routing"
 Environment="redundancy_activestandbyrole=primary"

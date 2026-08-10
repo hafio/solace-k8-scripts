@@ -20,8 +20,6 @@ type=bind,source=/opt/solace/data,destination=/var/lib/solace,relabel=private,ro
 -v
 certs/tls.crt:/run/secrets/tls.crt:ro
 -e
-TZ=UTC
--e
 routername=solace-primary
 -e
 nodetype=message_routing

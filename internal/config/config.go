@@ -29,6 +29,11 @@ type Config struct {
 	// redundancy_*/configsync_* key=value set (or just redundancy_enable=no).
 	Redundancy string `yaml:"redundancy"`
 
+	// Timezone applies to every platform -- the k8s CR's timezone field and the
+	// containers' TZ setting are the same knob. Unset on purpose: an omitted
+	// value leaves the broker on the image default rather than pinning a region.
+	Timezone string `yaml:"timezone"`
+
 	Image       Image       `yaml:"image"`
 	Admin       Admin       `yaml:"admin"`
 	TLS         TLS         `yaml:"tls"`
@@ -103,20 +108,22 @@ type Replication struct {
 
 // K8sConfig holds everything specific to the operator-based Kubernetes deployment.
 type K8sConfig struct {
-	Name             string      `yaml:"name"`             // SOLBK_NAME
-	Namespace        string      `yaml:"namespace"`        // SOLBK_NS
-	UpdateStrategy   string      `yaml:"updateStrategy"`   // automatedRolling|manualPodRestart
-	ServiceAccount   string      `yaml:"serviceAccount"`   // SOLBK_SVC_ACCOUNT (optional)
-	CLIScriptsFolder string      `yaml:"cliScriptsFolder"` // SOLBK_CLISCRIPTS_FOLDER
-	DiagDir          string      `yaml:"diagDir"`          // SOLBK_DIAG_DIR
-	Storage          Storage     `yaml:"storage"`
-	MsgNode          Resources   `yaml:"msgNode"` // SOLBK_MSGNODE_CPU/MEM
-	Operator         Operator    `yaml:"operator"`
-	Placement        Placement   `yaml:"placement"`
-	LoadBalancer     LoadBalancer `yaml:"loadBalancer"`
-	Ports            []string    `yaml:"ports"`       // SOLBK_PORTS "name=port[/proto]"
-	ProductKeys      []string    `yaml:"productKeys"` // SOLBK_PRODUCTKEYS
-	DomainCerts      DomainCerts `yaml:"domainCerts"`
+	Name              string            `yaml:"name"`              // SOLBK_NAME
+	Namespace         string            `yaml:"namespace"`         // SOLBK_NS
+	UpdateStrategy    string            `yaml:"updateStrategy"`    // automatedRolling|manualPodRestart
+	ServiceAccount    string            `yaml:"serviceAccount"`    // SOLBK_SVC_ACCOUNT (optional)
+	CLIScriptsFolder  string            `yaml:"cliScriptsFolder"`  // SOLBK_CLISCRIPTS_FOLDER
+	DiagDir           string            `yaml:"diagDir"`           // SOLBK_DIAG_DIR
+	Storage           Storage           `yaml:"storage"`
+	MsgNode           Resources         `yaml:"msgNode"` // SOLBK_MSGNODE_CPU/MEM
+	Operator          Operator          `yaml:"operator"`
+	SecurityContext   PodSecurity       `yaml:"securityContext"`   // -> spec.securityContext
+	ContainerSecurity ContainerSecurity `yaml:"containerSecurity"` // -> spec.brokerContainerSecurity
+	Placement         Placement         `yaml:"placement"`
+	LoadBalancer      LoadBalancer      `yaml:"loadBalancer"`
+	Ports             []string          `yaml:"ports"`       // SOLBK_PORTS "name=port[/proto]"
+	ProductKeys       []string          `yaml:"productKeys"` // SOLBK_PRODUCTKEYS
+	DomainCerts       DomainCerts       `yaml:"domainCerts"`
 }
 
 // Storage is the k8s PVC sizing / storage class.
@@ -147,6 +154,33 @@ type Operator struct {
 // SOLOP_WATCH_SOLBK_NS=true; set it to false in YAML to opt out.
 func (o Operator) WatchBrokerNSEnabled() bool {
 	return o.WatchBrokerNS == nil || *o.WatchBrokerNS
+}
+
+// PodSecurity is the broker pod's securityContext. The ids are strings, not
+// ints, so an explicit "0" (which asks OpenShift to auto-assign) stays
+// distinguishable from an unset field -- the whole block is optional and is
+// omitted from the CR when nothing is set.
+type PodSecurity struct {
+	RunAsUser string `yaml:"runAsUser"`
+	FSGroup   string `yaml:"fsGroup"`
+}
+
+// Configured reports whether any field was set, which is what decides if the
+// block reaches the CR at all.
+func (s PodSecurity) Configured() bool { return s.RunAsUser != "" || s.FSGroup != "" }
+
+// ContainerSecurity is the broker container's own security settings. Same
+// optional-block rule as PodSecurity; ReadOnlyRootFilesystem is a pointer so an
+// explicit false is not mistaken for "not configured".
+type ContainerSecurity struct {
+	RunAsUser              string `yaml:"runAsUser"`
+	RunAsGroup             string `yaml:"runAsGroup"`
+	ReadOnlyRootFilesystem *bool  `yaml:"readOnlyRootFilesystem"`
+}
+
+// Configured reports whether any field was set.
+func (s ContainerSecurity) Configured() bool {
+	return s.RunAsUser != "" || s.RunAsGroup != "" || s.ReadOnlyRootFilesystem != nil
 }
 
 // Placement controls broker pod scheduling (tolerations, node labels, anti-affinity).
@@ -206,7 +240,6 @@ type Network struct {
 type Container struct {
 	Name    string  `yaml:"name"`    // CONTAINER_NAME
 	RunUser string  `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
-	TZ      string  `yaml:"tz"`      // SOLBK_TZ
 	ShmSize string  `yaml:"shmSize"` // SOLBK_SHM_SIZE
 	DataDir string  `yaml:"dataDir"` // SOLBK_DATA_DIR (host bind mount)
 	Ulimits Ulimits `yaml:"ulimits"`

@@ -558,7 +558,7 @@ Manifest and unit-file rendering, guarded by committed goldens. 4 tests.
 
 | Test | What it covers |
 | --- | --- |
-| `TestGolden` | Seven renderings from the sample env match their goldens: k8s broker CR (the sample omits `k8s.ports`, so this covers the 16 defaults), the same CR with an explicit port list (the specified branch, including a container port differing from the service port and an explicit protocol), podman quadlet, docker compose, docker run args, and container env pairs for HA and standalone |
+| `TestGolden` | Eight renderings from the sample env match their goldens: k8s broker CR (the sample omits `k8s.ports`, `timezone` and both security blocks, so this covers the 16 default ports and the omitted branches), the same CR with an explicit port list (a container port differing from the service port, and an explicit protocol), the same CR with timezone and both security blocks set, podman quadlet, docker compose, docker run args, and container env pairs for HA (no `timezone`, so no TZ pair) and standalone (`timezone` set, so the TZ pair is present) |
 | `TestParsePort` | Port entries across the `name=container`, `container:service`, and `/PROTO` forms |
 | `TestParseToleration` | Toleration Equal (`key=value:effect`) and Exists (`key:effect`) forms |
 | `TestQuadletEscape` | systemd `Environment=` escaping of `%`, `"`, and `\` |

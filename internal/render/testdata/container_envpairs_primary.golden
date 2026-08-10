@@ -1,4 +1,3 @@
-TZ=UTC
 routername=solace-primary
 nodetype=message_routing
 redundancy_activestandbyrole=primary

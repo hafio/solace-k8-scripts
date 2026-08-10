@@ -32,7 +32,6 @@ spec:
     useStorageClass: standard
     messagingNodeStorageSize: 30Gi
     monitorNodeStorageSize: 5Gi
-  timezone: "Asia/Singapore"
   tls:
     serverTlsConfigSecret: solace-tls-secret
     enabled: true

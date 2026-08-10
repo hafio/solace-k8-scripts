@@ -199,9 +199,11 @@ func (c *Config) applyContainerDefaults(p Platform) {
 	}
 }
 
+// applyContainerBlockDefaults fills the container runtime knobs. TZ is
+// deliberately absent: the timezone is optional on every platform, so an unset
+// value emits no TZ setting at all rather than silently pinning one.
 func applyContainerBlockDefaults(b *Container) {
 	setDefault(&b.RunUser, "0:0")
-	setDefault(&b.TZ, "UTC")
 	setDefault(&b.ShmSize, "1g")
 	setDefault(&b.DataDir, "/opt/solace/data")
 	setDefault(&b.Ulimits.NoFile, "2448:1048576")

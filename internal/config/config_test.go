@@ -265,9 +265,6 @@ func assertContainerBlockDefaults(t *testing.T, b Container) {
 	if b.RunUser != "0:0" {
 		t.Errorf("RunUser = %q, want 0:0", b.RunUser)
 	}
-	if b.TZ != "UTC" {
-		t.Errorf("TZ = %q, want UTC", b.TZ)
-	}
 	if b.ShmSize != "1g" {
 		t.Errorf("ShmSize = %q, want 1g", b.ShmSize)
 	}

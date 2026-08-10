@@ -32,11 +32,19 @@ spec:
     useStorageClass: standard
     messagingNodeStorageSize: 30Gi
     monitorNodeStorageSize: 5Gi
+  timezone: "Asia/Singapore"
   tls:
     serverTlsConfigSecret: solace-tls-secret
     enabled: true
     certFilename: tls.crt
     certKeyFilename: tls.key
+  securityContext:
+    runAsUser: 1000001
+    fsGroup: 1000002
+  brokerContainerSecurity:
+    runAsUser: 1000001
+    runAsGroup: 1000002
+    readOnlyRootFilesystem: false
   nodeAssignment:
   - name: Primary
     spec:

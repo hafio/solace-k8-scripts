@@ -166,6 +166,10 @@ func TestConvertContainer(t *testing.T) {
 	if c.Scaling.MaxSpoolUsageMB != 100000 {
 		t.Errorf("maxSpoolUsageMB = %d", c.Scaling.MaxSpoolUsageMB)
 	}
+	// SOLBK_TZ was container-only in bash; the schema has one cross-platform key.
+	if c.Timezone != "UTC" {
+		t.Errorf("timezone = %q, want UTC (from SOLBK_TZ)", c.Timezone)
+	}
 	// An ambiguous container file says which section it picked.
 	if !hasWarning(res.Warnings, "assumed docker") {
 		t.Errorf("warnings = %v, want the assumed-docker note", res.Warnings)

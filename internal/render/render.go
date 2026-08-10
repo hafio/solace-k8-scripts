@@ -25,10 +25,6 @@ import (
 	"solace/internal/config"
 )
 
-// k8sTimezone mirrors the timezone hardcoded in gen_yaml (020-deploy-broker.sh).
-// Kept for parity; there is no k8s timezone field in the config today.
-const k8sTimezone = "Asia/Singapore"
-
 // In-container paths the broker image expects.
 const (
 	dataMount = "/var/lib/solace"
@@ -88,7 +84,11 @@ func BrokerCR(c *config.Config) []byte {
 	}
 	fmt.Fprintf(&b, "    messagingNodeStorageSize: %s\n", c.K8s.Storage.MsgNode)
 	fmt.Fprintf(&b, "    monitorNodeStorageSize: %s\n", c.K8s.Storage.MonNode)
-	fmt.Fprintf(&b, "  timezone: %q\n", k8sTimezone)
+	// The bash gen_yaml hardcoded a timezone; here it is config, and an unset
+	// one leaves the broker on the image default rather than pinning a region.
+	if c.Timezone != "" {
+		fmt.Fprintf(&b, "  timezone: %q\n", c.Timezone)
+	}
 
 	if c.TLS.ServerSecret != "" {
 		fmt.Fprint(&b, "  tls:\n")
@@ -98,6 +98,7 @@ func BrokerCR(c *config.Config) []byte {
 		fmt.Fprint(&b, "    certKeyFilename: tls.key\n")
 	}
 
+	writeSecurity(&b, c.K8s)
 	writeNodeAssignment(&b, c)
 
 	fmt.Fprint(&b, "  service:\n")
@@ -113,6 +114,34 @@ func BrokerCR(c *config.Config) []byte {
 	}
 
 	return []byte(b.String())
+}
+
+// writeSecurity emits the pod and container security blocks, each only when
+// something was configured. Both are optional: the operator applies the image's
+// own defaults when they are absent, so an unset block must stay out of the CR
+// rather than be rendered with zeros.
+func writeSecurity(b *strings.Builder, k config.K8sConfig) {
+	if sc := k.SecurityContext; sc.Configured() {
+		fmt.Fprint(b, "  securityContext:\n")
+		if sc.RunAsUser != "" {
+			fmt.Fprintf(b, "    runAsUser: %s\n", sc.RunAsUser)
+		}
+		if sc.FSGroup != "" {
+			fmt.Fprintf(b, "    fsGroup: %s\n", sc.FSGroup)
+		}
+	}
+	if cs := k.ContainerSecurity; cs.Configured() {
+		fmt.Fprint(b, "  brokerContainerSecurity:\n")
+		if cs.RunAsUser != "" {
+			fmt.Fprintf(b, "    runAsUser: %s\n", cs.RunAsUser)
+		}
+		if cs.RunAsGroup != "" {
+			fmt.Fprintf(b, "    runAsGroup: %s\n", cs.RunAsGroup)
+		}
+		if cs.ReadOnlyRootFilesystem != nil {
+			fmt.Fprintf(b, "    readOnlyRootFilesystem: %s\n", boolStr(*cs.ReadOnlyRootFilesystem))
+		}
+	}
 }
 
 // writeNodeAssignment emits the nodeAssignment block when any placement knob is
@@ -202,12 +231,20 @@ func (p EnvPair) Assignment() string { return p.Key + "=" + p.Value }
 
 // EnvPairs ports gen_env_pairs: the ordered broker config for a container host,
 // branching on redundancy. id is this host's resolved identity (ResolveNode).
-func EnvPairs(c *config.Config, p config.Platform, id config.NodeIdentity) []EnvPair {
-	pairs := []EnvPair{
-		{"TZ", c.ContainerBlock(p).TZ},
-		{"routername", id.Hostname},
-		{"nodetype", id.NodeType},
+// It takes no platform: every value it reads is shared, since the docker and
+// podman broker configuration is identical and only the framing differs.
+func EnvPairs(c *config.Config, id config.NodeIdentity) []EnvPair {
+	// TZ is the same cross-platform timezone the k8s CR uses, and it is optional:
+	// an unset one leaves the container on the image default, so the pair is
+	// omitted entirely rather than emitted empty.
+	var pairs []EnvPair
+	if c.Timezone != "" {
+		pairs = append(pairs, EnvPair{"TZ", c.Timezone})
 	}
+	pairs = append(pairs,
+		EnvPair{"routername", id.Hostname},
+		EnvPair{"nodetype", id.NodeType},
+	)
 
 	if c.RedundancyEnabled() {
 		if id.ActiveStandby != "" {
@@ -291,7 +328,7 @@ func Quadlet(c *config.Config, id config.NodeIdentity) []byte {
 	if c.TLS.Cert != "" {
 		fmt.Fprintf(&b, "Volume=%s:%s:ro\n", c.TLS.Cert, certMount)
 	}
-	for _, pair := range EnvPairs(c, p, id) {
+	for _, pair := range EnvPairs(c, id) {
 		fmt.Fprintf(&b, "Environment=\"%s\"\n", quadletEscape(pair.Assignment()))
 	}
 	fmt.Fprint(&b, "\n")
@@ -339,7 +376,7 @@ func Compose(c *config.Config, id config.NodeIdentity) []byte {
 		fmt.Fprintf(&b, "      - %q\n", c.TLS.Cert+":"+certMount+":ro")
 	}
 	fmt.Fprint(&b, "    environment:\n")
-	for _, pair := range EnvPairs(c, p, id) {
+	for _, pair := range EnvPairs(c, id) {
 		fmt.Fprintf(&b, "      %s: %q\n", pair.Key, pair.Value)
 	}
 	return []byte(b.String())
@@ -375,7 +412,7 @@ func RunArgs(c *config.Config, id config.NodeIdentity) []string {
 	if c.TLS.Cert != "" {
 		args = append(args, "-v", c.TLS.Cert+":"+certMount+":ro")
 	}
-	for _, pair := range EnvPairs(c, p, id) {
+	for _, pair := range EnvPairs(c, id) {
 		args = append(args, "-e", pair.Assignment())
 	}
 	args = append(args, c.Image.Ref())
