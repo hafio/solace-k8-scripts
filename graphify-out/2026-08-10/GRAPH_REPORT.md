@@ -1,16 +1,16 @@
-# Graph Report - solace-k8-scripts  (2026-08-09)
+# Graph Report - solace-k8-scripts  (2026-08-10)
 
 ## Corpus Check
-- 68 files · ~89,610 words
+- 68 files · ~91,161 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1275 nodes · 3379 edges · 33 communities (32 shown, 1 thin omitted)
+- 1280 nodes · 3389 edges · 32 communities (31 shown, 1 thin omitted)
 - Extraction: 84% EXTRACTED · 16% INFERRED · 0% AMBIGUOUS · INFERRED: 527 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `87ab3f0d`
+- Built from commit: `55e4debb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -23,17 +23,16 @@
 - config_test.go
 - Commands
 - Manager
-- render.go
 - runner_test.go
 - broker_test.go
 - newLocalOps
-- Cluster
+- RenderOperator
 - NewCluster
 - Platform
 - Test catalogue
 - config.go
 - Transport Test Doubles
-- secrets_test.go
+- Cluster
 - dev.sh
 - coverage_test.go
 - dev.ps1
@@ -57,7 +56,7 @@
 7. `newTestOps()` - 42 edges
 8. `Manager` - 39 edges
 9. `k8sCluster()` - 32 edges
-10. `Platform` - 32 edges
+10. `NewCluster()` - 32 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `main()` --calls--> `Execute()`  [INFERRED]
@@ -79,7 +78,7 @@
 - **Web-based Configuration Generators** — solace_repl_gen_html, solace_replication_generator_html, solace_yaml_generator_html [INFERRED 0.90]
 - **Legacy Bash Script Family** — bash_000_env_sh, bash_010_deploy_operator_sh, bash_020_deploy_broker_sh, bash_059_execute_cli_sh [EXTRACTED 1.00]
 
-## Communities (33 total, 1 thin omitted)
+## Communities (32 total, 1 thin omitted)
 
 ### Community 0 - "App"
 Cohesion: 0.05
@@ -94,28 +93,24 @@ Cohesion: 0.13
 Nodes (60): fileExists(), ctrCfg(), Buffer, Config, T, hasCall(), newCapMgr(), newEchoMgr() (+52 more)
 
 ### Community 3 - "Role"
-Cohesion: 0.05
-Nodes (39): fakeTransport, recDownload, recOutput, recRun, recUpload, recUploadFile, runErrTransport, Role (+31 more)
+Cohesion: 0.06
+Nodes (31): fakeTransport, recDownload, recOutput, recRun, recUpload, recUploadFile, runErrTransport, Role (+23 more)
 
 ### Community 4 - "cli_test.go"
 Cohesion: 0.08
 Nodes (66): capture(), captureStderr(), captureStdout(), collectPaths(), findCmd(), firstLine(), Command, File (+58 more)
 
 ### Community 5 - "config_test.go"
-Cohesion: 0.07
-Nodes (57): assertContainerBlockDefaults(), assertContainerScaling(), envTree(), Config, T, haNodesConfig(), TestApplyDefaultsDocker(), TestApplyDefaultsK8s() (+49 more)
+Cohesion: 0.10
+Nodes (50): assertContainerBlockDefaults(), assertContainerScaling(), envTree(), Config, T, haNodesConfig(), TestApplyDefaultsDocker(), TestApplyDefaultsK8s() (+42 more)
 
 ### Community 6 - "Commands"
 Cohesion: 0.02
 Nodes (101): Commands, solace, solace convert, solace docker, solace docker check, solace docker cli, solace docker config, solace docker config disable-default-users (+93 more)
 
 ### Community 7 - "Manager"
-Cohesion: 0.15
-Nodes (12): Manager, Runner, defaultGenPSK(), Config, Context, Reader, Writer, NewManager() (+4 more)
-
-### Community 8 - "render.go"
-Cohesion: 0.11
-Nodes (33): NodeIdentity, Config, Context, Cluster, boolStr(), BrokerCR(), Compose(), cut() (+25 more)
+Cohesion: 0.07
+Nodes (44): LoadBalancer, NodeIdentity, Manager, Runner, defaultGenPSK(), Config, Context, Reader (+36 more)
 
 ### Community 9 - "runner_test.go"
 Cohesion: 0.14
@@ -129,13 +124,13 @@ Nodes (30): Buffer, Config, Ops, T, newTestOps(), TestContainsAnyFold(), TestCou
 Cohesion: 0.22
 Nodes (26): uploadedForRole(), Buffer, Config, Ops, T, localCfg(), newLocalOps(), rd() (+18 more)
 
-### Community 12 - "Cluster"
-Cohesion: 0.29
-Nodes (6): Context, Cluster, orNone(), orValue(), setOrMissing(), setOrNone()
+### Community 12 - "RenderOperator"
+Cohesion: 0.14
+Nodes (13): Context, Cluster, orNone(), orValue(), setOrMissing(), setOrNone(), GenOperator(), Config (+5 more)
 
 ### Community 13 - "NewCluster"
 Cohesion: 0.06
-Nodes (89): T, TestCheckDryRun(), TestCheckEnvNoSecretLeak(), TestCheckStorageClass(), TestReachable(), TestResolveStorageClass(), NewCluster(), Cluster (+81 more)
+Nodes (87): T, TestCheckDryRun(), TestCheckEnvNoSecretLeak(), TestCheckStorageClass(), TestReachable(), TestResolveStorageClass(), NewCluster(), Cluster (+79 more)
 
 ### Community 14 - "Platform"
 Cohesion: 0.07
@@ -146,16 +141,16 @@ Cohesion: 0.05
 Nodes (39): broker_test.go, check_test.go, cli_test.go, cluster_test.go, commanddoc_test.go, config_test.go, convert_test.go, Coverage (+31 more)
 
 ### Community 16 - "config.go"
-Cohesion: 0.15
-Nodes (20): Admin, Container, DockerConfig, DomainCerts, Image, K8sConfig, LoadBalancer, Network (+12 more)
+Cohesion: 0.09
+Nodes (28): Admin, Container, ContainerSecurity, DockerConfig, DomainCerts, Image, K8sConfig, Network (+20 more)
 
 ### Community 17 - "Transport Test Doubles"
 Cohesion: 0.22
 Nodes (15): capCall, capRunner, Config, NewTransport(), dockerCfg(), eqArgs(), Config, Context (+7 more)
 
-### Community 18 - "secrets_test.go"
-Cohesion: 0.12
-Nodes (24): GenOperator(), Config, Context, Cluster, RenderOperator(), watchNamespace(), AdminSecret(), dockerRegistrySecret() (+16 more)
+### Community 18 - "Cluster"
+Cohesion: 0.09
+Nodes (30): Config, Context, Cluster, Reader, Writer, isBuiltinLabel(), joinManifests(), namespaceManifest() (+22 more)
 
 ### Community 19 - "dev.sh"
 Cohesion: 0.19
@@ -209,12 +204,12 @@ Nodes (3): Command reference, Global flags, Tree
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Platform` connect `Platform` to `App`, `manager_test.go`, `cli_test.go`, `config_test.go`, `Manager`, `render.go`, `config.go`, `Transport Test Doubles`?**
+- **Why does `Platform` connect `Platform` to `App`, `manager_test.go`, `cli_test.go`, `config_test.go`, `Manager`, `config.go`, `Transport Test Doubles`?**
+  _High betweenness centrality (0.241) - this node is a cross-community bridge._
+- **Why does `Role` connect `Role` to `App`, `scripts.go`, `Manager`, `newLocalOps`, `Cluster`, `cliScriptPath`, `Ops`, `.ExecCLI`?**
+  _High betweenness centrality (0.227) - this node is a cross-community bridge._
+- **Why does `App` connect `App` to `cli_test.go`, `Platform`, `Manager`?**
   _High betweenness centrality (0.225) - this node is a cross-community bridge._
-- **Why does `Role` connect `Role` to `App`, `scripts.go`, `Manager`, `render.go`, `newLocalOps`, `cliScriptPath`, `Ops`, `.ExecCLI`?**
-  _High betweenness centrality (0.220) - this node is a cross-community bridge._
-- **Why does `App` connect `App` to `cli_test.go`, `config_test.go`, `Platform`, `Manager`?**
-  _High betweenness centrality (0.215) - this node is a cross-community bridge._
 - **Are the 22 inferred relationships involving `bg()` (e.g. with `ctrLogin()` and `opCtrCheck()`) actually correct?**
   _`bg()` has 22 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `solace`, `showCmd`, `Config` to the rest of the system?**

@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "go.mod": {
-    "mtime": 1785993084.7748985,
-    "ast_hash": "3c1fca0252085fa0419f70d7fee7bb01",
+    "mtime": 1786320977.0657203,
+    "ast_hash": "f953b8be3cd56d4026de8779846ba378",
     "semantic_hash": ""
   },
   "internal/broker/broker.go": {
@@ -340,8 +340,8 @@
     "semantic_hash": ""
   },
   "internal/convert/convert_test.go": {
-    "mtime": 1786319667.498758,
-    "ast_hash": "f9c0158d6aa55972de97af10f0475b46",
+    "mtime": 1786321439.1262133,
+    "ast_hash": "205ae8225e370d7581b4ab4b46196114",
     "semantic_hash": ""
   },
   "internal/convert/parse.go": {
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "docs/test.md": {
-    "mtime": 1786319664.6679688,
-    "ast_hash": "114986cba2ef9a6492aee68c68571af2",
+    "mtime": 1786321529.9151597,
+    "ast_hash": "53d1a8e63830c371cd10e9d3194d4ca3",
     "semantic_hash": ""
   },
   "internal/cli/commanddoc_test.go": {

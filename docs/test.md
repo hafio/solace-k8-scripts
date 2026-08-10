@@ -31,14 +31,18 @@ Narrowing a run during development (not a substitute for the gate):
 go test ./internal/config -run TestResolveEnvPath -v
 ```
 
-Three packages carry golden files and accept `-update` to regenerate them. Only run it after
+Four packages carry golden files and accept `-update` to regenerate them. Only run it after
 eyeballing the diff -- the committed goldens are the reviewed expected output:
 
 ```
 go test ./internal/render -update
 go test ./internal/k8s -update
+go test ./internal/convert -update
 go test ./internal/cli -update      # rewrites docs/commands.md
 ```
+
+Every fixture a test reads must be committed. `bash/` is gitignored in its entirety, so no
+test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
@@ -193,7 +197,7 @@ mapping, and the YAML emitter. 22 tests.
 
 | Test | What it covers |
 | --- | --- |
-| `TestConvertBashSample` | The committed `bash/env/sample` converts end to end: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, and no warnings |
+| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, and no warnings |
 | `TestConvertContainer` | A container env file maps the node table, container block, ulimits, network, and spool scaling |
 | `TestConvertPlatformDetection` | Podman markers, docker markers, and both-present all resolve to the expected section |
 | `TestConvertPodmanSection` | Podman rootless and quadlet dir land in the podman block, and no docker block is written |
@@ -596,11 +600,11 @@ new fake.
 - Tests needing a clean single-broker pass write their own minimal env to a temp file:
   `writeStandaloneEnv` (k8s-shaped) and `writeCtrStandaloneEnv` (container-shaped, needs a
   `nodes:` block) in `internal/cli/cli_test.go`.
-- **`bash/env/sample`** is the legacy-format fixture. `internal/convert` converts the real
-  committed file rather than an inlined copy, so a change to the old format is caught. The
-  container flavour uses an inline fixture (`ctrEnv`) instead: the committed
-  `bash/docker-podman/env/sample` is written as a bash script rather than a plain env file
-  (several assignments per line), which is not a format the converter targets.
+- **`internal/convert/testdata/legacy-k8s.env`** is the legacy-format fixture, with
+  `legacy-k8s.yaml.golden` as its expected output. It deliberately does not point at
+  `bash/env/sample`: the whole `bash/` tree is gitignored, so that path is absent on a fresh
+  checkout and CI could never run the test. The container flavour uses an inline fixture
+  (`ctrEnv`) in the same file.
 
 ### Per-package doubles
 

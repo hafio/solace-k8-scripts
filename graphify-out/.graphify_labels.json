@@ -7,6 +7,7 @@
   "5": "config_test.go",
   "6": "Commands",
   "7": "Manager",
+  "8": "render.go",
   "9": "runner_test.go",
   "10": "broker_test.go",
   "11": "newLocalOps",
@@ -30,5 +31,10 @@
   "29": "Broker Deploy (k8s)",
   "30": "Go Module Definition",
   "31": ".ExecCLI",
-  "32": "Command reference"
+  "32": "Command reference",
+  "33": "ops_container.go",
+  "34": "newK8sCmd",
+  "35": "helpers.go",
+  "36": "newContainerCmd",
+  "37": "HARoles"
 }

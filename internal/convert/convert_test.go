@@ -2,7 +2,9 @@ package convert
 
 import (
 	"bytes"
+	"flag"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,11 +13,32 @@ import (
 	"solace/internal/config"
 )
 
-// bashSample is the committed legacy k8s env file, reused as the conversion
-// fixture: it exercises every assignment form the format uses (quoted scalars,
-// a trailing comment, an indexed array, an associative array, and a ${VAR}
-// reference to an earlier assignment).
-const bashSample = "../../bash/env/sample"
+// update regenerates the converter goldens, matching the render and k8s packages.
+var update = flag.Bool("update", false, "regenerate the goldens in testdata/")
+
+// checkGolden compares got against testdata/<file>, or rewrites it under -update.
+func checkGolden(t *testing.T, file string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", file)
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden %s: %v", path, err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s (regenerate: go test ./internal/convert -update): %v", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s mismatch\n--- got ---\n%s\n--- want ---\n%s", file, got, want)
+	}
+}
+
+// legacyK8sEnv is this package's own legacy-format fixture. It deliberately does
+// not point at bash/env/sample: the bash/ tree is gitignored, so that path does
+// not exist on a fresh checkout and CI could never run this test.
+const legacyK8sEnv = "testdata/legacy-k8s.env"
 
 // ctrEnv is a container-flavoured legacy env file. There is no committed one --
 // the container bootstrap documented its variables inline -- so the fixture is
@@ -67,15 +90,19 @@ func convertOK(t *testing.T, src string, p config.Platform) Result {
 	return res
 }
 
-func TestConvertBashSample(t *testing.T) {
-	raw, err := os.ReadFile(bashSample)
+// TestConvertLegacyK8sEnv converts this package's own legacy fixture end to end
+// and pins the result against a committed golden, so the test owns both halves:
+// the legacy input and the YAML it must produce.
+func TestConvertLegacyK8sEnv(t *testing.T) {
+	raw, err := os.ReadFile(legacyK8sEnv)
 	if err != nil {
-		t.Fatalf("read %s: %v", bashSample, err)
+		t.Fatalf("read %s: %v", legacyK8sEnv, err)
 	}
-	res, err := Convert(raw, bashSample, "")
+	res, err := Convert(raw, legacyK8sEnv, "")
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
+	checkGolden(t, "legacy-k8s.yaml.golden", res.YAML)
 	if res.Platform != config.K8s {
 		t.Errorf("detected platform = %q, want k8s", res.Platform)
 	}
