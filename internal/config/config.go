@@ -5,7 +5,12 @@
 // knobs live under k8s/docker/podman/nodes.
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Platform selects which platform's defaults, validation, and renderers apply.
 type Platform string
@@ -49,6 +54,65 @@ type Config struct {
 // RedundancyEnabled reports HA mode (redundancy: yes). Container HA and k8s HA
 // both key off this; HA-only steps (leader, redundancy verify) no-op otherwise.
 func (c *Config) RedundancyEnabled() bool { return c.Redundancy == "yes" }
+
+// Command is an external command line: argv[0] plus any leading arguments that
+// precede every call's own. It exists so the platform CLI can be more than a
+// binary name -- `oc`, `microk8s kubectl`, or a profile like
+// `kubectl --kubeconfig /path/.kubeconfig-cluster` (bash/env/customer-sample:7).
+//
+// The bash bootstraps got this for free by expanding ${KUBE} and
+// ${CONTAINER_RUNTIME} unquoted, which word-splits. Go's exec never splits and
+// never involves a shell, so the split happens here instead.
+type Command []string
+
+// UnmarshalYAML accepts either a scalar, split on whitespace exactly as the
+// bash bootstraps' unquoted expansion did, or an explicit sequence, which is the
+// only way to express a token that itself contains a space (a binary path under
+// "C:\Program Files\..."). Whitespace splitting deliberately does not honour
+// embedded quotes -- neither did bash's word splitting.
+func (c *Command) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var s string
+		if err := value.Decode(&s); err != nil {
+			return err
+		}
+		*c = strings.Fields(s)
+	case yaml.SequenceNode:
+		var parts []string
+		if err := value.Decode(&parts); err != nil {
+			return err
+		}
+		*c = parts
+	default:
+		return fmt.Errorf("line %d: a command must be a string (split on whitespace) "+
+			"or a list of exact arguments", value.Line)
+	}
+	return nil
+}
+
+// Name is argv[0] -- the executable actually run.
+func (c Command) Name() string {
+	if len(c) == 0 {
+		return ""
+	}
+	return c[0]
+}
+
+// Args prepends the configured leading arguments to a single call's own args. It
+// always builds a new slice, so a caller's backing array is never aliased or
+// appended into by a later call.
+func (c Command) Args(extra ...string) []string {
+	if len(c) <= 1 {
+		return extra
+	}
+	out := make([]string, 0, len(c)-1+len(extra))
+	out = append(out, c[1:]...)
+	return append(out, extra...)
+}
+
+// String renders the command for reports and error messages.
+func (c Command) String() string { return strings.Join(c, " ") }
 
 // Image is the broker image reference and (k8s) pull-secret material.
 type Image struct {
@@ -108,6 +172,7 @@ type Replication struct {
 
 // K8sConfig holds everything specific to the operator-based Kubernetes deployment.
 type K8sConfig struct {
+	Runtime           Command           `yaml:"runtime"`           // KUBE (default: kubectl)
 	Name              string            `yaml:"name"`              // SOLBK_NAME
 	Namespace         string            `yaml:"namespace"`         // SOLBK_NS
 	UpdateStrategy    string            `yaml:"updateStrategy"`    // automatedRolling|manualPodRestart
@@ -210,7 +275,7 @@ type DomainCerts struct {
 
 // DockerConfig holds docker-only deployment options plus the shared container block.
 type DockerConfig struct {
-	Runtime     string    `yaml:"runtime"`     // CONTAINER_RUNTIME override (default: docker)
+	Runtime     Command   `yaml:"runtime"`     // CONTAINER_RUNTIME override (default: docker)
 	Mode        string    `yaml:"mode"`        // compose|run
 	ComposeFile string    `yaml:"composeFile"` // DOCKER_COMPOSE_FILE
 	Network     Network   `yaml:"network"`
@@ -219,7 +284,7 @@ type DockerConfig struct {
 
 // PodmanConfig holds podman-only deployment options plus the shared container block.
 type PodmanConfig struct {
-	Runtime   string    `yaml:"runtime"`   // CONTAINER_RUNTIME override (default: podman)
+	Runtime   Command   `yaml:"runtime"`   // CONTAINER_RUNTIME override (default: podman)
 	Rootless  bool      `yaml:"rootless"`  // PODMAN_ROOTLESS
 	QuadletDir string   `yaml:"quadletDir"` // QUADLET_DIR override
 	Network   Network   `yaml:"network"`

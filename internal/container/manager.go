@@ -80,17 +80,21 @@ func (m *Manager) out() io.Writer {
 // and DNS/euid probes are previewed rather than performed.
 func (m *Manager) isDryRun() bool { _, ok := m.R.(engine.Echo); return ok }
 
-func (m *Manager) runtime() string { return m.Cfg.ContainerRuntime(m.P) }
-func (m *Manager) name() string    { return m.Cfg.ContainerBlock(m.P).Name }
+// runtime is the configured runtime command (docker.runtime / podman.runtime):
+// argv[0] plus any leading arguments that precede every call's own.
+func (m *Manager) runtime() config.Command { return m.Cfg.ContainerRuntime(m.P) }
+func (m *Manager) name() string            { return m.Cfg.ContainerBlock(m.P).Name }
 
 // run executes a runtime subcommand (`<runtime> args...`) through the Runner.
 func (m *Manager) run(ctx context.Context, args ...string) error {
-	return m.R.Run(ctx, m.runtime(), args...)
+	r := m.runtime()
+	return m.R.Run(ctx, r.Name(), r.Args(args...)...)
 }
 
 // output captures a runtime subcommand's stdout through the Runner.
 func (m *Manager) output(ctx context.Context, args ...string) ([]byte, error) {
-	return m.R.Output(ctx, m.runtime(), args...)
+	r := m.runtime()
+	return m.R.Output(ctx, r.Name(), r.Args(args...)...)
 }
 
 // --- Check ------------------------------------------------------------------
@@ -425,12 +429,14 @@ func (m *Manager) Logs(ctx context.Context) error {
 
 // CLI opens an interactive Solace CLI session inside the container.
 func (m *Manager) CLI(ctx context.Context) error {
-	return m.R.RunInteractive(ctx, m.runtime(), "exec", "-it", m.name(), "cli", "-A")
+	r := m.runtime()
+	return m.R.RunInteractive(ctx, r.Name(), r.Args("exec", "-it", m.name(), "cli", "-A")...)
 }
 
 // Shell opens an interactive shell inside the container.
 func (m *Manager) Shell(ctx context.Context) error {
-	return m.R.RunInteractive(ctx, m.runtime(), "exec", "-it", m.name(), "bash")
+	r := m.runtime()
+	return m.R.RunInteractive(ctx, r.Name(), r.Args("exec", "-it", m.name(), "bash")...)
 }
 
 // --- helpers ----------------------------------------------------------------

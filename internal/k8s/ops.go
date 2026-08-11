@@ -107,7 +107,8 @@ func (c *Cluster) Logs(ctx context.Context, role config.Role, passthrough []stri
 // stdio wired through, for the interactive sessions (Solace CLI, shell).
 func (c *Cluster) interactiveExec(ctx context.Context, role config.Role, argv ...string) error {
 	args := append([]string{"exec", "-it", "-n", c.ns(), podName(c.Cfg, role), "--"}, argv...)
-	return c.R.RunInteractive(ctx, kubectlBin, args...)
+	k := c.cmd()
+	return c.R.RunInteractive(ctx, k.Name(), k.Args(args...)...)
 }
 
 // CLI opens an interactive Solace CLI session on a role's pod, porting

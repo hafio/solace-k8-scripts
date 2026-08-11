@@ -27,6 +27,7 @@ type Result struct {
 // absent from both lists -- they say nothing about the target.
 var (
 	k8sMarkers = []string{
+		"KUBE",
 		"SOLBK_NAME", "SOLBK_NS", "SOLBK_STORAGE_MSGNODE", "SOLBK_STORAGE_MONNODE",
 		"SOLBK_STORAGECLASS", "SOLBK_MSGNODE_CPU", "SOLBK_MSGNODE_MEM",
 		"SOLBK_UPDATE_STRATEGY", "SOLBK_ANTIAFFINITY_NS", "SOLBK_SVR_SECRET",
@@ -47,7 +48,7 @@ var (
 // no YAML equivalent by design, so they are consumed silently rather than
 // reported as unmapped.
 var bashOnly = []string{
-	"KUBE", "ENV_FILE", "EXDIR", "PARAMS", "PARM", "GENONLY", "EMPTY_VAR",
+	"ENV_FILE", "EXDIR", "PARAMS", "PARM", "GENONLY", "EMPTY_VAR",
 	"RUNTIME_DEFAULT", "SOLBK_IMAGE_REF", "SOLOP_DERIVED_NS", "SYSTEMCTL_USER",
 	"QUADLET_WANTEDBY", "SELECT_ENV_FILE", "THIS_HOSTNAME", "THIS_NODETYPE",
 	"THIS_ACTIVESTANDBY",
@@ -225,11 +226,15 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		d.kv("psk", v.s("REPL_PSK"))
 	})
 
+	kube, kubeWarns := kubeCommand(v)
+	warns = append(warns, kubeWarns...)
+
 	// The k8s section carries the operator deployment plus four fields the
 	// container platforms reuse (diagDir, cliScriptsFolder, domainCerts,
 	// productKeys), so it is written for every platform.
 	d.section("k8s", func(d *doc) {
 		if p == config.K8s {
+			d.kv("runtime", kube)
 			d.kv("name", v.s("SOLBK_NAME"))
 			d.kv("namespace", v.s("SOLBK_NS"))
 			d.kv("updateStrategy", v.s("SOLBK_UPDATE_STRATEGY"))
@@ -325,6 +330,27 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		})
 	}
 	return d.b.String(), warns
+}
+
+// kubeCommand resolves the bash KUBE variable to the k8s.runtime value. KUBE was
+// the cluster CLI, expanded unquoted so it could carry a whole profile
+// (`kubectl --kubeconfig <file>`, bash/env/customer-sample:7) rather than just a
+// binary name -- exactly what k8s.runtime now holds.
+//
+// It is read unconditionally, even on a container platform, so the variable is
+// consumed silently there instead of being reported unmapped.
+//
+// KUBE="echo" (bash/env/sample:7) was the bash dry-run trick. Carried over
+// literally it would turn every cluster call into a no-op whose stdout the
+// output-parsing steps then misread -- worse than dropping it -- so it yields a
+// warning and no value, the --dry-run flag having replaced it. The match is
+// exact: "/bin/echo" or "echo -n" passes through, a deliberate scope limit.
+func kubeCommand(v *vars) (string, []string) {
+	kube := strings.TrimSpace(v.s("KUBE"))
+	if strings.EqualFold(kube, "echo") {
+		return "", []string{`KUBE="echo" was the bash dry-run trick, dropped -- use --dry-run instead`}
+	}
+	return kube, nil
 }
 
 // redundancy normalises the two bash spellings: the k8s bootstrap wrote

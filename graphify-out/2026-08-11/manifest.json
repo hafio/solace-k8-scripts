@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "docs/test.md": {
-    "mtime": 1786424311.0512154,
-    "ast_hash": "4ca32b86e0f560c2c3c3a7a67da29852",
+    "mtime": 1786422387.1428132,
+    "ast_hash": "d582def13a264260f7dddf1e60b9e61b",
     "semantic_hash": ""
   },
   "internal/cli/commanddoc_test.go": {
@@ -365,8 +365,8 @@
     "semantic_hash": ""
   },
   "internal/config/command_test.go": {
-    "mtime": 1786424267.011387,
-    "ast_hash": "f84e5866a9fed69a0f8c0b8e7a04aa41",
+    "mtime": 1786422009.059832,
+    "ast_hash": "6f5cc48a8a3f8cfc97d3c7052326e811",
     "semantic_hash": ""
   },
   "internal/container/runtime_test.go": {

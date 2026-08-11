@@ -106,6 +106,11 @@ func (c *Config) ApplyDefaults(p Platform) {
 		c.Redundancy = "yes"
 	}
 
+	// The cluster CLI (bash KUBE). Defaulted for every platform, not just k8s, so
+	// the resolved command is printable and testable from any code path; only the
+	// k8s renderers and transport ever read it.
+	setDefaultCmd(&c.K8s.Runtime, "kubectl")
+
 	if p == K8s {
 		c.applyK8sDefaults()
 	}
@@ -180,10 +185,10 @@ func (c *Config) applyContainerDefaults(p Platform) {
 	setDefaultInt(&c.Scaling.MaxSpoolUsageMB, 100000)
 
 	if p == Docker {
-		setDefault(&c.Docker.Runtime, "docker")
+		setDefaultCmd(&c.Docker.Runtime, "docker")
 	}
 	if p == Podman {
-		setDefault(&c.Podman.Runtime, "podman")
+		setDefaultCmd(&c.Podman.Runtime, "podman")
 		// Derive the three rootless-dependent knobs in one place.
 		if c.Podman.Rootless {
 			if c.Podman.QuadletDir == "" {
@@ -211,15 +216,16 @@ func applyContainerBlockDefaults(b *Container) {
 	setDefault(&b.Ulimits.Core, "-1")
 }
 
-// ContainerRuntime returns the runtime binary for the container platform p.
-func (c *Config) ContainerRuntime(p Platform) string {
+// ContainerRuntime returns the runtime command for the container platform p --
+// argv[0] plus any leading arguments the user configured.
+func (c *Config) ContainerRuntime(p Platform) Command {
 	switch p {
 	case Docker:
 		return c.Docker.Runtime
 	case Podman:
 		return c.Podman.Runtime
 	default:
-		return ""
+		return nil
 	}
 }
 
@@ -270,6 +276,14 @@ func setDefault(p *string, v string) {
 
 func setDefaultInt(p *int, v int) {
 	if *p == 0 {
+		*p = v
+	}
+}
+
+// setDefaultCmd is setDefault for a Command: an omitted key, an empty string and
+// an empty list are all "unset", so the default binary applies.
+func setDefaultCmd(p *Command, v ...string) {
+	if len(*p) == 0 {
 		*p = v
 	}
 }

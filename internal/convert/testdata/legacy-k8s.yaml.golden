@@ -42,6 +42,7 @@ replication:
     - "host2:port2"
 
 k8s:
+  runtime: "kubectl --kubeconfig /home/localadmin/.kubeconfig-dev"
   name: solace-broker
   namespace: solace-namespace
   updateStrategy: automatedRolling

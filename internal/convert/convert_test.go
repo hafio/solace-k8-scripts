@@ -67,6 +67,18 @@ SOLBK_NODE_MON_IP="10.0.0.3"
 SOLBK_REDUNDANCY_PSK="PSKVALUE"
 `
 
+// k8sEnv is a minimal but complete k8s-flavoured legacy env file: it carries
+// every mandatory value, so a conversion produces no "incomplete" warning and a
+// test asserting on KUBE is reading only its own warnings.
+const k8sEnv = `#!/bin/bash
+SOLBK_NAME="dev-broker"
+SOLBK_NS="solace"
+SOLBK_IMAGE="solace-pubsub-standard"
+SOLBK_IMG_TAG="10.10.1.128"
+SOLBK_STORAGE_MSGNODE="30Gi"
+SOLBK_ADM_PASS="secret-pass"
+`
+
 // strictDecode re-reads generated YAML with the same strict decoder Load uses,
 // so an emitted key that is not in the schema fails the test rather than being
 // silently ignored.
@@ -163,7 +175,13 @@ func TestConvertLegacyK8sEnv(t *testing.T) {
 	if strings.Contains(string(res.YAML), "psk:") {
 		t.Errorf("an empty PSK should be omitted:\n%s", res.YAML)
 	}
-	// KUBE is bash plumbing; every other variable in the file is mapped.
+	// KUBE was expanded unquoted by the bash scripts, so a whole kubectl profile
+	// has to survive the conversion as k8s.runtime, split into argv.
+	wantRuntime := config.Command{"kubectl", "--kubeconfig", "/home/localadmin/.kubeconfig-dev"}
+	if c.K8s.Runtime.String() != wantRuntime.String() {
+		t.Errorf("k8s.runtime = %v, want %v", c.K8s.Runtime, wantRuntime)
+	}
+	// EXDIR is bash plumbing; every other variable in the file is mapped.
 	for _, w := range res.Warnings {
 		t.Errorf("unexpected warning converting the sample: %s", w)
 	}
@@ -261,11 +279,61 @@ func TestConvertUnmappedVariablesWarn(t *testing.T) {
 }
 
 func TestConvertBashPlumbingIsSilent(t *testing.T) {
-	res := convertOK(t, ctrEnv+"KUBE=\"kubectl\"\nEXDIR=\".\"\nGENONLY=true\n", config.Docker)
-	for _, name := range []string{"KUBE", "EXDIR", "GENONLY"} {
+	res := convertOK(t, ctrEnv+"EXDIR=\".\"\nGENONLY=true\n", config.Docker)
+	for _, name := range []string{"EXDIR", "GENONLY"} {
 		if hasWarning(res.Warnings, name) {
 			t.Errorf("%s is bash plumbing and should be dropped silently; warnings = %v", name, res.Warnings)
 		}
+	}
+}
+
+// TestConvertKubeMapsToK8sRuntime covers the shapes KUBE actually carried in the
+// field: bash expanded it unquoted, so a wrapper or a whole kubectl profile had
+// to survive as argv, not just a binary name.
+func TestConvertKubeMapsToK8sRuntime(t *testing.T) {
+	cases := []struct {
+		name, kube, want string
+	}{
+		{"drop-in binary", `KUBE="oc"`, "oc"},
+		{"wrapper", `KUBE="microk8s kubectl"`, "microk8s kubectl"},
+		{"kubeconfig profile", `KUBE="kubectl --kubeconfig /tmp/kc"`, "kubectl --kubeconfig /tmp/kc"},
+		{"absolute path", `KUBE="/usr/local/bin/kubectl"`, "/usr/local/bin/kubectl"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := convertOK(t, k8sEnv+tc.kube+"\n", config.K8s)
+			if got := strictDecode(t, res.YAML).K8s.Runtime; got.String() != tc.want {
+				t.Errorf("k8s.runtime = %q, want %q", got, tc.want)
+			}
+			if hasWarning(res.Warnings, "KUBE") {
+				t.Errorf("KUBE maps to k8s.runtime now and must not warn; warnings = %v", res.Warnings)
+			}
+		})
+	}
+}
+
+// TestConvertKubeEchoIsDropped pins the one KUBE value that must not carry over:
+// "echo" was the bash dry-run trick, and as a real k8s.runtime it would turn
+// every cluster call into a no-op whose stdout the parsing steps then misread.
+func TestConvertKubeEchoIsDropped(t *testing.T) {
+	res := convertOK(t, k8sEnv+"KUBE=\"echo\"\n", config.K8s)
+	if !hasWarning(res.Warnings, "--dry-run") {
+		t.Errorf("KUBE=echo should warn and point at --dry-run; warnings = %v", res.Warnings)
+	}
+	if got := strictDecode(t, res.YAML).K8s.Runtime; len(got) != 0 {
+		t.Errorf("k8s.runtime = %q, want it omitted so the kubectl default applies", got)
+	}
+}
+
+// TestConvertKubeSilentOnContainerPlatform: KUBE belongs to the k8s bootstrap, so
+// a container conversion consumes it without emitting it and without warning.
+func TestConvertKubeSilentOnContainerPlatform(t *testing.T) {
+	res := convertOK(t, ctrEnv+"KUBE=\"kubectl\"\n", config.Docker)
+	if hasWarning(res.Warnings, "KUBE") {
+		t.Errorf("KUBE must be consumed silently on a container platform; warnings = %v", res.Warnings)
+	}
+	if got := strictDecode(t, res.YAML).K8s.Runtime; len(got) != 0 {
+		t.Errorf("a container conversion must not emit k8s.runtime, got %q", got)
 	}
 }
 

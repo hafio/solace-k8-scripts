@@ -196,7 +196,8 @@ func emitCtrArtifact(a *App, role config.Role) error {
 		return emit(render.Quadlet(a.Cfg, id))
 	default: // docker
 		if a.Cfg.Docker.Mode == "run" {
-			line := engine.Quote(a.Cfg.ContainerRuntime(a.Platform), render.RunArgs(a.Cfg, id)...)
+			rt := a.Cfg.ContainerRuntime(a.Platform)
+			line := engine.Quote(rt.Name(), rt.Args(render.RunArgs(a.Cfg, id)...)...)
 			return emit([]byte(line + "\n"))
 		}
 		return emit(render.Compose(a.Cfg, id))

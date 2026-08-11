@@ -47,26 +47,36 @@ func (c *Cluster) logf(format string, a ...any) {
 // ns is the broker namespace.
 func (c *Cluster) ns() string { return c.Cfg.K8s.Namespace }
 
+// cmd is the configured cluster CLI (k8s.runtime, default `kubectl`): argv[0]
+// plus any leading arguments that precede every call's own. Ported from the bash
+// KUBE variable, which the scripts expanded unquoted so it could carry a whole
+// profile (`kubectl --kubeconfig <file>`), not just a binary name.
+func (c *Cluster) cmd() config.Command { return c.Cfg.K8s.Runtime }
+
 // kubectl runs `kubectl args...`, streaming stdout/stderr.
 func (c *Cluster) kubectl(ctx context.Context, args ...string) error {
-	return c.R.Run(ctx, kubectlBin, args...)
+	k := c.cmd()
+	return c.R.Run(ctx, k.Name(), k.Args(args...)...)
 }
 
 // apply pipes a rendered manifest to `kubectl apply -f -` on stdin (never a temp
 // file, so secret-bearing manifests stay off disk -- §3).
 func (c *Cluster) apply(ctx context.Context, manifest []byte) error {
-	return c.R.RunInput(ctx, manifest, kubectlBin, "apply", "-f", "-")
+	k := c.cmd()
+	return c.R.RunInput(ctx, manifest, k.Name(), k.Args("apply", "-f", "-")...)
 }
 
 // deleteStdin pipes a rendered manifest to `kubectl delete -f - --ignore-not-found`,
 // so teardown mirrors apply through one code path and is idempotent.
 func (c *Cluster) deleteStdin(ctx context.Context, manifest []byte) error {
-	return c.R.RunInput(ctx, manifest, kubectlBin, "delete", "-f", "-", "--ignore-not-found")
+	k := c.cmd()
+	return c.R.RunInput(ctx, manifest, k.Name(), k.Args("delete", "-f", "-", "--ignore-not-found")...)
 }
 
 // output runs `kubectl args...` and returns captured stdout.
 func (c *Cluster) output(ctx context.Context, args ...string) ([]byte, error) {
-	return c.R.Output(ctx, kubectlBin, args...)
+	k := c.cmd()
+	return c.R.Output(ctx, k.Name(), k.Args(args...)...)
 }
 
 // operatorNS resolves the namespace the operator runs in: the configured

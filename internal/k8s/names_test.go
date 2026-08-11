@@ -6,12 +6,19 @@ import (
 	"solace/internal/config"
 )
 
+// These build a Config literally rather than through config.Load, so Runtime is
+// set here to what ApplyDefaults would have filled in -- without it every
+// command would run with an empty argv[0].
 func haCfg() *config.Config {
-	return &config.Config{Redundancy: "yes", K8s: config.K8sConfig{Name: "dev-broker", Namespace: "solace"}}
+	return &config.Config{Redundancy: "yes", K8s: config.K8sConfig{
+		Runtime: config.Command{"kubectl"}, Name: "dev-broker", Namespace: "solace",
+	}}
 }
 
 func saCfg() *config.Config {
-	return &config.Config{Redundancy: "no", K8s: config.K8sConfig{Name: "dev-broker", Namespace: "solace"}}
+	return &config.Config{Redundancy: "no", K8s: config.K8sConfig{
+		Runtime: config.Command{"kubectl"}, Name: "dev-broker", Namespace: "solace",
+	}}
 }
 
 func TestResourceNames(t *testing.T) {

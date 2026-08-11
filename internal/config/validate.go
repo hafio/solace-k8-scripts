@@ -16,6 +16,17 @@ func (c *Config) Validate(p Platform) error {
 		return fmt.Errorf("redundancy must be 'yes' or 'no' (got: %q)", c.Redundancy)
 	}
 
+	// The platform CLI is user-supplied and reaches os/exec, so it is checked on
+	// every platform before anything can shell out.
+	if err := validateCommand("k8s.runtime", c.K8s.Runtime); err != nil {
+		return err
+	}
+	if p.IsContainer() {
+		if err := validateCommand(platformKey(p)+".runtime", c.ContainerRuntime(p)); err != nil {
+			return err
+		}
+	}
+
 	switch p {
 	case K8s:
 		return c.validateK8s()
@@ -25,6 +36,32 @@ func (c *Config) Validate(p Platform) error {
 		return fmt.Errorf("unknown platform %q", p)
 	}
 }
+
+// validateCommand checks a Command's tokens before it can reach os/exec. exec
+// never goes through a shell, so a metacharacter here is an ordinary filename
+// character rather than an injection; what this catches is a token that could
+// only ever fail obscurely at exec time -- an empty argument, or a control
+// character carried in from a converted bash file (§4a).
+//
+// An empty Command is not an error: ApplyDefaults runs before Validate on every
+// path and fills the platform default, so "empty" means "unset" exactly as it
+// does for every setDefault field in this schema.
+func validateCommand(field string, cmd Command) error {
+	for i, tok := range cmd {
+		if tok == "" {
+			return fmt.Errorf("%s[%d] is an empty argument; remove it or quote the intended value", field, i)
+		}
+		if j := strings.IndexFunc(tok, isCtrl); j >= 0 {
+			return fmt.Errorf("%s[%d] contains a control character (0x%02x) at offset %d: %q",
+				field, i, tok[j], j, tok)
+		}
+	}
+	return nil
+}
+
+// isCtrl reports the ASCII control characters (including NUL and DEL), which can
+// never legitimately appear in a command name or argument here.
+func isCtrl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 func (c *Config) validateK8s() error {
 	missing := requireAll(map[string]string{

@@ -58,6 +58,9 @@ func (c *Cluster) CheckEnv() {
 
 	fmt.Fprintln(w, "Solace broker deployment (Kubernetes):")
 	fmt.Fprintf(w, "  name/namespace : %s / %s\n", cfg.K8s.Name, cfg.K8s.Namespace)
+	// The cluster CLI is configurable (k8s.runtime), so report which one is in
+	// play -- 001-check-env.sh:23 printed the resolved KUBE for the same reason.
+	fmt.Fprintf(w, "  cluster cmd    : %s\n", cfg.K8s.Runtime)
 	fmt.Fprintf(w, "  redundancy     : %s\n", mode)
 	fmt.Fprintf(w, "  update strategy: %s\n", orNone(cfg.K8s.UpdateStrategy))
 	fmt.Fprintf(w, "  image          : %s\n", cfg.Image.Ref())

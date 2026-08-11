@@ -27,7 +27,8 @@ func TestCheckEnvNoSecretLeak(t *testing.T) {
 			t.Errorf("CheckEnv leaked secret value %q:\n%s", secret, out)
 		}
 	}
-	for _, want := range []string{"dev-broker", "solace", "HA redundancy", "password=set"} {
+	// "cluster cmd" reports the resolved k8s.runtime, as 001-check-env.sh:23 did.
+	for _, want := range []string{"dev-broker", "solace", "HA redundancy", "password=set", "cluster cmd    : kubectl"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("CheckEnv missing %q in:\n%s", want, out)
 		}

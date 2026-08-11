@@ -25,8 +25,8 @@ import (
 // and tests capture the exact argv.
 type containerTransport struct {
 	r       engine.Runner
-	runtime string // docker | podman (or an override / drop-in)
-	name    string // container name
+	runtime config.Command // docker | podman (or an override / drop-in / full command)
+	name    string         // container name
 }
 
 // NewTransport builds the container broker.Transport over the given runner,
@@ -54,15 +54,15 @@ func (c *containerTransport) execArgs(stdin bool, argv []string) []string {
 }
 
 func (c *containerTransport) Run(ctx context.Context, _ config.Role, argv ...string) error {
-	return c.r.Run(ctx, c.runtime, c.execArgs(false, argv)...)
+	return c.r.Run(ctx, c.runtime.Name(), c.runtime.Args(c.execArgs(false, argv)...)...)
 }
 
 func (c *containerTransport) Output(ctx context.Context, _ config.Role, argv ...string) ([]byte, error) {
-	return c.r.Output(ctx, c.runtime, c.execArgs(false, argv)...)
+	return c.r.Output(ctx, c.runtime.Name(), c.runtime.Args(c.execArgs(false, argv)...)...)
 }
 
 func (c *containerTransport) OutputInput(ctx context.Context, _ config.Role, in []byte, argv ...string) ([]byte, error) {
-	return c.r.OutputInput(ctx, in, c.runtime, c.execArgs(true, argv)...)
+	return c.r.OutputInput(ctx, in, c.runtime.Name(), c.runtime.Args(c.execArgs(true, argv)...)...)
 }
 
 // Upload writes data to destPath inside the container by piping it to `sh -c 'cat
@@ -72,19 +72,19 @@ func (c *containerTransport) OutputInput(ctx context.Context, _ config.Role, in 
 func (c *containerTransport) Upload(ctx context.Context, _ config.Role, data []byte, destPath string) error {
 	shcmd := "cat > " + shSingleQuote(destPath)
 	argv := c.execArgs(true, []string{"sh", "-c", shcmd})
-	return c.r.RunInput(ctx, data, c.runtime, argv...)
+	return c.r.RunInput(ctx, data, c.runtime.Name(), c.runtime.Args(argv...)...)
 }
 
 // UploadFile copies a local file into the container via
 // `<runtime> cp <local> <name>:<dest>`.
 func (c *containerTransport) UploadFile(ctx context.Context, _ config.Role, localPath, destPath string) error {
-	return c.r.Run(ctx, c.runtime, "cp", localPath, c.name+":"+destPath)
+	return c.r.Run(ctx, c.runtime.Name(), c.runtime.Args("cp", localPath, c.name+":"+destPath)...)
 }
 
 // Download copies remotePath from the container to localPath via
 // `<runtime> cp <name>:<remote> <local>`.
 func (c *containerTransport) Download(ctx context.Context, _ config.Role, remotePath, localPath string) error {
-	return c.r.Run(ctx, c.runtime, "cp", c.name+":"+remotePath, localPath)
+	return c.r.Run(ctx, c.runtime.Name(), c.runtime.Args("cp", c.name+":"+remotePath, localPath)...)
 }
 
 // shSingleQuote wraps s in single quotes for safe use inside `sh -c`, escaping any

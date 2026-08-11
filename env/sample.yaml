@@ -62,6 +62,12 @@ tls:
 #   psk: ""                         # secret; generated when left blank
 
 k8s:
+  # runtime: kubectl                # the cluster CLI (legacy KUBE). A scalar is
+                                    # split on whitespace, so it can carry a whole
+                                    # profile: `oc`, `microk8s kubectl`, or
+                                    # `kubectl --kubeconfig /path/.kubeconfig-dev`.
+                                    # Use a list when a token contains a space:
+                                    #   runtime: ["C:\\Program Files\\bin\\kubectl.exe"]
   name: dev-broker                  # mandatory
   namespace: solace                 # mandatory
   updateStrategy: automatedRolling  # automatedRolling | manualPodRestart
@@ -113,7 +119,10 @@ k8s:
   #   files: {}                     # CA-NAME: cert filename
 
 docker:
-  # runtime: docker                 # binary to exec (a path, or a drop-in like nerdctl)
+  # runtime: docker                 # command to exec: a path, a drop-in like nerdctl,
+                                    # or a wrapper -- a scalar is split on whitespace
+                                    # (`sudo -n docker`). Use a list for a token with
+                                    # a space: ["C:\\Program Files\\Docker\\docker.exe"]
   mode: compose                     # compose | run
   # composeFile: docker-compose.yml # path of the generated compose file
   container:
@@ -131,7 +140,7 @@ docker:
   #     - 8080:8080
 
 podman:
-  # runtime: podman                 # binary to exec
+  # runtime: podman                 # command to exec; same forms as docker.runtime
   rootless: false                   # true = rootless: user systemd + `podman unshare` chown
   # quadletDir: /etc/containers/systemd   # rootless: $XDG_CONFIG_HOME/containers/systemd
   container:

@@ -96,14 +96,14 @@ func eqArgs(a, b []string) bool {
 
 func dockerCfg() *config.Config {
 	c := &config.Config{}
-	c.Docker.Runtime = "docker"
+	c.Docker.Runtime = config.Command{"docker"}
 	c.Docker.Container.Name = "solace"
 	return c
 }
 
 func podmanCfg() *config.Config {
 	c := &config.Config{}
-	c.Podman.Runtime = "podman"
+	c.Podman.Runtime = config.Command{"podman"}
 	c.Podman.Container.Name = "sol-pod"
 	return c
 }

@@ -18,11 +18,13 @@ the whole lifecycle -- `check -> prep -> deploy -> config -> verify` and back do
 
 - **Build:** Go 1.26+.
 - **Run (Kubernetes):** `kubectl` on your `PATH` and a reachable cluster/context. The
-  binary shells out to `kubectl`; it does not embed a Kubernetes client.
+  binary shells out to `kubectl`; it does not embed a Kubernetes client. Set `k8s.runtime`
+  to use something else -- `oc`, `microk8s kubectl`, or a whole profile such as
+  `kubectl --kubeconfig /path/.kubeconfig-dev`.
 - **Run (Docker/Podman):** the `docker` or `podman` binary on your `PATH`, on the host that
   runs the broker. Podman deploys a systemd **quadlet** unit (its host also needs systemd);
   Docker uses `compose` (default) or `run`. The binary shells out to the runtime; it embeds
-  no container client.
+  no container client. `docker.runtime` / `podman.runtime` override the command the same way.
 - `--dry-run` needs no cluster, runtime, or `kubectl`/`docker`/`podman` binary -- it prints
   the commands instead of running them.
 
@@ -161,6 +163,8 @@ Common optional knobs:
 | `image.registry` | docker.io | Registry prefix for the image reference |
 | `k8s.storage.class` | cluster default | StorageClass for the broker PVCs |
 | `k8s.updateStrategy` | `automatedRolling` | `automatedRolling` or `manualPodRestart` |
+| `k8s.runtime` | `kubectl` | Cluster CLI (legacy `KUBE`). A scalar is split on whitespace, so it can be a drop-in (`oc`), a wrapper (`microk8s kubectl`), or a profile (`kubectl --kubeconfig <file>`). Use a list when a token contains a space |
+| `docker.runtime` / `podman.runtime` | `docker` / `podman` | Container CLI (legacy `CONTAINER_RUNTIME`), same forms as `k8s.runtime` |
 | `tls.serverSecret` | -- | Name of the TLS secret; its presence enables the CR's TLS block |
 | `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
 | `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |

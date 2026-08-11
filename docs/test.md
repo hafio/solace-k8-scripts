@@ -46,21 +46,21 @@ test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
-22 test files, 326 test functions. `TestHelperProcess` in `internal/engine` is not a real
+25 test files, 346 test functions. `TestHelperProcess` in `internal/engine` is not a real
 test -- it is the os/exec helper-process shim, a no-op unless `GO_WANT_HELPER_PROCESS=1`.
 
 | Package | Files | Tests |
 | --- | --- | --- |
 | internal/broker | 4 | 85 |
-| internal/k8s | 9 | 65 |
-| internal/container | 2 | 55 |
-| internal/config | 1 | 38 |
+| internal/k8s | 10 | 68 |
+| internal/container | 3 | 58 |
+| internal/config | 2 | 49 |
 | internal/cli | 2 | 39 |
-| internal/convert | 1 | 22 |
+| internal/convert | 1 | 25 |
 | internal/engine | 1 | 13 |
 | internal/tools/vulnjudge | 1 | 5 |
 | internal/render | 1 | 4 |
-| **Total** | **22** | **326** |
+| **Total** | **25** | **346** |
 
 ## Coverage
 
@@ -84,7 +84,24 @@ these figures go stale the moment tests move.
 
 ## internal/config
 
-Config loading, defaults, validation, and env-file resolution. 38 tests, all in one file.
+Config loading, defaults, validation, and env-file resolution, plus the `Command`
+type behind the platform CLI overrides. 49 tests across 2 files.
+
+### command_test.go
+
+| Test | What it covers |
+| --- | --- |
+| `TestCommandUnmarshal` | Both accepted forms of a `Command`: a scalar split on whitespace (reproducing the bash bootstraps' unquoted expansion, so a quoted scalar still splits and whitespace runs collapse), and a sequence kept token-for-token -- the only way to express a token containing a space. Empty scalar, empty list, and an omitted key all decode to nothing, so the default applies |
+| `TestCommandUnmarshalRejectsOtherKinds` | A mapping is neither a command line nor an argv, so it fails loud at decode naming the accepted forms |
+| `TestCommandUnmarshalPropagatesDecodeErrors` | A node of an accepted kind whose contents still will not decode (`!!binary` with invalid base64; a sequence element that is not a scalar) surfaces yaml's error instead of falling through to an empty command |
+| `TestCommandNameAndArgs` | `Name`/`Args` split a command into argv[0] and the leading arguments that precede each call's own, including the unset and bare-binary cases |
+| `TestCommandArgsDoesNotAliasCommand` | `Args` allocates: with spare capacity in the backing array, a naive `append(cmd[1:], ...)` would corrupt the previous call's argv. Two successive calls must stay independent and the `Command` itself unchanged |
+| `TestCommandString` | Display rendering, used by the check reports and error messages |
+| `TestValidateCommandAccepts` | A binary, a wrapper, a path containing spaces, shell metacharacters (inert -- exec never invokes a shell), and an unset command all pass |
+| `TestValidateCommandRejects` | Empty arguments and control characters (newline, NUL) are rejected, naming the field and the offending index |
+| `TestValidateRejectsBadRuntime` | A malformed runtime fails `Validate` for all three platforms, ahead of the mandatory-field checks, so the message names the runtime rather than the fields also missing |
+| `TestRuntimeDefaults` | Defaults resolve to exactly one token with no leading args (`kubectl`/`docker`/`podman`), so existing argv is byte-identical; `k8s.runtime` is defaulted on every platform |
+| `TestRuntimeExplicitValueSurvivesDefaults` | A configured override is never overwritten by defaulting |
 
 ### config_test.go
 
@@ -97,7 +114,7 @@ Config loading, defaults, validation, and env-file resolution. 38 tests, all in 
 | `TestRoleLetter` | Role -> `p`/`b`/`m` letter used in resource names |
 | `TestResolveNodeStandalone` | Standalone ignores the role and always resolves the primary as a message-routing node |
 | `TestResolveNodeHA` | HA resolves each role to its host name, with the monitor typed `monitoring` |
-| `TestContainerRuntime` | Runtime binary comes from the platform's block; k8s has none |
+| `TestContainerRuntime` | Runtime command comes from the platform's block, leading args included; k8s has none |
 | `TestContainerBlock` | Podman reads its own container block; everything else falls through to docker's |
 | `TestNetworkBlock` | Network block is selected per platform |
 | `TestApplyDefaultsK8s` | Every k8s default lands: redundancy, update strategy, admin secret, diag dir, CLI folder, storage, resources, operator image/resources, scaling, ports, anti-affinity |
@@ -191,19 +208,22 @@ two files.
 ## internal/convert
 
 The legacy bash env -> YAML converter: a shell-assignment parser, the variable
-mapping, and the YAML emitter. 22 tests.
+mapping, and the YAML emitter. 25 tests.
 
 ### convert_test.go
 
 | Test | What it covers |
 | --- | --- |
-| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, and no warnings |
+| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `k8s.runtime` argv, and no warnings |
 | `TestConvertContainer` | A container env file maps the node table, container block, ulimits, network, and spool scaling |
 | `TestConvertPlatformDetection` | Podman markers, docker markers, and both-present all resolve to the expected section |
 | `TestConvertPodmanSection` | Podman rootless and quadlet dir land in the podman block, and no docker block is written |
 | `TestConvertExplicitPlatformWins` | `--platform` overrides detection and suppresses the detection warning |
 | `TestConvertUnmappedVariablesWarn` | Variables with no YAML equivalent are named in the warnings, not dropped silently |
-| `TestConvertBashPlumbingIsSilent` | Bootstrap-only variables (`KUBE`, `EXDIR`, `GENONLY`) are dropped without noise |
+| `TestConvertBashPlumbingIsSilent` | Bootstrap-only variables (`EXDIR`, `GENONLY`) are dropped without noise |
+| `TestConvertKubeMapsToK8sRuntime` | `KUBE` becomes `k8s.runtime` in every shape it carried: a drop-in (`oc`), a wrapper (`microk8s kubectl`), a `--kubeconfig` profile, and an absolute path -- no warning |
+| `TestConvertKubeEchoIsDropped` | `KUBE="echo"` was the bash dry-run trick, so it warns pointing at `--dry-run` and emits no `runtime`, rather than becoming a runtime that no-ops every command |
+| `TestConvertKubeSilentOnContainerPlatform` | `KUBE` belongs to the k8s bootstrap: a container conversion consumes it silently and never emits `k8s.runtime` |
 | `TestConvertRedundancySpellings` | `true`/`yes` and `false`/`no` normalise (any case); anything else copies through with a warning |
 | `TestConvertBadNumberWarns` | A non-numeric value for a numeric field warns and is not written |
 | `TestConvertBadBooleanWarns` | An unparseable boolean (`SOLOP_WATCH_SOLBK_NS`, which the bootstrap never enum-checked) warns and is not written |
@@ -344,7 +364,7 @@ only its own half.
 ## internal/k8s
 
 Everything driven through `kubectl`: preflight, prep, deploy, operator, day-2 ops, secrets,
-and the pod transport. 65 tests across 9 files.
+and the pod transport. 68 tests across 10 files.
 
 ### names_test.go
 
@@ -353,6 +373,14 @@ and the pod transport. 65 tests across 9 files.
 | `TestResourceNames` | Pod, PVC, StatefulSet, and load-balancer service names for every role |
 | `TestHARoles` | HA yields all three roles; standalone yields only the primary |
 | `TestProductKeyRoles` | Product keys target primary+backup in HA, primary only in standalone |
+
+### runtime_test.go
+
+| Test | What it covers |
+| --- | --- |
+| `TestClusterHonoursRuntime` | Every `Cluster` helper (`kubectl`, `apply`, `deleteStdin`, `output`, `interactiveExec`) runs argv[0] from `k8s.runtime` and places its leading arguments ahead of the subcommand |
+| `TestTransportHonoursRuntime` | The pod transport does the same for `exec`, `exec -i`, the stdin `Upload`, and both `cp` directions |
+| `TestRuntimeDefaultArgvUnchanged` | With the default runtime the argv is exactly what the old hardcoded `kubectl` constant produced -- the regression guard for every existing `+ kubectl ...` assertion |
 
 ### cluster_test.go
 
@@ -460,7 +488,15 @@ and the pod transport. 65 tests across 9 files.
 
 ## internal/container
 
-The host-local Docker/Podman manager and its node-local transport. 55 tests across 2 files.
+The host-local Docker/Podman manager and its node-local transport. 58 tests across 3 files.
+
+### runtime_test.go
+
+| Test | What it covers |
+| --- | --- |
+| `TestManagerHonoursRuntime` | The manager's shell-outs (`run`, `output`, `CLI`, `Shell`) run argv[0] from `docker.runtime` with its leading arguments ahead of the subcommand -- the bash bootstrap expanded `${CONTAINER_RUNTIME}` unquoted, so a wrapper like `sudo -n docker` has to reach exec as argv |
+| `TestCtrTransportHonoursRuntime` | The node-local transport does the same for `exec`, the stdin `Upload`, and `cp` |
+| `TestCtrRuntimeDefaultArgvUnchanged` | A single-token runtime produces exactly the argv it did before, for both docker and podman |
 
 ### manager_test.go
 
@@ -604,7 +640,8 @@ new fake.
   `legacy-k8s.yaml.golden` as its expected output. It deliberately does not point at
   `bash/env/sample`: the whole `bash/` tree is gitignored, so that path is absent on a fresh
   checkout and CI could never run the test. The container flavour uses an inline fixture
-  (`ctrEnv`) in the same file.
+  (`ctrEnv`) in the same file, and `k8sEnv` is an inline minimal-but-complete k8s source
+  for tests that need a conversion free of "incomplete" warnings.
 
 ### Per-package doubles
 

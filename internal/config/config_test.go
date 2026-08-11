@@ -149,18 +149,18 @@ func TestResolveNodeHA(t *testing.T) {
 
 func TestContainerRuntime(t *testing.T) {
 	c := &Config{}
-	c.Docker.Runtime = "docker"
-	c.Podman.Runtime = "podman"
+	c.Docker.Runtime = Command{"docker"}
+	c.Podman.Runtime = Command{"sudo", "podman"}
 	tests := []struct {
 		p    Platform
 		want string
 	}{
 		{Docker, "docker"},
-		{Podman, "podman"},
+		{Podman, "sudo podman"}, // leading args survive the lookup
 		{K8s, ""},
 	}
 	for _, tc := range tests {
-		if got := c.ContainerRuntime(tc.p); got != tc.want {
+		if got := c.ContainerRuntime(tc.p); got.String() != tc.want {
 			t.Errorf("ContainerRuntime(%q) = %q, want %q", tc.p, got, tc.want)
 		}
 	}
@@ -293,7 +293,7 @@ func TestApplyDefaultsDocker(t *testing.T) {
 	c := &Config{}
 	c.ApplyDefaults(Docker)
 
-	if c.Docker.Runtime != "docker" {
+	if c.Docker.Runtime.String() != "docker" {
 		t.Errorf("Docker.Runtime = %q, want docker", c.Docker.Runtime)
 	}
 	if c.Docker.Mode != "compose" {
@@ -324,7 +324,7 @@ func TestApplyDefaultsPodmanRootful(t *testing.T) {
 	c.Podman.Rootless = false
 	c.ApplyDefaults(Podman)
 
-	if c.Podman.Runtime != "podman" {
+	if c.Podman.Runtime.String() != "podman" {
 		t.Errorf("Podman.Runtime = %q, want podman", c.Podman.Runtime)
 	}
 	if c.Podman.Network.Mode != "host" {

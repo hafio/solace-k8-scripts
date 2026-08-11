@@ -35,14 +35,14 @@ func ctrCfg(p config.Platform, redundancy string) *config.Config {
 	}
 	switch p {
 	case config.Podman:
-		c.Podman.Runtime = "podman"
+		c.Podman.Runtime = config.Command{"podman"}
 		c.Podman.Container.Name = "sol-pod"
 		c.Podman.Container.RunUser = "1000:1000"
 		c.Podman.Container.DataDir = "/opt/solace/data"
 		c.Podman.QuadletDir = "/etc/containers/systemd"
 		c.Podman.Network.Mode = "host"
 	default:
-		c.Docker.Runtime = "docker"
+		c.Docker.Runtime = config.Command{"docker"}
 		c.Docker.Mode = "compose"
 		c.Docker.Container.Name = "solace"
 		c.Docker.Container.RunUser = "0:0"
@@ -116,7 +116,7 @@ func TestManagerCheckDryRun(t *testing.T) {
 		for _, want := range []string{
 			"Solace broker deployment (" + tc.title + ")",
 			tc.mode,
-			"+ " + m.runtime() + " version",
+			"+ " + m.runtime().String() + " version",
 			"skipped (--dry-run)",
 		} {
 			if !strings.Contains(out, want) {
