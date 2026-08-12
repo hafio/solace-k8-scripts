@@ -118,8 +118,11 @@ func writeCommand(b *strings.Builder, c *cobra.Command, isRoot bool) {
 	if subs := availableSubs(c); len(subs) > 0 {
 		fmt.Fprintf(b, "Subcommands: %s\n\n", strings.Join(subs, ", "))
 	}
+	if len(c.Aliases) > 0 {
+		fmt.Fprintf(b, "Also available as: %s\n\n", strings.Join(c.Aliases, ", "))
+	}
 	if c.Annotations[genAnnotation] == "true" {
-		b.WriteString("Honors `--gen`: renders the artifact this command would apply, and changes nothing.\n\n")
+		b.WriteString("Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.\n\n")
 	}
 	if !isRoot {
 		writeFlagTable(b, c.NonInheritedFlags())

@@ -176,10 +176,13 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 	d.raw("# (the Go defaults apply instead). See env/sample.yaml for the full schema.")
 	d.b.WriteString("\n")
 
-	if r, w := redundancy(v); r != "" {
+	// The warning has to be appended outside the emit branch: the case worth
+	// telling the user about is precisely the one that emits nothing.
+	r, redWarns := redundancy(v, p)
+	if r != "" {
 		d.kv("redundancy", r)
-		warns = append(warns, w...)
 	}
+	warns = append(warns, redWarns...)
 	// SOLBK_TZ was the container timezone; the YAML schema has one cross-platform
 	// key, so it lands at the top level for every platform.
 	d.kv("timezone", v.s("SOLBK_TZ"))
@@ -220,6 +223,14 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		num(d, "maxGuaranteedMsgMB", "SOLBK_SCALING_MAXGMSSIZE")
 	})
 
+	// The schema keeps this block, but nothing in the binary reads it yet -- so a
+	// source that configured replication would otherwise convert into something that
+	// looks supported and silently does nothing.
+	if v.s("REPL_MATE") != "" || len(v.l("REPL_CONN_SSL")) > 0 || v.s("REPL_PSK") != "" {
+		warns = append(warns, "REPL_MATE/REPL_CONN_SSL/REPL_PSK were converted into the replication: block, "+
+			"but no command in this binary reads it yet -- configure data replication with "+
+			"solace-replication-generator.html or a `config exec-cli` script")
+	}
 	d.section("replication", func(d *doc) {
 		d.kv("mate", v.s("REPL_MATE"))
 		d.list("connSsl", v.l("REPL_CONN_SSL"))
@@ -290,7 +301,14 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		d.section(string(p), func(d *doc) {
 			d.kv("runtime", v.s("CONTAINER_RUNTIME"))
 			if p == config.Docker {
-				d.kv("mode", v.s("DOCKER_MODE"))
+				// run mode was removed, so carrying the value over would only fail
+				// validation later; it is dropped here with the reason named.
+				if strings.EqualFold(strings.TrimSpace(v.s("DOCKER_MODE")), "run") {
+					warns = append(warns, `DOCKER_MODE="run" is no longer supported: docker deploys through compose only, `+
+						`so docker.mode was omitted (it defaults to compose). Set docker.compose if this host uses the standalone docker-compose binary`)
+				} else {
+					d.kv("mode", v.s("DOCKER_MODE"))
+				}
 				d.kv("composeFile", v.s("DOCKER_COMPOSE_FILE"))
 			} else {
 				boolean(d, "rootless", "PODMAN_ROOTLESS")
@@ -356,10 +374,20 @@ func kubeCommand(v *vars) (string, []string) {
 // redundancy normalises the two bash spellings: the k8s bootstrap wrote
 // true/false, the container bootstrap yes/no. Anything else passes through
 // unchanged so Validate rejects it loudly rather than the converter guessing.
-func redundancy(v *vars) (string, []string) {
+//
+// An unset value emits no key, so this CLI's own default (standalone) applies.
+// That matches the legacy k8s bootstrap, which also defaulted to standalone, but
+// it inverts the container bootstrap, which defaulted to HA -- so a container
+// source with the variable unset gets that divergence called out rather than
+// quietly converting a three-broker group into a single broker.
+func redundancy(v *vars, p config.Platform) (string, []string) {
 	raw := strings.TrimSpace(v.s("SOLBK_REDUNDANCY"))
 	switch strings.ToLower(raw) {
 	case "":
+		if p.IsContainer() {
+			return "", []string{"SOLBK_REDUNDANCY is unset: the container bootstrap defaulted it to yes (HA), " +
+				"but this CLI defaults to standalone -- set `redundancy: yes` in the output if this host is part of a redundancy group"}
+		}
 		return "", nil
 	case "yes", "true":
 		return "yes", nil

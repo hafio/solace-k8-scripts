@@ -69,42 +69,53 @@ func (c *Cluster) secretPreflight() error {
 	return nil
 }
 
-// CreateSecrets builds every applicable secret (admin always; TLS when
-// tls.serverSecret is set; the image-pull secret when image.pullSecret is set),
-// joins them into one multi-doc manifest, and applies it on stdin -- porting 012
-// while keeping every secret value off the argv and out of the --dry-run echo (§3).
-// The whole manifest is built before the first apply, so a builder error aborts
-// cleanly without leaving a partially-applied secret set.
-func (c *Cluster) CreateSecrets(ctx context.Context) error {
-	if err := c.secretPreflight(); err != nil {
-		return err
-	}
+// GenSecrets builds every applicable secret (admin always; TLS when
+// tls.serverSecret is set; the image-pull secret when image.pullSecret is set) and
+// joins them into one multi-doc manifest -- porting 012's secret set. It is the
+// rendering behind both CreateSecrets and `--gen-secrets-only`, so what a user
+// reviews is exactly what gets applied. The manifests carry the base64-encoded
+// secret values, so the output is as sensitive as the env file it came from.
+func GenSecrets(cfg *config.Config) ([]byte, error) {
 	docs := make([][]byte, 0, 3)
 
-	admin, err := AdminSecret(c.Cfg)
+	admin, err := AdminSecret(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	docs = append(docs, admin)
 
-	if c.Cfg.TLS.ServerSecret != "" {
-		tls, err := TLSSecret(c.Cfg)
+	if cfg.TLS.ServerSecret != "" {
+		tls, err := TLSSecret(cfg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		docs = append(docs, tls)
 	}
 
-	if c.Cfg.Image.PullSecret != "" {
-		pull, err := DockerRegistrySecret(c.Cfg)
+	if cfg.Image.PullSecret != "" {
+		pull, err := DockerRegistrySecret(cfg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		docs = append(docs, pull)
 	}
+	return joinManifests(docs), nil
+}
 
-	c.logf("creating %d secret(s) in %s", len(docs), c.ns())
-	return c.apply(ctx, joinManifests(docs))
+// CreateSecrets applies the GenSecrets manifest on stdin, keeping every secret
+// value off the argv and out of the --dry-run echo (§3). The whole manifest is
+// built before the first apply, so a builder error aborts cleanly without leaving
+// a partially-applied secret set.
+func (c *Cluster) CreateSecrets(ctx context.Context) error {
+	if err := c.secretPreflight(); err != nil {
+		return err
+	}
+	manifest, err := GenSecrets(c.Cfg)
+	if err != nil {
+		return err
+	}
+	c.logf("creating secrets in %s", c.ns())
+	return c.apply(ctx, manifest)
 }
 
 // DeleteSecrets removes the secrets CreateSecrets created (112): the admin secret

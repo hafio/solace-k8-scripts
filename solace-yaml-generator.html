@@ -140,6 +140,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
     <div class="f"><label>Operator Namespace</label><input id="i-opns" value="pubsubplus-operator-system" oninput="gen()"></div>
     <div class="f"><label>Operator Image</label><input id="i-opimg" value="solace/pubsubplus-eventbroker-operator:1.4.0" oninput="gen()"></div>
     <div class="f"><label>Watch Namespaces</label><input id="i-opwatch" placeholder="e.g. sol-ns1,sol-ns2 (blank = all)" oninput="gen()"><div class="h">Comma-separated list of namespaces the operator monitors.</div></div>
+    <div class="f"><div class="tgl"><input type="checkbox" id="i-opwatchbroker" checked onchange="gen()"><label for="i-opwatchbroker">Also watch the broker namespace</label></div><div class="h">On by default, matching the CLI. Appends the broker namespace to the list above, so leaving both unset watches only the broker's own namespace instead of every namespace.</div></div>
     <div class="fr">
       <div class="f"><label>Operator CPU</label><input id="i-opcpu" value="500m" oninput="gen()"></div>
       <div class="f"><label>Operator Memory</label><input id="i-opmem" value="512Mi" oninput="gen()"></div>
@@ -160,6 +161,10 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
     <div class="fr">
       <div class="f"><label>Pod Restart Strategy</label><select id="i-updatestrategy" onchange="gen()"><option value="automatedRolling" selected>Automated Rolling</option><option value="manualPodRestart">Manual Pod Restart</option></select></div>
       <div class="f"><label>Timezone</label><input id="i-timezone" placeholder="e.g. Asia/Singapore" oninput="gen()"><div class="h">Optional, applies to k8s, docker and podman. Blank leaves the broker on the image default.</div></div>
+    </div>
+    <div class="fr">
+      <div class="f"><label>Kubectl Command</label><input id="i-kubectl" placeholder="kubectl" oninput="gen()"><div class="h">Optional. A whole profile works: oc, microk8s kubectl, or kubectl --kubeconfig /path/.kubeconfig-dev. Blank means kubectl.</div></div>
+      <div class="f"><label>Service Account</label><input id="i-svcaccount" placeholder="(namespace default)" oninput="gen()"><div class="h">Optional service account for the broker pods.</div></div>
     </div>
   </div>
 
@@ -484,7 +489,15 @@ function hl(yaml){
 
 // ═══════ OPERATOR YAML ═══════
 async function genOp(){
-  const ns=V('i-opns')||'pubsubplus-operator-system',repo=V('i-repo'),img=V('i-opimg')||'docker.io/solace/pubsubplus-eventbroker-operator:1.4.0',watch=V('i-opwatch'),cpu=V('i-opcpu')||'500m',mem=V('i-opmem')||'512Mi';
+  const ns=V('i-opns')||'pubsubplus-operator-system',repo=V('i-repo'),img=V('i-opimg')||'docker.io/solace/pubsubplus-eventbroker-operator:1.4.0',cpu=V('i-opcpu')||'500m',mem=V('i-opmem')||'512Mi';
+  // Match the CLI's watchNamespace(): the broker namespace is appended unless the
+  // user opts out, so a blank Watch Namespaces field yields the broker namespace
+  // rather than an empty WATCH_NAMESPACE (which makes the operator watch all).
+  let watch=V('i-opwatch');
+  if($('i-opwatchbroker').checked){
+    const bkns=V('i-bkns')||'solace-namespace';
+    watch=watch?`${watch},${bkns}`:bkns;
+  }
   const fimg=repo?`${repo}/${img}`:img;
   let crd=await getCrd();crd=crd.replace(/\$\{SOLOP_DERIVED_NS(?::-[^}]*)?\}/g,ns);
   return crd+`\n---
@@ -940,13 +953,18 @@ function genEnv(){
   }
 
   // ── k8s ──
-  y+='\nk8s:\n'+kv('name',V('i-bkname'),'  ')+kv('namespace',V('i-bkns'),'  ')
-    +kv('updateStrategy',V('i-updatestrategy'),'  ')+kv('cliScriptsFolder',V('i-clifolder'),'  ')
+  y+='\nk8s:\n'+kv('runtime',V('i-kubectl'),'  ')+kv('name',V('i-bkname'),'  ')+kv('namespace',V('i-bkns'),'  ')
+    +kv('updateStrategy',V('i-updatestrategy'),'  ')+kv('serviceAccount',V('i-svcaccount'),'  ')
+    +kv('cliScriptsFolder',V('i-clifolder'),'  ')
     +kv('diagDir',V('i-diagdir'),'  ');
   y+=blk('storage',kv('class',V('i-sc'),'    ')+kv('msgNode',V('i-stmsg'),'    ')+kv('monNode',V('i-stmon'),'    '),'  ');
   y+=blk('msgNode',kv('cpu',V('i-bkcpu'),'    ')+kv('mem',V('i-bkmem'),'    '),'  ');
+  // watchBrokerNs defaults to true in the schema, so it is only emitted when the
+  // user turned it off -- keeping the output to "what the source actually set".
   y+=blk('operator',kv('image',V('i-opimg'),'    ')+kv('namespace',V('i-opns'),'    ')
-    +kv('watchNamespaces',V('i-opwatch'),'    ')+kv('cpu',V('i-opcpu'),'    ')+kv('mem',V('i-opmem'),'    '),'  ');
+    +kv('watchNamespaces',V('i-opwatch'),'    ')
+    +($('i-opwatchbroker').checked?'':'    watchBrokerNs: false\n')
+    +kv('cpu',V('i-opcpu'),'    ')+kv('mem',V('i-opmem'),'    '),'  ');
   if(secOn){
     y+=blk('securityContext',kv('runAsUser',V('i-runasuser'),'    ')+kv('fsGroup',V('i-fsgroup'),'    '),'  ');
     y+=blk('containerSecurity',kv('runAsUser',V('i-crunasuser'),'    ')+kv('runAsGroup',V('i-crunasgroup'),'    ')

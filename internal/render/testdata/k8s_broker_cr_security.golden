@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: registry.example.com/solace-pubsub-standard
-    tag: 10.10.1.128
+    tag: 10.26.0.8755
     pullPolicy: IfNotPresent
     pullSecrets:
     - name: solace-image-pull
@@ -91,6 +91,10 @@ spec:
       metallb.universe.tf/loadBalancerIPs: 10.0.0.50
       metallb.io/loadBalancerIPs: 10.0.0.50
     ports:
+    - containerPort: 2222
+      name: tcp-ssh
+      protocol: TCP
+      servicePort: 2222
     - containerPort: 8080
       name: tcp-semp
       protocol: TCP

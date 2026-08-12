@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"solace/internal/config"
@@ -16,7 +14,7 @@ func newK8sCmd(app *App) *cobra.Command {
 		Short: "Deploy/operate the broker on Kubernetes via the EventBroker Operator",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			app.Platform = config.K8s
-			if err := rejectGenIfUnsupported(cmd, app); err != nil {
+			if err := checkGenFlags(cmd, app); err != nil {
 				return err
 			}
 			return app.load()
@@ -38,6 +36,7 @@ func newK8sCmd(app *App) *cobra.Command {
 	k.AddCommand(newK8sDescribeCmd(app))
 	k.AddCommand(newK8sCopyCmd(app))
 	k.AddCommand(newK8sReplicasCmd(app))
+	k.AddCommand(newK8sRestartCmd(app))
 	k.AddCommand(newK8sOperatorCmd(app))
 	k.AddCommand(newK8sGenCmd(app))
 	k.AddCommand(newK8sShowAllCmd(app))
@@ -50,18 +49,6 @@ func newK8sCmd(app *App) *cobra.Command {
 	k.AddCommand(newK8sUpCmd(app))
 	k.AddCommand(newK8sDownCmd(app))
 	return k
-}
-
-// rejectGenIfUnsupported fails a --gen run on a command that does not render an
-// artifact. --gen is a root persistent flag, so it parses on every k8s command;
-// only commands tagged genCapable (deploy, gen, prep operator, operator deploy)
-// honor it. Silently ignoring --gen elsewhere would mask a user mistake -- and could
-// let someone think a destructive command was a dry render -- so we fail loud (§4).
-func rejectGenIfUnsupported(cmd *cobra.Command, app *App) error {
-	if !app.GenOnly || cmd.Annotations[genAnnotation] == "true" {
-		return nil
-	}
-	return fmt.Errorf("--gen is only valid on artifact commands (deploy, gen, prep operator, operator deploy), not %q", cmd.CommandPath())
 }
 
 func newK8sCheckCmd(app *App) *cobra.Command {
@@ -84,7 +71,7 @@ func newK8sPrepCmd(app *App) *cobra.Command {
 	prep.AddCommand(
 		genCapable(leaf(app, "operator", "Install the EventBroker Operator", opK8sOperatorDeploy)),
 		leaf(app, "namespace", "Create the broker namespace", opK8sPrepNamespace),
-		leaf(app, "secrets", "Create admin/monitor, TLS, and image-pull secrets", opK8sPrepSecrets),
+		genCapable(leaf(app, "secrets", "Create admin/monitor, TLS, and image-pull secrets", opK8sPrepSecrets)),
 		leaf(app, "labels", "Label nodes for primary/backup/monitor placement", opK8sPrepLabels),
 	)
 	return prep
@@ -159,8 +146,16 @@ func newK8sStatusCmd(app *App) *cobra.Command {
 	}
 }
 
+// newK8sDescribeCmd exposes the describe verbs. "inspect" is an alias so the same
+// word works on every platform -- on docker/podman the operation really is
+// `<runtime> inspect`, and an operator should not have to remember which tree
+// calls it what.
 func newK8sDescribeCmd(app *App) *cobra.Command {
-	d := &cobra.Command{Use: "describe", Short: "Describe broker/load-balancer resources"}
+	d := &cobra.Command{
+		Use:     "describe",
+		Aliases: []string{"inspect"},
+		Short:   "Describe broker/load-balancer resources",
+	}
 	d.AddCommand(
 		roleLeaf(app, "broker", "Describe a broker pod", opK8sDescribeBroker),
 		leaf(app, "lb", "Describe the load-balancer service", opK8sDescribeLB),
@@ -198,6 +193,26 @@ func newK8sReplicasCmd(app *App) *cobra.Command {
 	return r
 }
 
+// newK8sRestartCmd finishes a manualPodRestart upgrade: the operator updates the
+// StatefulSet's pod template on deploy and then waits for the pods to be deleted,
+// which nothing in this CLI could do -- `replicas start/stop` only scales a whole
+// StatefulSet to 1 or 0.
+func newK8sRestartCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart [primary|backup|monitor]",
+		Short: "Delete a broker pod so the statefulset recreates it (manualPodRestart upgrades)",
+		Long: "For k8s.updateStrategy=manualPodRestart: `deploy` updates the statefulset's pod\n" +
+			"template but the operator waits for a pod to be deleted before applying it.\n" +
+			"With no role, restarts every pod in the safe order (monitor, backup, primary;\n" +
+			"standalone: just the primary), waiting for each to become ready before the next.\n\n" +
+			"The order is by configured role, not by which node is currently active -- after a\n" +
+			"failover they differ. Check `solace k8s verify redundancy` first, or pass a role\n" +
+			"and restart them one at a time in the order you want.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error { return opK8sRestart(app, firstArg(args)) },
+	}
+}
+
 func newK8sOperatorCmd(app *App) *cobra.Command {
 	o := &cobra.Command{Use: "operator", Short: "Manage the cluster-scoped EventBroker Operator"}
 	o.AddCommand(
@@ -212,9 +227,9 @@ func newK8sOperatorCmd(app *App) *cobra.Command {
 
 func newK8sGenCmd(app *App) *cobra.Command {
 	return genCapable(&cobra.Command{
-		Use:       "gen [broker|operator]",
-		Short:     "Render a manifest to stdout without applying (like --gen)",
-		ValidArgs: []string{"broker", "operator"},
+		Use:       "gen [broker|operator|secrets]",
+		Short:     "Render a manifest to stdout without applying (like --gen-only)",
+		ValidArgs: []string{"broker", "operator", "secrets"},
 		Args:      cobra.MaximumNArgs(1),
 		RunE:      func(_ *cobra.Command, args []string) error { return opK8sGen(app, firstArgOr(args, "broker")) },
 	})

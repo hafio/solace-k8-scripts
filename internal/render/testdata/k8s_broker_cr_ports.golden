@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: registry.example.com/solace-pubsub-standard
-    tag: 10.10.1.128
+    tag: 10.26.0.8755
     pullPolicy: IfNotPresent
     pullSecrets:
     - name: solace-image-pull

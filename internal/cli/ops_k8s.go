@@ -65,18 +65,29 @@ func opK8sPrepAll(a *App) error {
 	return c.LabelNodes(ctx)
 }
 
-// opK8sDeploy renders and applies the broker CR; with --gen it prints the manifest only.
+// opK8sDeploy renders and applies the broker CR; with a --gen-*-only flag it
+// prints the requested manifest only.
 func opK8sDeploy(a *App) error {
-	if a.GenOnly {
-		return emit(render.BrokerCR(a.Cfg))
+	if a.anyGen() {
+		return emitK8sArtifact(a, "broker")
 	}
 	return k8sCluster(a).DeployBroker(bg(), a.keepYAML)
 }
 
 // prep steps
 func opK8sPrepNamespace(a *App) error { return k8sCluster(a).CreateNamespace(bg()) }
-func opK8sPrepSecrets(a *App) error   { return k8sCluster(a).CreateSecrets(bg()) }
 func opK8sPrepLabels(a *App) error    { return k8sCluster(a).LabelNodes(bg()) }
+
+// opK8sPrepSecrets applies the broker secrets; a gen flag prints the manifests
+// instead. Unlike the other prep steps it is gen-capable, since the secrets are
+// its own artifact -- `prep secrets --gen-only` and `--gen-secrets-only` are the
+// same rendering here.
+func opK8sPrepSecrets(a *App) error {
+	if a.anyGen() {
+		return emitK8sArtifact(a, "secrets")
+	}
+	return k8sCluster(a).CreateSecrets(bg())
+}
 
 // config steps
 
@@ -220,17 +231,48 @@ func opK8sCopyInto(a *App, files []string) error {
 func opK8sReplicasStart(a *App) error { return k8sCluster(a).ReplicasStart(bg()) }
 func opK8sReplicasStop(a *App) error  { return k8sCluster(a).ReplicasStop(bg()) }
 
+// opK8sRestart bounces broker pods for a manualPodRestart upgrade. Deleting a pod
+// interrupts messaging on that node, so it takes the same confirmation a delete
+// does: --yes proceeds, an interactive session is asked, and a non-interactive one
+// without --yes refuses rather than bouncing a production broker unattended.
+func opK8sRestart(a *App, roleArg string) error {
+	c := k8sCluster(a)
+	if roleArg == "" {
+		if !confirmDelete(a, "every broker pod, one at a time (monitor, backup, primary)") {
+			return nil
+		}
+		return c.RestartRolling(bg())
+	}
+	role, err := config.ParseRole(roleArg)
+	if err != nil {
+		return err
+	}
+	if !confirmDelete(a, "the "+roleWord(role)+" broker pod") {
+		return nil
+	}
+	return c.RestartPod(bg(), role)
+}
+
+// roleWord spells a role out for a prompt; config.Role's own form is the single
+// letter used in resource names, too terse for a user-facing question.
+func roleWord(role config.Role) string {
+	switch role {
+	case config.Backup:
+		return "backup"
+	case config.Monitor:
+		return "monitor"
+	default:
+		return "primary"
+	}
+}
+
 // operator lifecycle
 
-// opK8sOperatorDeploy installs the operator; with --gen it prints the rendered bundle
-// only. It backs both `operator deploy` and `prep operator`.
+// opK8sOperatorDeploy installs the operator; with a gen flag it prints the
+// rendered bundle only. It backs both `operator deploy` and `prep operator`.
 func opK8sOperatorDeploy(a *App) error {
-	if a.GenOnly {
-		b, err := k8s.GenOperator(a.Cfg)
-		if err != nil {
-			return err
-		}
-		return emit(b)
+	if a.anyGen() {
+		return emitK8sArtifact(a, "operator")
 	}
 	return k8sCluster(a).OperatorApply(bg())
 }
@@ -240,9 +282,22 @@ func opK8sOperatorStatus(a *App) error   { return k8sCluster(a).OperatorStatus(b
 func opK8sOperatorLogs(a *App) error     { return k8sCluster(a).OperatorLogs(bg()) }
 func opK8sOperatorDescribe(a *App) error { return k8sCluster(a).OperatorDescribe(bg()) }
 
-// opK8sGen renders a manifest to stdout without applying. The broker CR and the operator
-// bundle are both wired.
-func opK8sGen(a *App, target string) error {
+// opK8sGen renders a manifest to stdout without applying.
+func opK8sGen(a *App, target string) error { return emitK8sArtifact(a, target) }
+
+// emitK8sArtifact prints one k8s manifest and changes nothing. target is what the
+// calling command renders by default; --gen-secrets-only overrides it, so the flag
+// selects the artifact uniformly across the tree the way it does for containers.
+// --gen-env-only has no k8s meaning: broker settings live in the custom resource,
+// not an env file, so it is rejected rather than silently treated as --gen-only.
+func emitK8sArtifact(a *App, target string) error {
+	if a.GenEnvOnly {
+		return fmt.Errorf("--gen-env-only renders a container env file and has no Kubernetes equivalent " +
+			"(the broker settings are part of the custom resource); use --gen-only")
+	}
+	if a.GenSecretsOnly {
+		target = "secrets"
+	}
 	switch target {
 	case "", "broker":
 		return emit(render.BrokerCR(a.Cfg))
@@ -252,8 +307,14 @@ func opK8sGen(a *App, target string) error {
 			return err
 		}
 		return emit(b)
+	case "secrets":
+		b, err := k8s.GenSecrets(a.Cfg)
+		if err != nil {
+			return err
+		}
+		return emit(b)
 	default:
-		return fmt.Errorf("unknown gen target %q (expected broker|operator)", target)
+		return fmt.Errorf("unknown gen target %q (expected broker|operator|secrets)", target)
 	}
 }
 

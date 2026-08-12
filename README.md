@@ -22,9 +22,15 @@ the whole lifecycle -- `check -> prep -> deploy -> config -> verify` and back do
   to use something else -- `oc`, `microk8s kubectl`, or a whole profile such as
   `kubectl --kubeconfig /path/.kubeconfig-dev`.
 - **Run (Docker/Podman):** the `docker` or `podman` binary on your `PATH`, on the host that
-  runs the broker. Podman deploys a systemd **quadlet** unit (its host also needs systemd);
-  Docker uses `compose` (default) or `run`. The binary shells out to the runtime; it embeds
+  runs the broker. Podman deploys a systemd **quadlet** unit and uses podman's own secret
+  store (its host also needs systemd); Docker deploys through **compose**, so that host also
+  needs the compose plugin (`docker compose`) or the standalone `docker-compose` binary --
+  set `docker.compose` when it is the latter. The binary shells out to the runtime; it embeds
   no container client. `docker.runtime` / `podman.runtime` override the command the same way.
+- **Podman secrets:** `deploy` stores the broker's secrets with
+  `podman secret create --replace`, which older podman builds do not support. Confirm yours
+  does (`podman secret create --help | grep -- --replace`) -- `check` only proves the runtime
+  answers `version`, so an unsupported flag surfaces at deploy time.
 - `--dry-run` needs no cluster, runtime, or `kubectl`/`docker`/`podman` binary -- it prints
   the commands instead of running them.
 
@@ -159,12 +165,14 @@ Common optional knobs:
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `redundancy` | `yes` | `yes` = HA group (primary+backup+monitor); `no` = single standalone broker |
+| `redundancy` | `no` | `yes` = HA group (primary+backup+monitor); `no` = single standalone broker. HA provisions three brokers, so it must be asked for explicitly |
 | `image.registry` | docker.io | Registry prefix for the image reference |
 | `k8s.storage.class` | cluster default | StorageClass for the broker PVCs |
 | `k8s.updateStrategy` | `automatedRolling` | `automatedRolling` or `manualPodRestart` |
 | `k8s.runtime` | `kubectl` | Cluster CLI (legacy `KUBE`). A scalar is split on whitespace, so it can be a drop-in (`oc`), a wrapper (`microk8s kubectl`), or a profile (`kubectl --kubeconfig <file>`). Use a list when a token contains a space |
 | `docker.runtime` / `podman.runtime` | `docker` / `podman` | Container CLI (legacy `CONTAINER_RUNTIME`), same forms as `k8s.runtime` |
+| `docker.compose` | `<runtime> compose` | The compose invocation. Set it to `docker-compose` on a host carrying only the standalone v1 binary; same scalar/list forms as `runtime` |
+| `<docker\|podman>.container.healthCheck.enabled` | `false` | Adds an engine health check polling the broker's own `/health-check/readiness` on port 5550 every 5s, so `docker ps` and podman's auto-restart see readiness rather than liveness. Needs broker **10.26 or later** and a version-numbered `image.tag`; set `healthCheck.cmd` to supply your own probe instead (which skips the version check). Container-only by design -- on Kubernetes the operator already probes the pods |
 | `tls.serverSecret` | -- | Name of the TLS secret; its presence enables the CR's TLS block |
 | `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
 | `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |
@@ -182,9 +190,15 @@ These apply to every subcommand:
 | --- | --- | --- |
 | `-e`, `--env <file>` | `env.yaml` | Env file to load: a file name searched in the base dir then `<base-dir>/env`, or a path used as-is. |
 | `--base-dir <dir>` | current dir | Directory searched for the env file, and holding `env/`. |
-| `--gen` | `false` | Render the artifact this command would apply and print it; change nothing. |
+| `--gen-only` | `false` | Render the deployment artifact this command would apply and print it; change nothing. |
+| `--gen-secrets-only` | `false` | Render this deployment's secrets and print them; change nothing. **Prints secret values.** |
+| `--gen-env-only` | `false` | Render the container broker settings as an env file and print them; change nothing (docker/podman only). |
 | `--dry-run` | `false` | Print the external commands instead of running them. |
 | `-y`, `--yes` | `false` | Skip confirmation prompts. Does **not** imply `--purge`. |
+
+The three `--gen-*-only` flags are mutually exclusive (passing two is an error) and are
+valid only on commands that render an artifact; passing one to any other command --
+`delete` above all -- is rejected loudly rather than ignored, on every platform.
 
 ## Command reference (Kubernetes)
 
@@ -201,11 +215,11 @@ positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to p
 | --- | --- |
 | `check` | Validate config, cluster reachability, and StorageClass. |
 | `prep` | Prepare cluster prerequisites; with no subcommand runs all applicable steps in order. |
-| `prep operator` | Install the EventBroker Operator (honors `--gen`). |
+| `prep operator` | Install the EventBroker Operator (honors `--gen-only`). |
 | `prep namespace` | Create the broker namespace. |
-| `prep secrets` | Create admin/monitor, TLS, and image-pull secrets. |
+| `prep secrets` | Create admin/monitor, TLS, and image-pull secrets (honors `--gen-secrets-only`). |
 | `prep labels` | Label nodes for primary/backup/monitor placement (interactive). |
-| `deploy` | Render and apply the PubSubPlusEventBroker custom resource (honors `--gen`). `--keep-yaml` keeps the rendered manifest on disk. |
+| `deploy` | Render and apply the PubSubPlusEventBroker custom resource (honors the `--gen-*-only` trio). `--keep-yaml` keeps the rendered manifest on disk. |
 | `config` | Post-deploy configuration; with no subcommand runs all applicable steps. |
 | `config leader` | Assert the config-sync leader (HA only). |
 | `config server-cert` | Load/update the TLS server certificate. |
@@ -227,18 +241,19 @@ positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to p
 | `logs [role]` | Tail broker pod logs. |
 | `cli [role]` | Open an interactive Solace CLI in a pod. |
 | `shell [role]` | Open an interactive shell in a pod. |
-| `describe broker [role]` | Describe a broker pod. |
+| `describe broker [role]` | Describe a broker pod. Also spelled `inspect`. |
 | `describe lb` | Describe the load-balancer service. |
 | `copy from files...` | Copy files from a broker pod to the host. `--pod <role>`. |
 | `copy into files...` | Copy files from the host into a broker pod. `--pod <role>`, `--dir <dest>`. |
 | `replicas start` | Scale broker statefulset(s) to 1. |
 | `replicas stop` | Scale broker statefulset(s) to 0. |
-| `operator deploy` | Install the operator from the embedded bundle (honors `--gen`). |
+| `restart [role]` | Delete a broker pod so the statefulset recreates it -- the step a `manualPodRestart` upgrade needs. No role restarts all of them in order (monitor, backup, primary), waiting for each. |
+| `operator deploy` | Install the operator from the embedded bundle (honors `--gen-only`). |
 | `operator delete` | Remove the operator. |
 | `operator status` | Show operator deployment/pod status. |
 | `operator logs` | Tail operator logs. |
 | `operator describe` | Describe the operator deployment. |
-| `gen [broker\|operator]` | Render a manifest to stdout without applying (default `broker`). |
+| `gen [broker\|operator\|secrets]` | Render a manifest to stdout without applying (default `broker`). |
 | `show-all` | List all brokers across namespaces. |
 
 ### Teardown
@@ -275,28 +290,45 @@ destructive run:
 
 ## Rendering without applying
 
-To review the exact manifest before it touches a cluster, use `--gen` on an
-artifact-producing command, or the dedicated `gen` command. Both print to stdout and
-change nothing:
+To review the exact artifact before it touches a cluster or a host, use a `--gen-*-only`
+flag on an artifact-producing command, or the dedicated `gen` command. Both print to
+stdout and change nothing:
 
 ```
-solace k8s gen broker -e dev.yaml            # the PubSubPlusEventBroker CR
-solace k8s gen operator -e dev.yaml          # the operator bundle
-solace k8s deploy -e dev.yaml --gen          # equivalent to gen broker
-solace k8s operator deploy -e dev.yaml --gen # equivalent to gen operator
+solace k8s gen broker -e dev.yaml                 # the PubSubPlusEventBroker CR
+solace k8s gen operator -e dev.yaml               # the operator bundle
+solace k8s gen secrets -e dev.yaml                # the Secret manifests (secret values!)
+solace k8s deploy -e dev.yaml --gen-only          # equivalent to gen broker
+solace k8s operator deploy -e dev.yaml --gen-only # equivalent to gen operator
+solace docker gen primary -e dev.yaml             # the compose file
+solace podman gen primary -e dev.yaml             # the quadlet unit
+solace docker gen primary -e dev.yaml --gen-env-only     # the broker settings, key=value
+solace docker gen primary -e dev.yaml --gen-secrets-only # commands that create the secrets
 ```
 
-`--gen` is only valid on artifact commands (`deploy`, `prep operator`,
-`operator deploy`, `gen`); using it elsewhere is rejected with a clear error.
+The flag selects the artifact, not the command: any artifact command honors all three.
+They are valid only on artifact commands (`deploy`, `gen`, plus `prep secrets`,
+`prep operator` and `operator deploy` on Kubernetes) -- using one elsewhere is rejected
+with a clear error on every platform, so a gen flag can never turn into a real `delete`.
+
+**Secrets are never part of a deployment artifact.** The broker admin password and the HA
+pre-shared key live in podman's secret store, in file-backed compose secrets (written
+0600 under `solace-secrets/` beside the compose file), or in Kubernetes Secrets -- and the
+compose file, quadlet unit, and CR reference them by name. So `--gen-only` output is safe
+to review, diff, and share, while **`--gen-secrets-only` prints the values themselves** and
+must be handled exactly like the env file. `--gen-env-only` is container-only; on
+Kubernetes the broker settings are part of the CR, so it is rejected there.
 
 ## Command reference (Docker / Podman)
 
 The `docker` and `podman` command trees mirror the Kubernetes verbs for a **host-local**
 broker: one container per host, driven over `<runtime> exec`/`cp` (no operator, no
 cluster). The two share one tree; only the deploy artifact differs -- Docker renders a
-compose file (`docker.mode: compose`, the default) or a `run` command line
-(`docker.mode: run`), Podman a systemd **quadlet** `.container` unit. Run
-`solace docker --help` / `solace podman --help` for the live tree.
+compose file and brings it up with `docker compose`, Podman a systemd **quadlet**
+`.container` unit. (Docker's older `docker.mode: run` was removed: a bare `docker run`
+cannot recreate an existing container, so re-deploying after an image-tag bump failed on a
+name conflict where compose recreates cleanly. An env file still carrying it fails with
+that explanation.) Run `solace docker --help` / `solace podman --help` for the live tree.
 
 A `[primary|backup|monitor]` positional (also `p`|`b`|`m`) selects the redundancy role and
 defaults to primary. In standalone mode (`redundancy: no`) it is ignored; in an HA group
@@ -311,10 +343,10 @@ reference for both trees.
 
 | Command | Description |
 | --- | --- |
-| `check` | Validate config, node-name DNS resolution, and the container runtime. |
+| `check` | Validate config, node-name DNS resolution, the container runtime, and (Docker) the compose command. |
 | `prep` | Prepare the host; with no subcommand runs all steps. |
 | `prep host` | Create/own the data dir, verify DNS, and (HA) generate the redundancy PSK. |
-| `deploy [role]` | Render the deploy artifact and start the container/service (honors `--gen`). |
+| `deploy [role]` | Create the host's secrets, render the deploy artifact, and start the container/service. Re-runnable: an unchanged artifact is a no-op, a changed one asks before bouncing a running broker (`--restart` pre-approves). Honors the `--gen-*-only` trio. |
 | `config` | Post-deploy configuration; with no subcommand runs all applicable steps **except** `leader`. |
 | `config leader [role]` | Assert the config-sync leader (HA only; primary-only -- fails loud on backup/monitor). |
 | `config server-cert` | Load/update the TLS server certificate. |
@@ -333,15 +365,19 @@ reference for both trees.
 | Command | Description |
 | --- | --- |
 | `status` | Show the local broker container/service status. |
+| `describe` | Detailed inspection (`<runtime> inspect`: health state, restart count, exit reason, mounts). Podman also shows the installed unit. Also spelled `inspect`. |
 | `logs` | Tail the local broker container logs. |
 | `cli` | Open an interactive Solace CLI in the container. |
 | `shell` | Open an interactive shell in the container. |
-| `gen [role]` | Render the deploy artifact to stdout without applying (compose/`run` line for Docker, quadlet for Podman). |
+| `copy from files...` | Copy files out of the broker container to the host. |
+| `copy into files...` | Copy files from the host into the container. `--dir <dest>`. |
+| `gen [role]` | Render the deploy artifact to stdout without applying (compose file for Docker, quadlet for Podman). Honors the `--gen-*-only` trio. |
 
 ### Teardown and orchestration
 
 | Command | Description |
 | --- | --- |
+| `teardown domain-certs` | Remove domain CA certificates from the broker (the counterpart of `config domain-certs`). |
 | `delete` | Stop and remove the container/unit (data folder kept by default; supports the data-retention flags). |
 | `up [role]` | Orchestrate check -> prep host -> deploy `<role>`. |
 | `down` | Delete the container/unit (data kept unless `--purge`). There is no layer above the broker, so `down` == `delete`. |
@@ -353,6 +389,31 @@ releases activity and waits to fail back; the backup takes over, dwells ~10s, an
 The monitor cannot run `verify redundancy` (rejected loud), and `config leader` runs only
 on the primary. Running `verify redundancy` on a single host times out (bounded by the poll
 budget) rather than hanging.
+
+**Re-deploying is safe and explicit.** `deploy` renders the artifact and compares it with
+what is already on disk, so the three outcomes are distinguishable:
+
+- **Unchanged, broker running** -- reported as nothing to do; the broker is not touched.
+- **Changed, broker not running** -- written and started.
+- **Changed, broker running** -- written, then you are asked before it is bounced.
+  `--restart` pre-approves; a non-interactive run declines, leaving the new artifact in
+  place and warning that the running broker is still on the previous one. `--restart` is
+  deliberately not `--yes`: dropping messaging traffic is its own decision.
+
+This is what makes an image-tag bump a one-command upgrade: edit `image.tag`, then
+`solace podman deploy <role> --restart` (or `solace docker deploy --restart`). Podman needs
+this because `systemctl start` on an already-active unit is a no-op -- the old
+behaviour rewrote the unit, reported success, and left the previous image running.
+
+**Secrets.** `deploy` externalizes the broker admin password and (HA) the redundancy
+pre-shared key before applying the artifact, so neither value is ever written into the
+compose file or quadlet unit. Podman loads them into its own secret store
+(`podman secret create --replace`, value on stdin); Docker writes them 0600 into
+`solace-secrets/` beside the compose file, which references them as compose secrets and
+points the broker at the mounted files. `--gen-secrets-only` prints the equivalent shell
+commands, one per secret, if you would rather create them yourself. A missing value
+(notably `nodes.psk` before `prep host` has run) fails the deploy loudly rather than
+starting a broker without a password.
 
 **Config source.** The container platform has no separate config namespace: its post-deploy
 `config`/`verify` steps read the shared `k8s.*` fields -- `k8s.domainCerts`,
@@ -375,6 +436,46 @@ solace podman config leader -e prod.yaml    # on the primary only
 solace podman verify redundancy -e prod.yaml
 ```
 
+## Upgrading a running broker
+
+Changing the image tag (or any other setting) is the same edit on every platform --
+bump `image.tag` in the env file -- but applying it differs:
+
+**Kubernetes, `updateStrategy: automatedRolling` (the default)**
+
+```
+solace k8s deploy -e dev.yaml
+```
+
+`deploy` re-applies the custom resource; the operator sees the new tag and rolls the
+pods itself (monitor, then backup, then the active node).
+
+**Kubernetes, `updateStrategy: manualPodRestart`**
+
+```
+solace k8s deploy -e dev.yaml     # updates the statefulset template; no pod is touched
+solace k8s restart -e dev.yaml    # bounces monitor -> backup -> primary, waiting for each
+```
+
+The operator deliberately waits for you here, so `deploy` alone changes nothing
+visible. `restart <role>` bounces one pod if you would rather drive the order
+yourself -- worth doing after a failover, since the order above is by configured
+role and the active node may not be the configured primary. Check with
+`solace k8s verify redundancy` first.
+
+**Docker / Podman** (on each host, with its own role)
+
+```
+solace podman deploy primary -e prod.yaml --restart
+solace docker deploy -e prod.yaml --restart
+```
+
+`deploy` compares the rendered artifact with the one on disk: unchanged is a no-op,
+changed is written and then applied to the running broker -- with `--restart`, or
+after being asked. Without consent the new artifact is left in place and the command
+says the broker is still on the previous one. In an HA group, upgrade the monitor and
+backup before the primary.
+
 ## Development
 
 `scripts/dev.ps1` and `scripts/dev.sh` are behaviourally identical and own every
@@ -396,7 +497,7 @@ build/test/scan command. The workflows call task names only, so local runs match
 Run the local gate with `scripts/dev.ps1 all scan` (or `./scripts/dev.sh all scan`), and
 `full` before tagging. Per-task logs land in `scripts/logs/<task>.log`, each closing with a
 `<timestamp> | <task> | <duration>s | OK|FAILED` footer; coverage HTML in
-`coverage/coverage.html`. Current test coverage is 90.4% (recorded in
+`coverage/coverage.html`. Current test coverage is 92.3% (recorded in
 `scripts/logs/cov.log`; the previous total is the local floor, not an enforced numeric gate).
 
 [docs/test.md](docs/test.md) catalogues every test in the repo -- what each one proves, the

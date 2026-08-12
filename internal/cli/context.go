@@ -13,11 +13,16 @@ import (
 // It replaces the bash "source 000-env.sh" bootstrap — one load, reused by the
 // whole command tree (§4: explicit context, no globals).
 type App struct {
-	EnvName  string // -e/--env value: an env file name, or a path
-	BaseDir  string // dir searched for the env file, and holding env/ (defaults to CWD)
-	GenOnly  bool   // --gen: render artifact, don't apply
-	DryRun   bool   // --dry-run: echo commands instead of running them
-	Yes      bool   // --yes: skip confirmations (never implies data purge)
+	EnvName string // -e/--env value: an env file name, or a path
+	BaseDir string // dir searched for the env file, and holding env/ (defaults to CWD)
+	DryRun  bool   // --dry-run: echo commands instead of running them
+	Yes     bool   // --yes: skip confirmations (never implies data purge)
+
+	// The three --gen-*-only flags each replace a command's real work with a
+	// different rendering. Exactly one may be set (checkGenFlags enforces it).
+	GenOnly        bool // --gen-only: the deployment artifact (CR / compose / quadlet)
+	GenSecretsOnly bool // --gen-secrets-only: the secret-creation artifact
+	GenEnvOnly     bool // --gen-env-only: the container env file (container-only)
 
 	Platform config.Platform
 	Cfg      *config.Config
@@ -32,6 +37,7 @@ type App struct {
 	pod      string // --pod role override for exec-cli/copy
 	destDir  string // copy into --dir
 	days     int    // verify diagnostics --days
+	restart  bool   // container deploy/up --restart (bounce a running broker)
 }
 
 // load resolves the env file for the app's platform and builds the config +

@@ -343,9 +343,16 @@ func TestTreeStructure(t *testing.T) {
 		"solace k8s operator deploy",
 		"solace k8s gen",
 		"solace k8s replicas start",
+		"solace k8s restart",
 		"solace docker deploy",
 		"solace docker gen",
+		"solace docker describe",
+		"solace docker copy from",
+		"solace docker copy into",
+		"solace docker teardown domain-certs",
 		"solace podman gen",
+		"solace podman describe",
+		"solace podman teardown domain-certs",
 		"solace convert",
 	}
 	for _, want := range wantLeaves {
@@ -373,6 +380,11 @@ func TestFlagsRegistered(t *testing.T) {
 		{[]string{"k8s", "config", "exec-cli"}, []string{"pod"}},
 		{[]string{"k8s", "copy", "from"}, []string{"pod"}},
 		{[]string{"k8s", "copy", "into"}, []string{"pod", "dir"}},
+		{[]string{"docker", "copy", "into"}, []string{"dir"}},
+		{[]string{"docker", "deploy"}, []string{"restart"}},
+		{[]string{"docker", "up"}, []string{"restart"}},
+		{[]string{"podman", "deploy"}, []string{"restart"}},
+		{[]string{"podman", "up"}, []string{"restart"}},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.path, "/"), func(t *testing.T) {
@@ -409,13 +421,16 @@ func TestGenWired(t *testing.T) {
 		args   []string
 		prefix string
 	}{
-		{"k8s deploy --gen", []string{"k8s", "deploy", "--gen"}, "apiVersion:"},
+		{"k8s deploy --gen-only", []string{"k8s", "deploy", "--gen-only"}, "apiVersion:"},
 		{"k8s gen broker", []string{"k8s", "gen", "broker"}, "apiVersion:"},
 		{"k8s gen default", []string{"k8s", "gen"}, "apiVersion:"},
-		{"docker deploy primary --gen", []string{"docker", "deploy", "primary", "--gen"}, "services:"},
+		{"docker deploy primary --gen-only", []string{"docker", "deploy", "primary", "--gen-only"}, "services:"},
 		{"docker gen primary", []string{"docker", "gen", "primary"}, "services:"},
-		{"podman deploy primary --gen", []string{"podman", "deploy", "primary", "--gen"}, "[Unit]"},
+		{"docker gen primary --gen-secrets-only", []string{"docker", "gen", "primary", "--gen-secrets-only"}, "# docker secrets"},
+		{"docker gen primary --gen-env-only", []string{"docker", "gen", "primary", "--gen-env-only"}, "routername="},
+		{"podman deploy primary --gen-only", []string{"podman", "deploy", "primary", "--gen-only"}, "[Unit]"},
 		{"podman gen primary", []string{"podman", "gen", "primary"}, "[Unit]"},
+		{"podman gen primary --gen-secrets-only", []string{"podman", "gen", "primary", "--gen-secrets-only"}, "# podman secrets"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -451,6 +466,11 @@ func TestCtrWiredDryRun(t *testing.T) {
 		{"podman check", []string{"podman", "check"}, "+ podman version"},
 		{"docker status", []string{"docker", "status"}, "+ docker ps"},
 		{"podman status", []string{"podman", "status"}, "+ podman ps"},
+		{"docker describe", []string{"docker", "describe"}, "+ docker inspect"},
+		{"docker inspect alias", []string{"docker", "inspect"}, "+ docker inspect"},
+		{"podman describe shows the unit", []string{"podman", "describe"}, "+ systemctl cat"},
+		{"docker copy from", []string{"docker", "copy", "from", "a.log"}, "+ docker cp"},
+		{"docker copy into", []string{"docker", "copy", "into", "a.cli", "--dir", "/tmp"}, "+ docker cp"},
 		{"docker logs", []string{"docker", "logs"}, "+ docker logs -f"},
 		{"docker cli", []string{"docker", "cli"}, "+ docker exec -it"},
 		{"docker shell", []string{"docker", "shell"}, "+ docker exec -it"},
@@ -647,6 +667,10 @@ func TestK8sWiredDryRun(t *testing.T) {
 		{"shell", []string{"k8s", "shell"}, true},
 		{"replicas start", []string{"k8s", "replicas", "start"}, true},
 		{"replicas stop", []string{"k8s", "replicas", "stop"}, true},
+		{"inspect alias", []string{"k8s", "inspect", "lb"}, true},
+		// restart deletes pods, so it takes the same --yes gate delete does.
+		{"restart all", []string{"k8s", "restart", "--yes"}, true},
+		{"restart one role", []string{"k8s", "restart", "backup", "--yes"}, true},
 		{"deploy", []string{"k8s", "deploy"}, true},
 		{"prep operator", []string{"k8s", "prep", "operator"}, true},
 		{"prep namespace", []string{"k8s", "prep", "namespace"}, true},
@@ -752,7 +776,7 @@ func TestK8sGenOperatorWired(t *testing.T) {
 		args []string
 	}{
 		{"gen operator", []string{"k8s", "gen", "operator"}},
-		{"operator deploy --gen", []string{"k8s", "operator", "deploy", "--gen"}},
+		{"operator deploy --gen-only", []string{"k8s", "operator", "deploy", "--gen-only"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -828,16 +852,22 @@ func TestK8sErrorPaths(t *testing.T) {
 			t.Fatalf("exec-cli --pod bogus err = %v, want 'invalid node role'", err)
 		}
 	})
-	t.Run("--gen rejected on delete", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "delete", "--gen"))
-		if err == nil || !strings.Contains(err.Error(), "--gen is only valid") {
-			t.Fatalf("delete --gen err = %v, want '--gen is only valid'", err)
+	t.Run("--gen-only rejected on delete", func(t *testing.T) {
+		_, err := runRoot(t, withEnv("k8s", "delete", "--gen-only"))
+		if err == nil || !strings.Contains(err.Error(), "--gen-only is only valid") {
+			t.Fatalf("delete --gen-only err = %v, want '--gen-only is only valid'", err)
 		}
 	})
-	t.Run("--gen rejected on status", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "status", "--gen"))
-		if err == nil || !strings.Contains(err.Error(), "--gen is only valid") {
-			t.Fatalf("status --gen err = %v, want '--gen is only valid'", err)
+	t.Run("--gen-only rejected on status", func(t *testing.T) {
+		_, err := runRoot(t, withEnv("k8s", "status", "--gen-only"))
+		if err == nil || !strings.Contains(err.Error(), "--gen-only is only valid") {
+			t.Fatalf("status --gen-only err = %v, want '--gen-only is only valid'", err)
+		}
+	})
+	t.Run("--gen-env-only has no k8s artifact", func(t *testing.T) {
+		_, err := runRoot(t, withEnv("k8s", "deploy", "--gen-env-only"))
+		if err == nil || !strings.Contains(err.Error(), "no Kubernetes equivalent") {
+			t.Fatalf("deploy --gen-env-only err = %v, want 'no Kubernetes equivalent'", err)
 		}
 	})
 	t.Run("purge and keep-data are mutually exclusive", func(t *testing.T) {
@@ -966,20 +996,17 @@ func TestErrorPaths(t *testing.T) {
 	})
 }
 
-// TestGenDockerRunMode covers emitCtrArtifact's docker run-mode branch: with
-// docker.mode=run the artifact is the `<runtime> run ...` command line rather
-// than a compose file. A minimal standalone env keeps the fixture valid under
-// the strict KnownFields decoder.
-func TestGenDockerRunMode(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runmode.yaml")
+// TestDockerRunModeRejected pins the removal of run mode: an env file carrying
+// the old value must fail with the reason and the fix, not a bare enum error.
+func TestDockerRunModeRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runmode.yaml")
 	content := "" +
 		"redundancy: no\n" +
 		"image:\n" +
 		"  repo: solace-pubsub-standard\n" +
 		"  tag: \"10.10.1.128\"\n" +
 		"admin:\n" +
-		"  pass: CHANGE-ME-admin\n" +
+		"  pass: " + smokeAdminPass + "\n" +
 		"docker:\n" +
 		"  mode: run\n" +
 		"  container:\n" +
@@ -990,16 +1017,133 @@ func TestGenDockerRunMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write temp env: %v", err)
 	}
+	_, err := runRoot(t, []string{"docker", "gen", "primary", "--env", path})
+	if err == nil || !strings.Contains(err.Error(), "was removed") {
+		t.Fatalf("docker.mode: run err = %v, want the removal message", err)
+	}
+	if !strings.Contains(err.Error(), "docker.compose") {
+		t.Errorf("removal message should point at docker.compose, got: %v", err)
+	}
+}
 
-	out, err := runRoot(t, []string{"docker", "gen", "primary", "--env", path})
+// TestK8sGenSecretsWired covers the newly opt-in-renderable Secret manifests, via
+// both the gen target and the flag. It uses the standalone env rather than the HA
+// sample, whose tls.serverSecret points at cert files that do not exist in a
+// checkout -- the same reason the secret-bearing prep steps are absent from
+// TestK8sWiredDryRun.
+func TestK8sGenSecretsWired(t *testing.T) {
+	path := writeStandaloneEnv(t)
+	for _, args := range [][]string{
+		{"k8s", "gen", "secrets"},
+		{"k8s", "prep", "secrets", "--gen-secrets-only"},
+		{"k8s", "prep", "secrets", "--gen-only"},
+		{"k8s", "deploy", "--gen-secrets-only"},
+	} {
+		name := strings.Join(args, " ")
+		t.Run(name, func(t *testing.T) {
+			out, err := runRoot(t, append(append([]string{}, args...), "--env", path))
+			if err != nil {
+				t.Fatalf("%s err = %v, want nil", name, err)
+			}
+			if !strings.HasPrefix(out, "apiVersion: v1") {
+				t.Errorf("%s should render Secret manifests, got %q", name, firstLine(out))
+			}
+			// The manifests carry the value base64-encoded, so the raw password must
+			// not appear -- but the rendering is still secret-bearing by design.
+			if !strings.Contains(out, "kind: Secret") {
+				t.Errorf("%s output is not a Secret manifest:\n%s", name, out)
+			}
+		})
+	}
+}
+
+// TestGenSecretsRefusesEmptyValue: the printed script tells the operator to run
+// it, so it must not be printable when running it would create an empty secret --
+// `gen --gen-secrets-only` refuses on the same precondition `deploy` does. The HA
+// sample with its PSK cleared is exactly the pre-`prep host` state.
+func TestGenSecretsRefusesEmptyValue(t *testing.T) {
+	body, err := os.ReadFile(sampleEnv)
 	if err != nil {
-		t.Fatalf("docker gen primary (run mode) err = %v, want nil", err)
+		t.Fatalf("read sample env: %v", err)
 	}
-	if !strings.HasPrefix(out, "docker") {
-		t.Errorf("run-mode stdout = %q, want it to start with the runtime token 'docker'", firstLine(out))
+	blanked := strings.Replace(string(body),
+		"psk: Q0hBTkdFLU1FLXByZXNoYXJlZC1rZXktYmFzZTY0", `psk: ""`, 1)
+	if blanked == string(body) {
+		t.Fatal("sample env no longer carries the psk line this test blanks")
 	}
-	if !strings.Contains(out, "run") {
-		t.Errorf("run-mode stdout = %q, want a 'run' arg", firstLine(out))
+	path := filepath.Join(t.TempDir(), "no-psk.yaml")
+	if err := os.WriteFile(path, []byte(blanked), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	for _, platform := range []string{"docker", "podman"} {
+		_, err := runRoot(t, []string{platform, "gen", "primary", "--gen-secrets-only", "--env", path})
+		if err == nil || !strings.Contains(err.Error(), "nodes.psk") {
+			t.Errorf("%s --gen-secrets-only with an empty PSK err = %v, want it to name nodes.psk", platform, err)
+		}
+	}
+	// The deploy artifact only references secrets by name, so it stays renderable.
+	if _, err := runRoot(t, []string{"docker", "gen", "primary", "--gen-only", "--env", path}); err != nil {
+		t.Errorf("--gen-only should not need the secret values: %v", err)
+	}
+}
+
+// TestGenFlagsAreExclusive covers checkGenFlags' combination arm: each flag
+// selects a different artifact, so a pair is a user mistake rather than a
+// silent precedence rule.
+func TestGenFlagsAreExclusive(t *testing.T) {
+	path := writeCtrStandaloneEnv(t)
+	_, err := runRoot(t, []string{"docker", "gen", "--gen-only", "--gen-secrets-only", "--env", path})
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("combined gen flags err = %v, want 'cannot be combined'", err)
+	}
+}
+
+// TestCtrGenFlagsRejectedOnNonArtifactCommands is the container half of the
+// safety check the k8s tree already had: a gen flag on a destructive or
+// read-only command must fail loud, never be ignored -- being ignored on
+// `delete` would run the real delete while the user believed they asked for a
+// dry render.
+func TestCtrGenFlagsRejectedOnNonArtifactCommands(t *testing.T) {
+	path := writeCtrStandaloneEnv(t)
+	for _, platform := range []string{"docker", "podman"} {
+		for _, cmd := range []string{"delete", "down", "status", "check"} {
+			for _, flag := range []string{"--gen-only", "--gen-secrets-only", "--gen-env-only"} {
+				name := platform + " " + cmd + " " + flag
+				t.Run(name, func(t *testing.T) {
+					_, err := runRoot(t, []string{platform, cmd, flag, "--env", path})
+					if err == nil || !strings.Contains(err.Error(), "is only valid on artifact commands") {
+						t.Fatalf("%s err = %v, want the artifact-command rejection", name, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestGenNeverLeaksSecrets is the end-to-end guard for the secret
+// externalization: the deploy artifacts a user prints, shares, or commits must
+// reference the admin password by name, while --gen-secrets-only is the one
+// rendering allowed to carry it.
+func TestGenNeverLeaksSecrets(t *testing.T) {
+	path := writeCtrStandaloneEnv(t)
+	for _, platform := range []string{"docker", "podman"} {
+		for _, flag := range []string{"--gen-only", "--gen-env-only"} {
+			out, err := runRoot(t, []string{platform, "gen", flag, "--env", path})
+			if err != nil {
+				t.Fatalf("%s gen %s: %v", platform, flag, err)
+			}
+			if strings.Contains(out, smokeAdminPass) {
+				t.Errorf("%s gen %s leaked the admin password:\n%s", platform, flag, out)
+			}
+		}
+		out, err := runRoot(t, []string{platform, "gen", "--gen-secrets-only", "--env", path})
+		if err != nil {
+			t.Fatalf("%s gen --gen-secrets-only: %v", platform, err)
+		}
+		if !strings.Contains(out, smokeAdminPass) {
+			t.Errorf("%s --gen-secrets-only must carry the value it creates the secret from:\n%s", platform, out)
+		}
 	}
 }
 

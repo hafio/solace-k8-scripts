@@ -27,8 +27,12 @@ solace
       leader [primary|backup|monitor]
       product-keys
       server-cert
+    copy
+      from files...
+      into files...
     delete
     deploy [primary|backup|monitor]
+    describe
     down
     gen [primary|backup|monitor]
     logs
@@ -36,6 +40,8 @@ solace
       host
     shell
     status
+    teardown
+      domain-certs
     up [primary|backup|monitor]
     verify
       diagnostics
@@ -61,7 +67,7 @@ solace
       broker [role]
       lb
     down
-    gen [broker|operator]
+    gen [broker|operator|secrets]
     logs [role]
     operator
       delete
@@ -77,6 +83,7 @@ solace
     replicas
       start
       stop
+    restart [primary|backup|monitor]
     shell [role]
     show-all
     status
@@ -100,8 +107,12 @@ solace
       leader [primary|backup|monitor]
       product-keys
       server-cert
+    copy
+      from files...
+      into files...
     delete
     deploy [primary|backup|monitor]
+    describe
     down
     gen [primary|backup|monitor]
     logs
@@ -109,6 +120,8 @@ solace
       host
     shell
     status
+    teardown
+      domain-certs
     up [primary|backup|monitor]
     verify
       diagnostics
@@ -125,7 +138,9 @@ Inherited by every command.
 | `--base-dir` | (none) | directory searched for the env file, and holding env/ (default: current directory) |
 | `--dry-run` | `false` | print the external commands instead of running them |
 | `-e`, `--env` | `env.yaml` | env file name, searched in the base dir then &lt;base-dir&gt;/env; a value with a directory is used as-is |
-| `--gen` | `false` | render the artifact this command would apply and print it; change nothing |
+| `--gen-env-only` | `false` | render the container broker settings as an env file and print them; change nothing (docker/podman only) |
+| `--gen-only` | `false` | render the deployment artifact this command would apply and print it; change nothing |
+| `--gen-secrets-only` | `false` | render this deployment's secrets (k8s Secret manifests; container secret-creation commands) and print them; change nothing |
 | `-y`, `--yes` | `false` | skip confirmation prompts (does NOT imply --purge) |
 
 ## Commands
@@ -190,7 +205,7 @@ Deploy/operate the broker directly on a host with Docker
 solace docker
 ```
 
-Subcommands: `check`, `cli`, `config`, `delete`, `deploy`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `up`, `verify`
+Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
 
 
 ### solace docker check
@@ -287,6 +302,39 @@ solace docker config server-cert
 ```
 
 
+### solace docker copy
+
+Copy files to/from the broker container
+
+```
+solace docker copy
+```
+
+Subcommands: `from`, `into`
+
+
+### solace docker copy from
+
+Copy files from the broker container to the host
+
+```
+solace docker copy from files...
+```
+
+
+### solace docker copy into
+
+Copy files from the host into the broker container
+
+```
+solace docker copy into files... [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--dir` | (none) | destination directory inside the container |
+
+
 ### solace docker delete
 
 Remove the broker container/unit (data folder kept by default)
@@ -307,10 +355,25 @@ solace docker delete [flags]
 Deploy the broker on this host (role required in HA, ignored in standalone)
 
 ```
-solace docker deploy [primary|backup|monitor]
+solace docker deploy [primary|backup|monitor] [flags]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
+
+
+### solace docker describe
+
+Show detailed inspection of the broker container (podman: also the installed unit)
+
+```
+solace docker describe
+```
+
+Also available as: inspect
 
 
 ### solace docker down
@@ -336,7 +399,7 @@ Render the deploy artifact (quadlet/compose/run) to stdout without applying
 solace docker gen [primary|backup|monitor]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace docker logs
@@ -386,13 +449,37 @@ solace docker status
 ```
 
 
+### solace docker teardown
+
+Remove broker-scoped prerequisites (the container itself: see delete)
+
+```
+solace docker teardown
+```
+
+Subcommands: `domain-certs`
+
+
+### solace docker teardown domain-certs
+
+Remove domain CA certificates
+
+```
+solace docker teardown domain-certs
+```
+
+
 ### solace docker up
 
 Orchestrate check -> prep host -> deploy <role>
 
 ```
-solace docker up [primary|backup|monitor]
+solace docker up [primary|backup|monitor] [flags]
 ```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
 ### solace docker verify
@@ -445,7 +532,7 @@ Deploy/operate the broker on Kubernetes via the EventBroker Operator
 solace k8s
 ```
 
-Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `operator`, `prep`, `replicas`, `shell`, `show-all`, `status`, `teardown`, `up`, `verify`
+Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `operator`, `prep`, `replicas`, `restart`, `shell`, `show-all`, `status`, `teardown`, `up`, `verify`
 
 
 ### solace k8s check
@@ -607,7 +694,7 @@ Render and apply the PubSubPlusEventBroker custom resource
 solace k8s deploy [flags]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
@@ -623,6 +710,8 @@ solace k8s describe
 ```
 
 Subcommands: `broker`, `lb`
+
+Also available as: inspect
 
 
 ### solace k8s describe broker
@@ -660,13 +749,13 @@ solace k8s down [flags]
 
 ### solace k8s gen
 
-Render a manifest to stdout without applying (like --gen)
+Render a manifest to stdout without applying (like --gen-only)
 
 ```
-solace k8s gen [broker|operator]
+solace k8s gen [broker|operator|secrets]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace k8s logs
@@ -706,7 +795,7 @@ Install the operator (embedded bundle)
 solace k8s operator deploy
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace k8s operator describe
@@ -775,7 +864,7 @@ Install the EventBroker Operator
 solace k8s prep operator
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace k8s prep secrets
@@ -785,6 +874,8 @@ Create admin/monitor, TLS, and image-pull secrets
 ```
 solace k8s prep secrets
 ```
+
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace k8s replicas
@@ -813,6 +904,24 @@ Scale broker statefulset(s) to 0
 
 ```
 solace k8s replicas stop
+```
+
+
+### solace k8s restart
+
+Delete a broker pod so the statefulset recreates it (manualPodRestart upgrades)
+
+For k8s.updateStrategy=manualPodRestart: `deploy` updates the statefulset's pod
+template but the operator waits for a pod to be deleted before applying it.
+With no role, restarts every pod in the safe order (monitor, backup, primary;
+standalone: just the primary), waiting for each to become ready before the next.
+
+The order is by configured role, not by which node is currently active -- after a
+failover they differ. Check `solace k8s verify redundancy` first, or pass a role
+and restart them one at a time in the order you want.
+
+```
+solace k8s restart [primary|backup|monitor]
 ```
 
 
@@ -940,7 +1049,7 @@ Deploy/operate the broker directly on a host with Podman (systemd quadlet)
 solace podman
 ```
 
-Subcommands: `check`, `cli`, `config`, `delete`, `deploy`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `up`, `verify`
+Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
 
 
 ### solace podman check
@@ -1037,6 +1146,39 @@ solace podman config server-cert
 ```
 
 
+### solace podman copy
+
+Copy files to/from the broker container
+
+```
+solace podman copy
+```
+
+Subcommands: `from`, `into`
+
+
+### solace podman copy from
+
+Copy files from the broker container to the host
+
+```
+solace podman copy from files...
+```
+
+
+### solace podman copy into
+
+Copy files from the host into the broker container
+
+```
+solace podman copy into files... [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--dir` | (none) | destination directory inside the container |
+
+
 ### solace podman delete
 
 Remove the broker container/unit (data folder kept by default)
@@ -1057,10 +1199,25 @@ solace podman delete [flags]
 Deploy the broker on this host (role required in HA, ignored in standalone)
 
 ```
-solace podman deploy [primary|backup|monitor]
+solace podman deploy [primary|backup|monitor] [flags]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
+
+
+### solace podman describe
+
+Show detailed inspection of the broker container (podman: also the installed unit)
+
+```
+solace podman describe
+```
+
+Also available as: inspect
 
 
 ### solace podman down
@@ -1086,7 +1243,7 @@ Render the deploy artifact (quadlet/compose/run) to stdout without applying
 solace podman gen [primary|backup|monitor]
 ```
 
-Honors `--gen`: renders the artifact this command would apply, and changes nothing.
+Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
 ### solace podman logs
@@ -1136,13 +1293,37 @@ solace podman status
 ```
 
 
+### solace podman teardown
+
+Remove broker-scoped prerequisites (the container itself: see delete)
+
+```
+solace podman teardown
+```
+
+Subcommands: `domain-certs`
+
+
+### solace podman teardown domain-certs
+
+Remove domain CA certificates
+
+```
+solace podman teardown domain-certs
+```
+
+
 ### solace podman up
 
 Orchestrate check -> prep host -> deploy <role>
 
 ```
-solace podman up [primary|backup|monitor]
+solace podman up [primary|backup|monitor] [flags]
 ```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
 ### solace podman verify

@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -122,6 +123,10 @@ type Image struct {
 	PullSecret string `yaml:"pullSecret"` // IMAGEREPO_SECRET (k8s; enables imagePullSecrets)
 	User       string `yaml:"user"`       // IMAGEREPO_USER
 	Pass       string `yaml:"pass"`       // IMAGEREPO_PASS (secret)
+	// PullPolicy is the k8s image pull policy: Always for a moving tag, Never for
+	// an air-gapped cluster with the image preloaded. Empty keeps the CR's own
+	// IfNotPresent, so an unset value renders exactly as before.
+	PullPolicy string `yaml:"pullPolicy"`
 }
 
 // Ref is the fully-qualified image reference, with the optional registry prefix.
@@ -130,6 +135,56 @@ func (i Image) Ref() string {
 		return fmt.Sprintf("%s/%s:%s", i.Registry, i.Repo, i.Tag)
 	}
 	return fmt.Sprintf("%s:%s", i.Repo, i.Tag)
+}
+
+// TagVersion parses the leading major.minor of the image tag ("10.26.1.5" -> 10,
+// 26). ok is false when the tag carries no version at all -- "latest", a digest,
+// a bare codename -- and callers must treat that as *unknown*, never as old or
+// new: a feature gate that guessed either way would be wrong half the time.
+func (i Image) TagVersion() (major, minor int, ok bool) {
+	parts := strings.Split(strings.TrimSpace(i.Tag), ".")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, ok = atoiPrefix(parts[0])
+	if !ok {
+		return 0, 0, false
+	}
+	minor, ok = atoiPrefix(parts[1])
+	if !ok {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+// AtLeast reports whether the image tag names a broker release at or above
+// major.minor. known is false when the tag carries no version to compare.
+func (i Image) AtLeast(major, minor int) (ok, known bool) {
+	haveMajor, haveMinor, known := i.TagVersion()
+	if !known {
+		return false, false
+	}
+	if haveMajor != major {
+		return haveMajor > major, true
+	}
+	return haveMinor >= minor, true
+}
+
+// atoiPrefix parses the digits at the start of s, so a tag component like "0-rc1"
+// still yields 0. It fails when there are no leading digits at all.
+func atoiPrefix(s string) (int, bool) {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s[:end])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // Admin holds broker credentials. Passwords are secrets: never logged/echoed.
@@ -143,10 +198,14 @@ type Admin struct {
 
 // TLS is the broker server certificate + trusted CAs.
 type TLS struct {
-	Cert         string   `yaml:"cert"`         // SOLBK_TLS_CERT
-	CertKey      string   `yaml:"certKey"`      // SOLBK_TLS_CERTKEY
-	CAs          []string `yaml:"cas"`          // SOLBK_TLS_CERTCAS
-	ServerSecret string   `yaml:"serverSecret"` // SOLBK_SVR_SECRET (k8s; enables the TLS secret)
+	Cert    string   `yaml:"cert"`    // SOLBK_TLS_CERT
+	CertKey string   `yaml:"certKey"` // SOLBK_TLS_CERTKEY
+	CAs     []string `yaml:"cas"`     // SOLBK_TLS_CERTCAS
+	// CertPassphrase unlocks an encrypted server-certificate key. It is a secret,
+	// so on containers it is externalized like the admin password rather than
+	// written into the deploy artifact. Empty means the key is not encrypted.
+	CertPassphrase string `yaml:"certPassphrase"`
+	ServerSecret   string `yaml:"serverSecret"` // SOLBK_SVR_SECRET (k8s; enables the TLS secret)
 }
 
 // Scaling is the superset of broker scaling knobs; each platform reads the
@@ -184,6 +243,8 @@ type K8sConfig struct {
 	Operator          Operator          `yaml:"operator"`
 	SecurityContext   PodSecurity       `yaml:"securityContext"`   // -> spec.securityContext
 	ContainerSecurity ContainerSecurity `yaml:"containerSecurity"` // -> spec.brokerContainerSecurity
+	PodAnnotations    map[string]string `yaml:"podAnnotations"`    // -> spec.podAnnotations
+	PodLabels         map[string]string `yaml:"podLabels"`         // -> spec.podLabels
 	Placement         Placement         `yaml:"placement"`
 	LoadBalancer      LoadBalancer      `yaml:"loadBalancer"`
 	Ports             []string          `yaml:"ports"`       // SOLBK_PORTS "name=port[/proto]"
@@ -258,6 +319,50 @@ type Placement struct {
 	LabelsMonitor      []string `yaml:"labelsMonitor"`      // SOLBK_NODELABEL_MON
 	AntiAffinityNS     []string `yaml:"antiAffinityNamespaces"` // SOLBK_ANTIAFFINITY_NS
 	AntiAffinityWeight int      `yaml:"antiAffinityWeight"`     // SOLBK_ANTIAFFINITY_WT
+
+	// The blocks below are additive: unset, the rendered CR is exactly what
+	// AntiAffinityNS/Weight and the label/toleration lists above produce, so an
+	// existing env file is unaffected. They apply to every broker role -- per-role
+	// affinity is not modelled, matching how AntiAffinityNS already behaves.
+	NodeAffinity    NodeAffinity      `yaml:"nodeAffinity"`
+	PodAffinity     []PodAffinityTerm `yaml:"podAffinity"`
+	PodAntiAffinity []PodAffinityTerm `yaml:"podAntiAffinity"`
+}
+
+// NodeAffinity mirrors the Kubernetes nodeAffinity subset the operator passes
+// through, rather than inventing a parallel spelling. Deliberately not modelled:
+// matchFields, and OR-ed nodeSelectorTerms -- Required is one ANDed term.
+type NodeAffinity struct {
+	Preferred []WeightedNodeTerm `yaml:"preferred"`
+	Required  []NodeMatchExpr    `yaml:"required"`
+}
+
+// Configured reports whether either list was set, which is what decides if a
+// nodeAffinity block reaches the CR at all.
+func (n NodeAffinity) Configured() bool { return len(n.Preferred) > 0 || len(n.Required) > 0 }
+
+// WeightedNodeTerm is one weighted preference: every expression in Match must hold
+// for the weight to apply.
+type WeightedNodeTerm struct {
+	Weight int             `yaml:"weight"` // 1-100
+	Match  []NodeMatchExpr `yaml:"match"`
+}
+
+// NodeMatchExpr is a node-label match expression.
+type NodeMatchExpr struct {
+	Key      string   `yaml:"key"`
+	Operator string   `yaml:"operator"` // In|NotIn|Exists|DoesNotExist|Gt|Lt
+	Values   []string `yaml:"values"`   // required by In/NotIn/Gt/Lt
+}
+
+// PodAffinityTerm is one pod (anti-)affinity rule. Weight 0 makes it a required
+// term; 1-100 makes it a preference with that weight. The pod selector is
+// matchLabels only -- matchExpressions there is not modelled.
+type PodAffinityTerm struct {
+	Weight      int               `yaml:"weight"`
+	TopologyKey string            `yaml:"topologyKey"`
+	MatchLabels map[string]string `yaml:"matchLabels"`
+	Namespaces  []string          `yaml:"namespaces"`
 }
 
 // LoadBalancer holds MetalLB / service-LB options.
@@ -275,8 +380,16 @@ type DomainCerts struct {
 
 // DockerConfig holds docker-only deployment options plus the shared container block.
 type DockerConfig struct {
-	Runtime     Command   `yaml:"runtime"`     // CONTAINER_RUNTIME override (default: docker)
-	Mode        string    `yaml:"mode"`        // compose|run
+	Runtime Command `yaml:"runtime"` // CONTAINER_RUNTIME override (default: docker)
+	// Mode is retained so an env file carrying the removed "run" value fails with
+	// an actionable error instead of a bare unknown-field decode error. Only
+	// "compose" is accepted: docker always deploys through compose.
+	Mode string `yaml:"mode"` // compose
+	// Compose is the compose invocation, whose form differs per host: the modern
+	// plugin is a runtime subcommand (`docker compose`), the standalone v1 binary
+	// is its own executable (`docker-compose`). Unset defaults to the configured
+	// runtime plus `compose`; this tool appends every argument after it.
+	Compose     Command   `yaml:"compose"`
 	ComposeFile string    `yaml:"composeFile"` // DOCKER_COMPOSE_FILE
 	Network     Network   `yaml:"network"`
 	Container   Container `yaml:"container"`
@@ -303,12 +416,45 @@ type Network struct {
 
 // Container is the shared docker/podman container runtime settings.
 type Container struct {
-	Name    string  `yaml:"name"`    // CONTAINER_NAME
-	RunUser string  `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
-	ShmSize string  `yaml:"shmSize"` // SOLBK_SHM_SIZE
-	DataDir string  `yaml:"dataDir"` // SOLBK_DATA_DIR (host bind mount)
-	Ulimits Ulimits `yaml:"ulimits"`
+	Name        string      `yaml:"name"`    // CONTAINER_NAME
+	RunUser     string      `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
+	ShmSize     string      `yaml:"shmSize"` // SOLBK_SHM_SIZE
+	DataDir     string      `yaml:"dataDir"` // SOLBK_DATA_DIR (host bind mount)
+	Ulimits     Ulimits     `yaml:"ulimits"`
+	HealthCheck HealthCheck `yaml:"healthCheck"`
 }
+
+// HealthCheck is the container engine's own probe against the broker, which
+// upgrades `docker ps`/`compose ps` and podman's auto-restart from "the process is
+// up" to "the broker is ready". It is opt-in; leaving the whole block out renders
+// the artifacts unchanged.
+//
+// Enabled with no Cmd uses the built-in readiness probe (the broker's own
+// /health-check/readiness endpoint). That endpoint only exists from
+// HealthCheckMinMajor.HealthCheckMinMinor onward, so Validate refuses to enable it
+// against an older -- or an unidentifiable -- image tag: an always-failing probe
+// would mark the container permanently unhealthy, which under podman's
+// auto-restart becomes a restart loop. Setting Cmd explicitly is the escape hatch
+// and skips the version gate, since the probe is then the operator's own choice.
+type HealthCheck struct {
+	Enabled bool `yaml:"enabled"`
+	// Cmd is the probe argv, run inside the container. Empty means the built-in
+	// readiness probe. The quadlet form is a command line rather than an argv, so a
+	// token containing a space is not representable there -- wrap such a probe in a
+	// script instead.
+	Cmd         []string `yaml:"cmd"`
+	Interval    string   `yaml:"interval"`
+	Timeout     string   `yaml:"timeout"`
+	Retries     int      `yaml:"retries"`
+	StartPeriod string   `yaml:"startPeriod"`
+}
+
+// The first broker release exposing /health-check/readiness, which the built-in
+// probe depends on.
+const (
+	HealthCheckMinMajor = 10
+	HealthCheckMinMinor = 26
+)
 
 // Ulimits are the container resource limits (soft:hard where applicable).
 type Ulimits struct {

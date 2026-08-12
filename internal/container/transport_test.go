@@ -30,6 +30,10 @@ type capRunner struct {
 	// drive the manager's error-wrap branches for a specific command. nil (the
 	// default) always succeeds, leaving existing tests unchanged.
 	fail func(name string, args []string) error
+	// outFail is the same hook for the Output family. It exists because outErr
+	// fails every captured command, which cannot single out one of two probes in
+	// the same call (the engine version probe vs the compose one).
+	outFail func(name string, args []string) error
 }
 
 func (r *capRunner) Run(_ context.Context, name string, args ...string) error {
@@ -52,11 +56,20 @@ func (r *capRunner) failFor(name string, args []string) error {
 }
 func (r *capRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, capCall{"Output", name, args, ""})
-	return r.out, r.outErr
+	return r.out, r.outFailFor(name, args)
 }
 func (r *capRunner) OutputInput(_ context.Context, in []byte, name string, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, capCall{"OutputInput", name, args, string(in)})
-	return r.out, r.outErr
+	return r.out, r.outFailFor(name, args)
+}
+
+// outFailFor prefers the targeted outFail hook, falling back to the blanket
+// outErr so every existing caller keeps its behaviour.
+func (r *capRunner) outFailFor(name string, args []string) error {
+	if r.outFail != nil {
+		return r.outFail(name, args)
+	}
+	return r.outErr
 }
 func (r *capRunner) last() capCall {
 	if len(r.calls) == 0 {

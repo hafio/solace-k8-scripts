@@ -1,6 +1,7 @@
 package container
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -43,6 +45,14 @@ type Manager struct {
 	// EnvPath is the resolved env-file path, so PrepHost can write a generated PSK
 	// back into it (the analog of 002-host-prep.sh's sed rewrite).
 	EnvPath string
+
+	// Restart pre-approves bouncing an already-running broker when the deploy
+	// artifact changed (the --restart flag).
+	Restart bool
+	// Confirm asks the operator a yes/no question. nil declines, which is what a
+	// non-interactive run must do: re-deploying should never bounce a running
+	// broker unattended. The CLI wires it to the same prompt style as delete.
+	Confirm func(question string) bool
 }
 
 // NewManager builds a container host Manager over the given runner, config and
@@ -97,6 +107,27 @@ func (m *Manager) output(ctx context.Context, args ...string) ([]byte, error) {
 	return m.R.Output(ctx, r.Name(), r.Args(args...)...)
 }
 
+// composeCmd is the compose invocation (docker only): whatever docker.compose
+// names -- a host with only the standalone v1 binary sets it to `docker-compose`
+// -- defaulting to the runtime's own `compose` subcommand. ApplyDefaults fills it
+// too, so the fallback here only matters for a hand-built config (the same
+// arrangement composeFile uses).
+func (m *Manager) composeCmd() config.Command {
+	if len(m.Cfg.Docker.Compose) > 0 {
+		return m.Cfg.Docker.Compose
+	}
+	rt := m.runtime()
+	compose := make(config.Command, 0, len(rt)+1)
+	compose = append(compose, rt...)
+	return append(compose, "compose")
+}
+
+// compose runs a compose subcommand (`<compose> args...`) through the Runner.
+func (m *Manager) compose(ctx context.Context, args ...string) error {
+	c := m.composeCmd()
+	return m.R.Run(ctx, c.Name(), c.Args(args...)...)
+}
+
 // --- Check ------------------------------------------------------------------
 
 // Check prints the resolved container configuration, probes the runtime, and
@@ -125,6 +156,10 @@ func (m *Manager) CheckEnv() {
 	fmt.Fprintf(w, "  container      : name=%s runtime=%s\n", cb.Name, cfg.ContainerRuntime(m.P))
 	fmt.Fprintf(w, "  redundancy     : %s\n", mode)
 	fmt.Fprintf(w, "  image          : %s\n", orNone(cfg.Image.Ref()))
+	if cfg.Image.User != "" || cfg.Image.Pass != "" {
+		fmt.Fprintf(w, "  registry login : user=%s password=%s (prep logs in with `%s login`)\n",
+			orNone(cfg.Image.User), setOrMissing(cfg.Image.Pass), cfg.ContainerRuntime(m.P).Name())
+	}
 	fmt.Fprintf(w, "  data dir       : %s\n", cb.DataDir)
 	fmt.Fprintf(w, "  run user       : %s\n", cb.RunUser)
 	if nw.Mode == "host" {
@@ -141,8 +176,9 @@ func (m *Manager) CheckEnv() {
 	if m.P == config.Podman {
 		fmt.Fprintf(w, "  podman         : rootless=%t quadletDir=%s\n", cfg.Podman.Rootless, cfg.Podman.QuadletDir)
 	} else {
-		fmt.Fprintf(w, "  docker         : mode=%s composeFile=%s\n", cfg.Docker.Mode, m.composeFile())
+		fmt.Fprintf(w, "  docker         : compose=%s composeFile=%s\n", m.composeCmd(), m.composeFile())
 	}
+	fmt.Fprintf(w, "  secrets        : %s\n", secretSummary(m.P, render.ContainerSecrets(cfg)))
 	if cfg.RedundancyEnabled() {
 		n := cfg.Nodes
 		fmt.Fprintf(w, "  primary        : %s (%s)\n", n.Primary.Name, orNone(n.Primary.IP))
@@ -155,10 +191,19 @@ func (m *Manager) CheckEnv() {
 }
 
 // Reachable probes `<runtime> version` so a missing/stopped engine fails with an
-// actionable error before any deploy step runs. Under --dry-run it only echoes.
+// actionable error before any deploy step runs. On docker it also probes the
+// configured compose command, since every deploy goes through it and the plugin
+// is a separate install from the engine. Under --dry-run it only echoes.
 func (m *Manager) Reachable(ctx context.Context) error {
 	if _, err := m.output(ctx, "version"); err != nil {
 		return fmt.Errorf("cannot reach the %s runtime %q (is it installed and running?): %w", platformTitle(m.P), m.runtime(), err)
+	}
+	if m.P == config.Docker {
+		c := m.composeCmd()
+		if _, err := m.R.Output(ctx, c.Name(), c.Args("version")...); err != nil {
+			return fmt.Errorf("cannot run the compose command %q (install the docker compose plugin, "+
+				"or set docker.compose to this host's standalone 'docker-compose' binary): %w", c, err)
+		}
 	}
 	return nil
 }
@@ -231,7 +276,36 @@ func (m *Manager) PrepHost(ctx context.Context) error {
 	if err := m.checkDNS(ctx); err != nil {
 		return err
 	}
+	if err := m.registryLogin(ctx); err != nil {
+		return err
+	}
 	return m.prepPSK()
+}
+
+// registryLogin authenticates this host to the image registry when credentials are
+// configured. Containers have no analog of the k8s image-pull Secret, so without
+// this the credentials in the env file did nothing here and a private-registry pull
+// simply failed unauthenticated. The password is fed on stdin, so it never reaches
+// an argv or the --dry-run echo (§3).
+func (m *Manager) registryLogin(ctx context.Context) error {
+	user, pass := m.Cfg.Image.User, m.Cfg.Image.Pass
+	if user == "" && pass == "" {
+		return nil
+	}
+	if user == "" || pass == "" {
+		return fmt.Errorf("image.user and image.pass must both be set to log in to the registry (one of them is empty)")
+	}
+	registry := m.Cfg.Image.Registry
+	args := []string{"login", "--username", user, "--password-stdin"}
+	if registry != "" {
+		args = append(args, registry)
+	}
+	m.logf("Logging in to registry %s as %s", orNone(registry), user)
+	r := m.runtime()
+	if err := m.R.RunInput(ctx, []byte(pass), r.Name(), r.Args(args...)...); err != nil {
+		return fmt.Errorf("%s login to registry %s failed: %w", platformTitle(m.P), orNone(registry), err)
+	}
+	return nil
 }
 
 // prepPSK ensures a redundancy PSK exists (HA only). If nodes.psk is already set
@@ -288,51 +362,210 @@ func (m *Manager) writePSK(psk string) error {
 // --- Deploy -----------------------------------------------------------------
 
 // Deploy renders and starts the broker container for role's identity. Podman
-// uses a systemd quadlet unit; docker uses compose (default) or a bare run.
+// uses a systemd quadlet unit; docker uses a compose file. The broker's secret
+// settings are externalized first, since the rendered artifact only references
+// them by name.
 func (m *Manager) Deploy(ctx context.Context, role config.Role) error {
 	id := m.Cfg.ResolveNode(role)
+	if m.P == config.Podman {
+		if err := m.checkPodmanEUID(); err != nil {
+			return err
+		}
+	}
+	if err := m.prepareSecrets(ctx); err != nil {
+		return err
+	}
 	if m.P == config.Podman {
 		return m.deployPodman(ctx, id)
 	}
 	return m.deployDocker(ctx, id)
 }
 
+// prepareSecrets externalizes the broker's secret settings so the deploy artifact
+// can reference them instead of carrying them: podman loads each into its own
+// secret store, docker writes the 0600 files backing its compose secrets. An
+// empty value fails loud here rather than deploying a broker with no password --
+// except under --dry-run, which must stay previewable before `prep host` has
+// generated the HA pre-shared key.
+func (m *Manager) prepareSecrets(ctx context.Context) error {
+	secrets := render.ContainerSecrets(m.Cfg)
+	// Skipped under --dry-run so a preview stays possible before `prep host` has
+	// generated the PSK; `--gen-secrets-only` runs the same check, since the script
+	// it prints is meant to be executed.
+	if !m.isDryRun() {
+		if err := render.SecretPreflight(m.Cfg, m.P); err != nil {
+			return err
+		}
+	}
+	if m.P == config.Podman {
+		return m.createPodmanSecrets(ctx, secrets)
+	}
+	return m.writeDockerSecrets(secrets)
+}
+
+// createPodmanSecrets loads each secret into podman's secret store, feeding the
+// value on stdin so it never reaches an argv or the --dry-run echo (§3).
+// --replace makes a redeploy with a rotated value idempotent.
+func (m *Manager) createPodmanSecrets(ctx context.Context, secrets []render.ContainerSecret) error {
+	r := m.runtime()
+	for _, s := range secrets {
+		if err := m.R.RunInput(ctx, []byte(s.Value), r.Name(),
+			r.Args("secret", "create", "--replace", s.Name, "-")...); err != nil {
+			return fmt.Errorf("create podman secret %q from %s: %w", s.Name, s.ConfigKey, err)
+		}
+	}
+	return nil
+}
+
+// writeDockerSecrets writes the file-backed sources of the compose secrets, 0600
+// inside a 0700 directory beside the compose file (the path the rendered compose
+// file points at). Skipped under --dry-run, which must not write files or echo
+// secret bytes.
+func (m *Manager) writeDockerSecrets(secrets []render.ContainerSecret) error {
+	dir := m.secretsDir()
+	if m.isDryRun() {
+		m.logf("[Info] would write %d secret file(s) to %s (skipped under --dry-run).", len(secrets), dir)
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create secrets dir %q: %w", dir, err)
+	}
+	for _, s := range secrets {
+		path := filepath.Join(dir, s.Name)
+		if err := os.WriteFile(path, []byte(s.Value), 0o600); err != nil {
+			return fmt.Errorf("write secret file %q: %w", path, err)
+		}
+	}
+	m.logf("[ OK ] wrote %d secret file(s) to %s", len(secrets), dir)
+	return nil
+}
+
+// secretsDir is where docker's compose-secret sources live: beside the compose
+// file, so the rendered `file: ./<dir>/<name>` reference resolves relative to it.
+func (m *Manager) secretsDir() string {
+	return filepath.Join(filepath.Dir(m.composeFile()), render.SecretsDirName)
+}
+
+// writeArtifact writes a rendered deploy artifact, reporting whether it differs
+// from what was already on disk. An unchanged artifact is not rewritten, which is
+// what lets Deploy tell "nothing to do" apart from "the running broker is now
+// stale and needs a bounce". Under --dry-run nothing is written and the artifact
+// counts as changed, so the preview shows the work a real run would do.
+func (m *Manager) writeArtifact(path string, body []byte, what string, dirMode os.FileMode) (bool, error) {
+	if m.isDryRun() {
+		m.logf("[Info] would write %s %s (skipped under --dry-run).", what, path)
+		return true, nil
+	}
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, body) {
+		m.logf("[Info] %s %s is already up to date.", what, path)
+		return false, nil
+	}
+	if dirMode != 0 {
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, dirMode); err != nil {
+			return false, fmt.Errorf("create %s dir %q: %w", what, dir, err)
+		}
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		return false, fmt.Errorf("write %s %q: %w", what, path, err)
+	}
+	m.logf("[ OK ] wrote %s %s", what, path)
+	return true, nil
+}
+
+// approveRestart decides whether an already-running broker may be bounced to pick
+// up a changed artifact. --restart pre-approves it; otherwise the Confirm seam
+// asks. A non-interactive run without --restart declines, so a scripted deploy
+// leaves the new artifact in place and says so rather than dropping messaging
+// traffic on its own. Deliberately not --yes: bouncing a live broker is its own
+// decision, the same separation --purge has from --yes.
+func (m *Manager) approveRestart(what string) bool {
+	if m.Restart {
+		return true
+	}
+	if m.Confirm == nil {
+		return false
+	}
+	return m.Confirm(fmt.Sprintf("Restart %s now to apply the change?", what))
+}
+
+// staleWarning tells the operator the artifact is applied but the running broker
+// is still on the old one, and how to finish the job.
+func (m *Manager) staleWarning(what string) {
+	m.logf("[WARN] %s is applied, but the running broker still uses the previous one.", what)
+	m.logf("[WARN] re-run with --restart (or restart it yourself) to pick up the change.")
+}
+
 func (m *Manager) deployPodman(ctx context.Context, id config.NodeIdentity) error {
-	if err := m.checkPodmanEUID(); err != nil {
+	unit := filepath.ToSlash(filepath.Join(m.Cfg.Podman.QuadletDir, m.name()+".container"))
+	svc := m.name() + ".service"
+	changed, err := m.writeArtifact(unit, render.Quadlet(m.Cfg, id), "quadlet unit", 0o755)
+	if err != nil {
 		return err
 	}
-	unit := filepath.ToSlash(filepath.Join(m.Cfg.Podman.QuadletDir, m.name()+".container"))
-	if m.isDryRun() {
-		m.logf("[Info] would write quadlet unit %s (skipped under --dry-run).", unit)
-	} else {
-		if err := os.MkdirAll(m.Cfg.Podman.QuadletDir, 0o755); err != nil {
-			return fmt.Errorf("create quadlet dir %q: %w", m.Cfg.Podman.QuadletDir, err)
-		}
-		if err := os.WriteFile(unit, render.Quadlet(m.Cfg, id), 0o600); err != nil {
-			return fmt.Errorf("write quadlet unit %q: %w", unit, err)
-		}
-		m.logf("[ OK ] wrote quadlet unit %s", unit)
-	}
+	// daemon-reload runs either way: a unit that was already correct may still be
+	// unknown to systemd (a fresh host, or a manual removal).
 	if err := m.systemctl(ctx, "daemon-reload"); err != nil {
 		return err
 	}
-	return m.systemctl(ctx, "start", m.name()+".service")
+	if !m.serviceActive(ctx) {
+		return m.systemctl(ctx, "start", svc)
+	}
+	// `systemctl start` on an active unit is a no-op, so an already-running broker
+	// would silently keep the old image. Restart is the only way to apply a change.
+	if !changed {
+		m.logf("[Info] %s is already active on this unit -- nothing to do.", svc)
+		return nil
+	}
+	if !m.approveRestart(svc) {
+		m.staleWarning("the quadlet unit")
+		return nil
+	}
+	return m.systemctl(ctx, "restart", svc)
 }
 
 func (m *Manager) deployDocker(ctx context.Context, id config.NodeIdentity) error {
-	if m.Cfg.Docker.Mode == "run" {
-		return m.run(ctx, render.RunArgs(m.Cfg, id)...)
-	}
 	file := m.composeFile()
-	if m.isDryRun() {
-		m.logf("[Info] would write compose file %s (skipped under --dry-run).", file)
-	} else {
-		if err := os.WriteFile(file, render.Compose(m.Cfg, id), 0o600); err != nil {
-			return fmt.Errorf("write compose file %q: %w", file, err)
-		}
-		m.logf("[ OK ] wrote compose file %s", file)
+	changed, err := m.writeArtifact(file, render.Compose(m.Cfg, id), "compose file", 0)
+	if err != nil {
+		return err
 	}
-	return m.run(ctx, "compose", "-f", file, "up", "-d")
+	if !m.containerRunning(ctx) {
+		return m.compose(ctx, "-f", file, "up", "-d")
+	}
+	// `compose up -d` recreates the container when the file changed, which bounces
+	// a running broker -- the same hazard podman has, so it takes the same consent.
+	if !changed {
+		m.logf("[Info] container %s is already running on this compose file -- nothing to do.", m.name())
+		return nil
+	}
+	if !m.approveRestart("container " + m.name()) {
+		m.staleWarning("the compose file")
+		return nil
+	}
+	return m.compose(ctx, "-f", file, "up", "-d")
+}
+
+// serviceActive reports whether this host's broker unit is already active, so
+// Deploy can restart it instead of issuing a no-op start. Under --dry-run no host
+// state is probed (matching checkPodmanEUID/checkDNS) and the answer is "not
+// active", so the preview shows the plain start path.
+func (m *Manager) serviceActive(ctx context.Context) bool {
+	if m.isDryRun() {
+		return false
+	}
+	out, err := m.systemctlOutput(ctx, "is-active", m.name()+".service")
+	return err == nil && strings.TrimSpace(string(out)) == "active"
+}
+
+// containerRunning reports whether this host's broker container is up. Same
+// dry-run rule as serviceActive.
+func (m *Manager) containerRunning(ctx context.Context) bool {
+	if m.isDryRun() {
+		return false
+	}
+	out, err := m.output(ctx, "ps", "--quiet", "--filter", "name="+m.name(), "--filter", "status=running")
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 // --- Delete -----------------------------------------------------------------
@@ -373,12 +606,9 @@ func (m *Manager) deletePodman(ctx context.Context) error {
 }
 
 func (m *Manager) deleteDocker(ctx context.Context) error {
-	if m.Cfg.Docker.Mode == "run" {
-		return m.stopAndRemove(ctx)
-	}
 	file := m.composeFile()
 	if m.isDryRun() || fileExists(file) {
-		return m.run(ctx, "compose", "-f", file, "down")
+		return m.compose(ctx, "-f", file, "down")
 	}
 	// No compose file on disk: fall back to stop/rm by container name.
 	return m.stopAndRemove(ctx)
@@ -411,20 +641,83 @@ func (m *Manager) Status(ctx context.Context) error {
 		}
 		return m.run(ctx, "ps", "--all", "--filter", "name="+m.name())
 	}
-	if m.Cfg.Docker.Mode != "run" {
-		file := m.composeFile()
-		if m.isDryRun() || fileExists(file) {
-			if err := m.run(ctx, "compose", "-f", file, "ps"); err != nil {
-				m.logf("[WARN] compose ps failed: %v", err)
-			}
+	file := m.composeFile()
+	if m.isDryRun() || fileExists(file) {
+		if err := m.compose(ctx, "-f", file, "ps"); err != nil {
+			m.logf("[WARN] compose ps failed: %v", err)
 		}
 	}
 	return m.run(ctx, "ps", "--all", "--filter", "name="+m.name())
 }
 
+// Describe prints detailed inspection output for this host's broker, the container
+// analog of `kubectl describe pod`: `<runtime> inspect` carries the health state,
+// restart count, exit reason, mounts and resource limits that Status's one-line
+// listing does not. Podman additionally shows the installed unit definition, which
+// answers "what did we actually deploy" -- the summary is already in Status.
+func (m *Manager) Describe(ctx context.Context) error {
+	if m.P == config.Podman {
+		svc := m.name() + ".service"
+		if err := m.systemctl(ctx, "cat", svc); err != nil {
+			m.logf("[WARN] systemctl cat %s failed (unit not installed?): %v", svc, err)
+		}
+	}
+	return m.run(ctx, "inspect", m.name())
+}
+
 // Logs streams the broker container's logs (`<runtime> logs -f <name>`).
 func (m *Manager) Logs(ctx context.Context) error {
 	return m.run(ctx, "logs", "-f", m.name())
+}
+
+// CopyFrom copies files out of the broker container into the working directory,
+// mirroring the k8s verb: each file is attempted, failures are reported per file,
+// and the command exits non-zero if any failed.
+func (m *Manager) CopyFrom(ctx context.Context, files []string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files specified to copy from the broker")
+	}
+	t := NewTransport(m.R, m.Cfg, m.P)
+	var failed int
+	for _, f := range files {
+		local := path.Base(f)
+		m.logf("copying %s from container %s", f, m.name())
+		if err := t.Download(ctx, config.Primary, f, local); err != nil {
+			fmt.Fprintf(m.out(), "  [ERROR] %s: %v\n", f, err)
+			failed++
+			continue
+		}
+		fmt.Fprintf(m.out(), "  [ OK ] %s -> %s\n", f, local)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d file(s) failed to copy from the broker", failed, len(files))
+	}
+	return nil
+}
+
+// CopyInto copies local files into destDir inside the broker container.
+func (m *Manager) CopyInto(ctx context.Context, files []string, destDir string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files specified to copy into the broker")
+	}
+	if destDir == "" {
+		destDir = "."
+	}
+	t := NewTransport(m.R, m.Cfg, m.P)
+	var failed int
+	for _, f := range files {
+		m.logf("copying %s into container %s:%s", f, m.name(), destDir)
+		if err := t.UploadFile(ctx, config.Primary, f, destDir); err != nil {
+			fmt.Fprintf(m.out(), "  [ERROR] %s: %v\n", f, err)
+			failed++
+			continue
+		}
+		fmt.Fprintf(m.out(), "  [ OK ] %s -> %s:%s\n", f, m.name(), destDir)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d file(s) failed to copy into the broker", failed, len(files))
+	}
+	return nil
 }
 
 // CLI opens an interactive Solace CLI session inside the container.
@@ -444,10 +737,22 @@ func (m *Manager) Shell(ctx context.Context) error {
 // systemctl runs `systemctl [--user] args...` through the Runner, honoring the
 // rootless (`--user`) vs rootful mode derived in config.
 func (m *Manager) systemctl(ctx context.Context, args ...string) error {
+	return m.R.Run(ctx, "systemctl", m.systemctlArgs(args)...)
+}
+
+// systemctlOutput captures a systemctl subcommand's stdout, for the state probes
+// (`is-active`) whose answer picks the next step rather than being shown.
+func (m *Manager) systemctlOutput(ctx context.Context, args ...string) ([]byte, error) {
+	return m.R.Output(ctx, "systemctl", m.systemctlArgs(args)...)
+}
+
+// systemctlArgs prepends the `--user` token when the config is rootless, honoring
+// the rootless vs rootful mode derived in config.
+func (m *Manager) systemctlArgs(args []string) []string {
 	if u := m.Cfg.Podman.SystemctlUser; u != "" {
-		args = append([]string{u}, args...)
+		return append([]string{u}, args...)
 	}
-	return m.R.Run(ctx, "systemctl", args...)
+	return args
 }
 
 // checkPodmanEUID enforces the rootless/rootful invariant before a real deploy:
@@ -541,4 +846,18 @@ func setOrMissing(s string) string {
 		return "MISSING"
 	}
 	return "set"
+}
+
+// secretSummary reports the externalized secrets by name, whether each value is
+// present, and the mechanism this platform stores them in. Values never appear.
+func secretSummary(p config.Platform, secrets []render.ContainerSecret) string {
+	store := "podman secret store"
+	if p == config.Docker {
+		store = "compose secret files"
+	}
+	parts := make([]string, 0, len(secrets))
+	for _, s := range secrets {
+		parts = append(parts, s.Name+"="+setOrMissing(s.Value))
+	}
+	return fmt.Sprintf("%s (%s)", strings.Join(parts, " "), store)
 }

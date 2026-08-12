@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"solace/internal/config"
 	"solace/internal/engine"
+	"solace/internal/render"
 )
 
 // These tests exercise the container host Manager over two runners: engine.Echo
@@ -79,6 +81,23 @@ func hasCall(rr *capRunner, name string, args []string) bool {
 		}
 	}
 	return false
+}
+
+// assertMode checks the permission bits of a file the manager wrote. Skipped on
+// Windows, whose filesystem carries no POSIX mode -- the check matters on the
+// hosts that actually run a broker.
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s mode = %#o, want %#o", path, got, want)
+	}
 }
 
 // withUser prepends the systemctl --user token when the config is rootless.
@@ -229,15 +248,466 @@ func TestManagerDeployDockerComposeWritesFile(t *testing.T) {
 	}
 }
 
-func TestManagerDeployDockerRun(t *testing.T) {
+// TestManagerDockerComposeCommandOverride covers the standalone-binary form: a
+// host without the compose plugin sets docker.compose, and every compose call has
+// to go through it rather than the runtime.
+func TestManagerDockerComposeCommandOverride(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.Mode = "run"
-	m, buf := newEchoMgr(cfg, config.Docker)
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	cfg.Docker.Compose = config.Command{"docker-compose"}
+	m, rr, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	if !strings.Contains(buf.String(), "+ docker run") {
-		t.Errorf("run-mode Deploy should `docker run`:\n%s", buf.String())
+	if !hasCall(rr, "docker-compose", []string{"-f", cfg.Docker.ComposeFile, "up", "-d"}) {
+		t.Errorf("Deploy should use the configured compose command:\n%+v", rr.calls)
+	}
+}
+
+// TestManagerDockerCheckProbesCompose pins the compose probe: the plugin is a
+// separate install from the engine, so a reachable docker with no compose must
+// fail at check time rather than at deploy time.
+func TestManagerDockerCheckProbesCompose(t *testing.T) {
+	m, buf := newEchoMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	if err := m.Check(context.Background()); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !strings.Contains(buf.String(), "+ docker compose version") {
+		t.Errorf("docker Check should probe the compose command:\n%s", buf.String())
+	}
+}
+
+func TestManagerDockerCheckFailsWhenComposeMissing(t *testing.T) {
+	m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	// Fail only the compose probe, so the engine still looks reachable and the
+	// error has to be the compose-specific one.
+	rr.outFail = failOn("compose")
+	err := m.Check(context.Background())
+	if err == nil {
+		t.Fatal("Check must fail when the compose command cannot run")
+	}
+	if !strings.Contains(err.Error(), "docker.compose") {
+		t.Errorf("error should point at the docker.compose override, got: %v", err)
+	}
+}
+
+// --- describe / copy parity -------------------------------------------------
+
+// TestManagerDescribe covers the container analog of `kubectl describe pod`:
+// `<runtime> inspect` on both platforms, plus the installed unit on podman (the
+// unit's summary is already in Status, so `cat` answers a different question).
+func TestManagerDescribe(t *testing.T) {
+	t.Run("docker", func(t *testing.T) {
+		m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+		if err := m.Describe(context.Background()); err != nil {
+			t.Fatalf("Describe: %v", err)
+		}
+		if !hasCall(rr, "docker", []string{"inspect", "solace"}) {
+			t.Errorf("Describe should inspect the container:\n%+v", rr.calls)
+		}
+	})
+	t.Run("podman also shows the unit", func(t *testing.T) {
+		cfg := ctrCfg(config.Podman, "no")
+		m, rr, _ := newCapMgr(cfg, config.Podman)
+		if err := m.Describe(context.Background()); err != nil {
+			t.Fatalf("Describe: %v", err)
+		}
+		if !hasCall(rr, "systemctl", withUser(cfg, "cat", "sol-pod.service")) {
+			t.Errorf("podman Describe should show the installed unit:\n%+v", rr.calls)
+		}
+		if !hasCall(rr, "podman", []string{"inspect", "sol-pod"}) {
+			t.Errorf("podman Describe should inspect the container:\n%+v", rr.calls)
+		}
+	})
+	t.Run("a missing unit is tolerated", func(t *testing.T) {
+		m, rr, buf := newCapMgr(ctrCfg(config.Podman, "no"), config.Podman)
+		rr.fail = failOn("cat")
+		if err := m.Describe(context.Background()); err != nil {
+			t.Fatalf("Describe should tolerate an uninstalled unit: %v", err)
+		}
+		if !strings.Contains(buf.String(), "systemctl cat") {
+			t.Errorf("Describe should warn about the missing unit:\n%s", buf.String())
+		}
+	})
+}
+
+// TestManagerCopy covers the copy verbs the container tree previously lacked. The
+// per-file reporting and the non-zero exit on any failure mirror the k8s verbs.
+func TestManagerCopy(t *testing.T) {
+	t.Run("from", func(t *testing.T) {
+		m, rr, buf := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+		if err := m.CopyFrom(context.Background(), []string{"/var/lib/solace/jail/logs/debug.log"}); err != nil {
+			t.Fatalf("CopyFrom: %v", err)
+		}
+		if !hasCall(rr, "docker", []string{"cp", "solace:/var/lib/solace/jail/logs/debug.log", "debug.log"}) {
+			t.Errorf("CopyFrom should cp out of the container:\n%+v", rr.calls)
+		}
+		if !strings.Contains(buf.String(), "[ OK ]") {
+			t.Errorf("CopyFrom should report each file:\n%s", buf.String())
+		}
+	})
+	t.Run("into", func(t *testing.T) {
+		m, rr, _ := newCapMgr(ctrCfg(config.Podman, "no"), config.Podman)
+		if err := m.CopyInto(context.Background(), []string{"setup.cli"}, "/tmp"); err != nil {
+			t.Fatalf("CopyInto: %v", err)
+		}
+		if !hasCall(rr, "podman", []string{"cp", "setup.cli", "sol-pod:/tmp"}) {
+			t.Errorf("CopyInto should cp into the container:\n%+v", rr.calls)
+		}
+	})
+	t.Run("no files is an error", func(t *testing.T) {
+		m, _, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+		if err := m.CopyFrom(context.Background(), nil); err == nil {
+			t.Error("CopyFrom with no files should error")
+		}
+		if err := m.CopyInto(context.Background(), nil, ""); err == nil {
+			t.Error("CopyInto with no files should error")
+		}
+	})
+	t.Run("a failed file makes the command fail", func(t *testing.T) {
+		m, rr, buf := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+		rr.fail = failOn("cp")
+		if err := m.CopyFrom(context.Background(), []string{"a.log", "b.log"}); err == nil {
+			t.Error("CopyFrom should fail when a file could not be copied")
+		}
+		if !strings.Contains(buf.String(), "[ERROR]") {
+			t.Errorf("CopyFrom should report the failing file:\n%s", buf.String())
+		}
+	})
+}
+
+// --- registry login ---------------------------------------------------------
+
+// TestManagerPrepHostRegistryLogin pins the credentials that used to be silently
+// ignored on containers: prep now logs in, with the password on stdin so it never
+// reaches an argv or the dry-run echo.
+func TestManagerPrepHostRegistryLogin(t *testing.T) {
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Image.Registry = "registry.example.com"
+	cfg.Image.User = "repo-user"
+	cfg.Image.Pass = "repo-pass"
+	m, rr, _ := newCapMgr(cfg, config.Docker)
+	if err := m.PrepHost(context.Background()); err != nil {
+		t.Fatalf("PrepHost: %v", err)
+	}
+	want := []string{"login", "--username", "repo-user", "--password-stdin", "registry.example.com"}
+	if !hasCall(rr, "docker", want) {
+		t.Errorf("PrepHost should log in to the registry:\n%+v", rr.calls)
+	}
+	for _, c := range rr.calls {
+		for _, a := range c.args {
+			if strings.Contains(a, "repo-pass") {
+				t.Errorf("the registry password must not reach an argv: %s %v", c.name, c.args)
+			}
+		}
+	}
+}
+
+func TestManagerPrepHostNoLoginWithoutCreds(t *testing.T) {
+	m, rr, _ := newCapMgr(ctrCfg(config.Podman, "no"), config.Podman)
+	if err := m.PrepHost(context.Background()); err != nil {
+		t.Fatalf("PrepHost: %v", err)
+	}
+	for _, c := range rr.calls {
+		if len(c.args) > 0 && c.args[0] == "login" {
+			t.Errorf("no credentials means no login attempt:\n%+v", rr.calls)
+		}
+	}
+}
+
+func TestManagerPrepHostRejectsHalfCredentials(t *testing.T) {
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Image.User = "repo-user" // pass left empty
+	m, _, _ := newCapMgr(cfg, config.Docker)
+	err := m.PrepHost(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "image.user and image.pass") {
+		t.Fatalf("PrepHost err = %v, want the both-or-neither credentials error", err)
+	}
+}
+
+// --- redeploy: compare, then restart only with consent ----------------------
+
+// TestManagerRedeployUnchangedIsNoOp covers the both-platforms "nothing to do"
+// arm: a re-deploy that renders the same artifact against a running broker must
+// not touch it at all.
+func TestManagerRedeployUnchangedIsNoOp(t *testing.T) {
+	t.Run("podman", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := ctrCfg(config.Podman, "no")
+		cfg.Podman.QuadletDir = dir
+		m, rr, buf := newCapMgr(cfg, config.Podman)
+		m.Geteuid = func() int { return -1 }
+		rr.out = []byte("active\n") // the unit is already running
+		if err := os.WriteFile(filepath.Join(dir, "sol-pod.container"),
+			render.Quadlet(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		if hasCall(rr, "systemctl", withUser(cfg, "restart", "sol-pod.service")) {
+			t.Errorf("an unchanged unit must not bounce the broker:\n%+v", rr.calls)
+		}
+		if hasCall(rr, "systemctl", withUser(cfg, "start", "sol-pod.service")) {
+			t.Errorf("an active unit needs no start:\n%+v", rr.calls)
+		}
+		if !strings.Contains(buf.String(), "nothing to do") {
+			t.Errorf("Deploy should report there was nothing to do:\n%s", buf.String())
+		}
+	})
+	t.Run("docker", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := ctrCfg(config.Docker, "no")
+		cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+		if err := os.WriteFile(cfg.Docker.ComposeFile,
+			render.Compose(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m, rr, buf := newCapMgr(cfg, config.Docker)
+		rr.out = []byte("abc123\n") // ps --quiet -> the container is running
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		for _, c := range rr.calls {
+			if len(c.args) > 0 && c.args[len(c.args)-1] == "-d" {
+				t.Errorf("an unchanged compose file must not recreate the container:\n%+v", rr.calls)
+			}
+		}
+		if !strings.Contains(buf.String(), "nothing to do") {
+			t.Errorf("Deploy should report there was nothing to do:\n%s", buf.String())
+		}
+	})
+}
+
+// TestManagerRedeployChangedNeedsConsent is the core of the upgrade fix: a
+// changed artifact against a running broker must not bounce it silently, and
+// --restart is what applies it. Podman's old behaviour was worse than silent --
+// `systemctl start` on an active unit is a no-op, so the broker kept the old
+// image while the command reported success.
+func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
+	setup := func(t *testing.T, p config.Platform) (*config.Config, string) {
+		t.Helper()
+		dir := t.TempDir()
+		cfg := ctrCfg(p, "no")
+		if p == config.Podman {
+			cfg.Podman.QuadletDir = dir
+			// An artifact from an older image tag: the on-disk one differs from what
+			// this config now renders.
+			old := ctrCfg(p, "no")
+			old.Image.Tag = "previous"
+			if err := os.WriteFile(filepath.Join(dir, "sol-pod.container"),
+				render.Quadlet(old, old.ResolveNode(config.Primary)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return cfg, "sol-pod.service"
+		}
+		cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+		old := ctrCfg(p, "no")
+		old.Image.Tag = "previous"
+		old.Docker.ComposeFile = cfg.Docker.ComposeFile
+		if err := os.WriteFile(cfg.Docker.ComposeFile,
+			render.Compose(old, old.ResolveNode(config.Primary)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return cfg, ""
+	}
+
+	t.Run("podman declines without consent", func(t *testing.T) {
+		cfg, svc := setup(t, config.Podman)
+		m, rr, buf := newCapMgr(cfg, config.Podman)
+		m.Geteuid = func() int { return -1 }
+		rr.out = []byte("active\n")
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		if hasCall(rr, "systemctl", withUser(cfg, "restart", svc)) {
+			t.Errorf("no consent means no bounce:\n%+v", rr.calls)
+		}
+		if !strings.Contains(buf.String(), "still uses the previous one") {
+			t.Errorf("Deploy should warn the running broker is now stale:\n%s", buf.String())
+		}
+		if !strings.Contains(buf.String(), "--restart") {
+			t.Errorf("the warning should name the flag that finishes the job:\n%s", buf.String())
+		}
+	})
+	t.Run("podman restarts with --restart", func(t *testing.T) {
+		cfg, svc := setup(t, config.Podman)
+		m, rr, _ := newCapMgr(cfg, config.Podman)
+		m.Geteuid = func() int { return -1 }
+		m.Restart = true
+		rr.out = []byte("active\n")
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		if !hasCall(rr, "systemctl", withUser(cfg, "restart", svc)) {
+			t.Errorf("--restart should restart the active unit:\n%+v", rr.calls)
+		}
+	})
+	t.Run("podman restarts when the prompt is accepted", func(t *testing.T) {
+		cfg, svc := setup(t, config.Podman)
+		m, rr, _ := newCapMgr(cfg, config.Podman)
+		m.Geteuid = func() int { return -1 }
+		asked := ""
+		m.Confirm = func(q string) bool { asked = q; return true }
+		rr.out = []byte("active\n")
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		if !strings.Contains(asked, svc) {
+			t.Errorf("the prompt should name what gets restarted, got %q", asked)
+		}
+		if !hasCall(rr, "systemctl", withUser(cfg, "restart", svc)) {
+			t.Errorf("an accepted prompt should restart:\n%+v", rr.calls)
+		}
+	})
+	t.Run("docker declines without consent", func(t *testing.T) {
+		cfg, _ := setup(t, config.Docker)
+		m, rr, buf := newCapMgr(cfg, config.Docker)
+		rr.out = []byte("abc123\n")
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		for _, c := range rr.calls {
+			if len(c.args) > 0 && c.args[len(c.args)-1] == "-d" {
+				t.Errorf("no consent means no recreate:\n%+v", rr.calls)
+			}
+		}
+		if !strings.Contains(buf.String(), "still uses the previous one") {
+			t.Errorf("Deploy should warn the running broker is now stale:\n%s", buf.String())
+		}
+	})
+	t.Run("docker recreates with --restart", func(t *testing.T) {
+		cfg, _ := setup(t, config.Docker)
+		m, rr, _ := newCapMgr(cfg, config.Docker)
+		m.Restart = true
+		rr.out = []byte("abc123\n")
+		if err := m.Deploy(context.Background(), config.Primary); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		if !hasCall(rr, "docker", []string{"compose", "-f", cfg.Docker.ComposeFile, "up", "-d"}) {
+			t.Errorf("--restart should recreate through compose:\n%+v", rr.calls)
+		}
+	})
+}
+
+// --- secret externalization -------------------------------------------------
+
+func TestManagerDeployDockerWritesSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "yes")
+	cfg.Nodes.PSK = "test-psk"
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	m, _, _ := newCapMgr(cfg, config.Docker)
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	for name, want := range map[string]string{
+		"solace-admin-password": "secret-pass",
+		"solace-redundancy-psk": "test-psk",
+	} {
+		path := filepath.Join(dir, "solace-secrets", name)
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read secret file %s: %v", path, err)
+		}
+		if string(got) != want {
+			t.Errorf("secret %s = %q, want %q", name, got, want)
+		}
+		assertMode(t, path, 0o600)
+	}
+	body, err := os.ReadFile(cfg.Docker.ComposeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMode(t, cfg.Docker.ComposeFile, 0o600)
+	for _, leak := range []string{"secret-pass", "test-psk"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("compose file must reference secrets, not carry %q:\n%s", leak, body)
+		}
+	}
+	if !strings.Contains(string(body), "solace-admin-password") {
+		t.Errorf("compose file should reference the admin-password secret:\n%s", body)
+	}
+}
+
+func TestManagerDeployPodmanCreatesSecrets(t *testing.T) {
+	cfg := ctrCfg(config.Podman, "yes")
+	cfg.Nodes.PSK = "test-psk"
+	cfg.Podman.QuadletDir = t.TempDir()
+	m, rr, _ := newCapMgr(cfg, config.Podman)
+	m.Geteuid = func() int { return -1 }
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	for _, name := range []string{"solace-admin-password", "solace-redundancy-psk"} {
+		if !hasCall(rr, "podman", []string{"secret", "create", "--replace", name, "-"}) {
+			t.Errorf("Deploy should create podman secret %s:\n%+v", name, rr.calls)
+		}
+	}
+	// The values ride stdin, so they must never appear in an argv (§3).
+	for _, c := range rr.calls {
+		for _, a := range c.args {
+			for _, leak := range []string{"secret-pass", "test-psk"} {
+				if strings.Contains(a, leak) {
+					t.Errorf("secret value reached an argv: %s %v", c.name, c.args)
+				}
+			}
+		}
+	}
+	assertMode(t, filepath.Join(cfg.Podman.QuadletDir, "sol-pod.container"), 0o600)
+}
+
+func TestManagerDeployRejectsEmptySecret(t *testing.T) {
+	cfg := ctrCfg(config.Docker, "yes") // HA -> the PSK secret is required too
+	cfg.Nodes.PSK = ""
+	cfg.Docker.ComposeFile = filepath.Join(t.TempDir(), "compose.yml")
+	m, _, _ := newCapMgr(cfg, config.Docker)
+	err := m.Deploy(context.Background(), config.Primary)
+	if err == nil {
+		t.Fatal("Deploy must fail loud when a required secret is empty")
+	}
+	if !strings.Contains(err.Error(), "nodes.psk") || !strings.Contains(err.Error(), "prep host") {
+		t.Errorf("error should name the field and the fix, got: %v", err)
+	}
+}
+
+func TestManagerDeployDryRunCreatesNoSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "yes")
+	cfg.Nodes.PSK = "" // empty is fine here: prep host has not generated it yet
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	m, buf := newEchoMgr(cfg, config.Docker)
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("dry-run Deploy must stay previewable before prep host: %v", err)
+	}
+	if fileExists(filepath.Join(dir, "solace-secrets")) {
+		t.Error("dry-run must not create the secrets dir")
+	}
+	if !strings.Contains(buf.String(), "would write 2 secret file(s)") {
+		t.Errorf("dry-run should report what it would write:\n%s", buf.String())
+	}
+}
+
+func TestManagerDeployPodmanDryRunHidesSecretBytes(t *testing.T) {
+	cfg := ctrCfg(config.Podman, "yes")
+	cfg.Nodes.PSK = "test-psk"
+	cfg.Podman.QuadletDir = t.TempDir()
+	m, buf := newEchoMgr(cfg, config.Podman)
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "secret create --replace solace-admin-password -") {
+		t.Errorf("dry-run should echo the secret-create command:\n%s", out)
+	}
+	if !strings.Contains(out, "bytes on stdin") {
+		t.Errorf("dry-run should report the value as stdin bytes, not print it:\n%s", out)
+	}
+	for _, leak := range []string{"secret-pass", "test-psk"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("dry-run echo leaked %q:\n%s", leak, out)
+		}
 	}
 }
 
@@ -347,15 +817,19 @@ func TestManagerDeleteDockerComposeDownWhenFileExists(t *testing.T) {
 	}
 }
 
-func TestManagerDeleteDockerRunStopsAndRemoves(t *testing.T) {
+func TestManagerDeleteDockerPurgeRemovesDataDir(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.Mode = "run"
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(cfg.Docker.ComposeFile, []byte("services:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	m, rr, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Delete(context.Background(), true); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if !hasCall(rr, "docker", []string{"stop", "solace"}) || !hasCall(rr, "docker", []string{"rm", "solace"}) {
-		t.Errorf("run-mode Delete should stop+rm the container:\n%+v", rr.calls)
+	if !hasCall(rr, "docker", []string{"compose", "-f", cfg.Docker.ComposeFile, "down"}) {
+		t.Errorf("Delete should compose down:\n%+v", rr.calls)
 	}
 	if !hasCall(rr, "rm", []string{"-rf", "/opt/solace/data"}) {
 		t.Errorf("purge should rm the data dir (rootful/docker):\n%+v", rr.calls)
@@ -643,8 +1117,14 @@ func TestManagerDeployPodmanEUIDGuardFails(t *testing.T) {
 }
 
 func TestManagerDeployDockerComposeWriteError(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.ComposeFile = t.TempDir() // a directory -> WriteFile fails
+	// A directory in the compose file's place makes WriteFile fail, while keeping
+	// the secrets dir (a sibling) inside the test's own temp dir.
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	if err := os.Mkdir(cfg.Docker.ComposeFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	m, _, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Deploy(context.Background(), config.Primary); err == nil {
 		t.Fatal("Deploy should fail when the compose file cannot be written")
@@ -662,13 +1142,32 @@ func TestManagerDeployDockerComposeUpError(t *testing.T) {
 	}
 }
 
-func TestManagerDeployDockerRunError(t *testing.T) {
+func TestManagerDeployPodmanSecretCreateError(t *testing.T) {
+	cfg := ctrCfg(config.Podman, "no")
+	cfg.Podman.QuadletDir = t.TempDir()
+	m, rr, _ := newCapMgr(cfg, config.Podman)
+	m.Geteuid = func() int { return -1 }
+	rr.fail = failOn("secret")
+	err := m.Deploy(context.Background(), config.Primary)
+	if err == nil {
+		t.Fatal("Deploy should propagate a secret-create failure")
+	}
+	if !strings.Contains(err.Error(), "admin.pass") {
+		t.Errorf("error should name the config key behind the secret, got: %v", err)
+	}
+}
+
+func TestManagerDeployDockerSecretWriteError(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.Mode = "run"
-	m, rr, _ := newCapMgr(cfg, config.Docker)
-	rr.fail = failOn("run")
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	// A file where the secrets directory belongs makes MkdirAll fail.
+	if err := os.WriteFile(filepath.Join(dir, "solace-secrets"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, _, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Deploy(context.Background(), config.Primary); err == nil {
-		t.Fatal("Deploy should propagate a docker run failure")
+		t.Fatal("Deploy should fail when the secrets dir cannot be created")
 	}
 }
 
@@ -726,13 +1225,14 @@ func TestManagerDeleteDockerComposeDownError(t *testing.T) {
 	}
 }
 
-func TestManagerDeleteDockerRunStopTolerated(t *testing.T) {
+func TestManagerDeleteDockerStopTolerated(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.Mode = "run"
+	cfg.Docker.ComposeFile = filepath.Join(dir, "absent.yml") // no file -> stop/rm fallback
 	m, rr, buf := newCapMgr(cfg, config.Docker)
 	rr.fail = failOn("stop")
 	if err := m.Delete(context.Background(), false); err != nil {
-		t.Fatalf("run-mode Delete should tolerate a failed stop: %v", err)
+		t.Fatalf("Delete should tolerate a failed stop: %v", err)
 	}
 	if !strings.Contains(buf.String(), "stopping container") {
 		t.Errorf("Delete should warn about the failed stop:\n%s", buf.String())
@@ -755,19 +1255,23 @@ func TestManagerDeletePurgeError(t *testing.T) {
 
 // --- Status permutations / tolerated non-zero -------------------------------
 
-func TestManagerStatusDockerRun(t *testing.T) {
+// TestManagerStatusDockerNoComposeFile covers the other branch of Status: with no
+// compose file on disk there is nothing for `compose ps` to read, so only the
+// container listing runs.
+func TestManagerStatusDockerNoComposeFile(t *testing.T) {
+	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	cfg.Docker.Mode = "run"
+	cfg.Docker.ComposeFile = filepath.Join(dir, "absent.yml")
 	m, rr, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Status(context.Background()); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !hasCall(rr, "docker", []string{"ps", "--all", "--filter", "name=solace"}) {
-		t.Errorf("run-mode Status should ps the container:\n%+v", rr.calls)
+		t.Errorf("Status should ps the container:\n%+v", rr.calls)
 	}
 	for _, c := range rr.calls {
 		if len(c.args) > 0 && c.args[0] == "compose" {
-			t.Errorf("run-mode Status must not call compose:\n%+v", rr.calls)
+			t.Errorf("Status must not call compose with no compose file:\n%+v", rr.calls)
 		}
 	}
 }

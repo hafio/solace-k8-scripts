@@ -47,6 +47,21 @@ func HARoles(cfg *config.Config) []config.Role {
 	return []config.Role{config.Primary}
 }
 
+// RestartOrder returns the roles in the order a manual pod bounce should follow:
+// monitor first, then backup, then primary -- least message-routing impact first,
+// with the node most likely to be serving traffic left for last. Standalone has
+// only the one broker.
+//
+// The order is by configured role, not by which node is currently active: after a
+// failover the config's "primary" may be the standby. Check `verify redundancy`
+// first, or restart roles one at a time in the order you want.
+func RestartOrder(cfg *config.Config) []config.Role {
+	if cfg.RedundancyEnabled() {
+		return []config.Role{config.Monitor, config.Backup, config.Primary}
+	}
+	return []config.Role{config.Primary}
+}
+
 // ProductKeyRoles returns the roles a product key is applied to: [primary] for a
 // standalone broker, [primary, backup] for a redundancy group -- never the monitor,
 // which carries no message spool (057).

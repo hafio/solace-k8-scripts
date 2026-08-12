@@ -5,6 +5,12 @@
 # This is a TEMPLATE with placeholder secrets. Replace admin.pass, the image
 # credentials, and nodes.psk before real use, and never commit real secrets.
 #
+# Secrets never reach a deployment artifact: on containers admin.pass and
+# nodes.psk are externalized (podman's secret store; file-backed compose secrets
+# under solace-secrets/) and referenced by name, and on k8s they live in Secret
+# manifests applied on stdin. So `--gen-only` output is safe to share, while
+# `--gen-secrets-only` output is as sensitive as this file.
+#
 # EVERY key the schema accepts appears below. A commented-out key is optional --
 # the value shown is the default that applies when it is omitted. Keys marked
 # "mandatory" must be set, or the load fails loud naming every one that is
@@ -12,7 +18,9 @@
 # a typo can never pass silently.
 
 # HA topology, unified across platforms: yes = redundancy group (primary+backup
-# +monitor); no = a single standalone broker.
+# +monitor); no = a single standalone broker. Omitting it means "no": HA
+# provisions three brokers (and three PVCs on k8s), so it is opted into, never
+# inherited by accident.
 redundancy: yes
 
 # Broker timezone, unified across platforms: the k8s CR's timezone and the
@@ -21,11 +29,13 @@ redundancy: yes
 
 image:
   repo: solace-pubsub-standard      # mandatory
-  tag: "10.10.1.128"                # mandatory
+  tag: "10.26.0.8755"                # mandatory
   registry: registry.example.com   # optional prefix; omit for docker.io
   pullSecret: solace-image-pull     # k8s: name of the image-pull secret
-  user: repo-user                   # registry login (prep secrets / docker login)
-  pass: CHANGE-ME-registry          # secret
+  user: repo-user                   # registry login: k8s builds the pull secret,
+  pass: CHANGE-ME-registry          # docker/podman run `<runtime> login`. secret
+  # pullPolicy: IfNotPresent        # k8s: Always | IfNotPresent | Never. Always for
+                                    # a moving tag, Never for an air-gapped cluster
 
 admin:
   user: admin                       # container admin username (k8s admin is "admin")
@@ -38,6 +48,11 @@ admin:
 tls:
   cert: certs/tls.crt               # server certificate (enables broker TLS listeners)
   certKey: certs/tls.key
+  # certPassphrase: CHANGE-ME-pass  # secret; only when the key is encrypted. On
+                                    # docker/podman it is externalized like the admin
+                                    # password and reaches the broker as
+                                    # tls_servercertificate_passphrasefilepath. Not
+                                    # wired on k8s: the operator mounts the TLS secret.
   serverSecret: solace-tls-secret   # k8s: TLS secret name (enables the CR tls block)
   # cas:                            # trusted domain CA files (config domain-certs)
   #   - certs/ca.crt
@@ -54,7 +69,10 @@ tls:
 #   maxSubscriptions: 50000         # k8s only
 #   maxGuaranteedMsgMB: 10          # k8s only
 
-# replication: inputs for the data-replication CLI generator. Omit if unused.
+# replication: parsed from the legacy REPL_* variables by `solace convert` and kept
+# in the schema, but NO command in this binary reads it yet -- the block is
+# currently inert. Configure data replication with the standalone
+# solace-replication-generator.html, or push a CLI script with `config exec-cli`.
 # replication:
 #   mate: mate-router-name          # remote mate router ("v:" prefix optional)
 #   connSsl:                        # mate-link host:port entries
@@ -104,6 +122,10 @@ k8s:
   #  - tcp-semp=8080
   #  - tcp-smf=55555:55556
   #  - tls-smf=55443/TCP
+  # podAnnotations:                 # -> spec.podAnnotations (key and value are quoted
+  #   prometheus.io/scrape: "true"  # for you, so any value is safe)
+  # podLabels:                      # -> spec.podLabels
+  #   example.com/tier: messaging
   # placement:                      # optional pod scheduling
   #   labelsPrimary: ["nodetype: solace"]
   #   labelsBackup: []
@@ -111,8 +133,27 @@ k8s:
   #   tolerationsPrimary: ["dedicated=solace:NoSchedule"]
   #   tolerationsBackup: []
   #   tolerationsMonitor: []
-  #   antiAffinityNamespaces: []    # default: [k8s.namespace]
-  #   antiAffinityWeight: 100
+  #   antiAffinityNamespaces: []    # default: [k8s.namespace]; drives the built-in
+  #   antiAffinityWeight: 100       # one-broker-per-host spread
+  #   nodeAffinity:                 # additive; unset leaves the CR exactly as above
+  #     preferred:                  # weight 1-100 + ANDed match expressions
+  #       - weight: 80
+  #         match:
+  #           - {key: topology.kubernetes.io/zone, operator: In, values: [az-1]}
+  #     required:                   # one ANDed term; operator In|NotIn|Exists|
+  #       - {key: solace.com/broker, operator: Exists}   # DoesNotExist|Gt|Lt
+  #   podAffinity: []               # terms: weight 0 = required, 1-100 = preferred;
+  #   podAntiAffinity: []           # each needs topologyKey, plus optional
+                                    # matchLabels and namespaces. Appended after the
+                                    # antiAffinityNamespaces term above.
+  # Intentionally unsupported here (edit the CR or use kubectl if you need them):
+  #   monitoring (the Prometheus exporter sidecar), service.type (always
+  #   LoadBalancer) and per-port nodePort, extraEnvVars/extraEnvVarsCM/
+  #   extraEnvVarsSecret.
+  # There is deliberately no k8s health check either: the operator already runs its
+  # own readiness and liveness probes on the broker pods and gates service traffic
+  # on them, so overriding that would only risk fighting it. healthCheck exists
+  # solely under docker:/podman:, where no such supervisor exists.
   # productKeys: []                 # config product-keys
   # domainCerts:
   #   folder: certs
@@ -123,8 +164,14 @@ docker:
                                     # or a wrapper -- a scalar is split on whitespace
                                     # (`sudo -n docker`). Use a list for a token with
                                     # a space: ["C:\\Program Files\\Docker\\docker.exe"]
-  mode: compose                     # compose | run
-  # composeFile: docker-compose.yml # path of the generated compose file
+  mode: compose                     # compose (the only value; run mode was removed)
+  # compose: docker compose         # the compose invocation. Omitted -> the runtime
+                                    # plus `compose` (the plugin form). Set it to
+                                    # `docker-compose` on a host carrying only the
+                                    # standalone v1 binary; same scalar/list forms as
+                                    # runtime. Every argument is appended after it.
+  # composeFile: docker-compose.yml # path of the generated compose file. The secrets
+                                    # it references live in solace-secrets/ beside it.
   container:
     dataDir: /opt/solace/data       # host bind mount, mandatory
   #   name: solace                  # container name
@@ -134,10 +181,30 @@ docker:
   #     nofile: "2448:1048576"
   #     memlock: "-1"
   #     core: "-1"
+  #   healthCheck:                  # opt-in; off leaves the artifact unchanged
+  #     enabled: true               # polls the broker's own readiness endpoint,
+                                    # curl -fs http://localhost:5550/health-check/readiness,
+                                    # so `docker ps`/`compose ps` and podman's
+                                    # auto-restart see readiness, not just liveness.
+                                    # REQUIRES broker 10.26 or later (where that
+                                    # endpoint was introduced) AND a version-numbered
+                                    # image.tag to prove it -- enabling it on an older
+                                    # or a "latest"-tagged image fails loud rather than
+                                    # deploying a probe that can never pass.
+  #     cmd: [curl, -fs, "http://localhost:8080/SEMP/v2/monitor"]
+                                    # optional: your own probe argv, run inside the
+                                    # container. Setting it skips the version check --
+                                    # this is how to probe a pre-10.26 broker. Podman
+                                    # renders it as a command line, so avoid tokens
+                                    # with spaces; wrap such a probe in a script.
+  #     interval: 5s                # the defaults shown are what applies when omitted
+  #     timeout: 5s
+  #     retries: 3
+  #     startPeriod: 60s
   # network:
-  #   mode: host                    # host | bridge (bridge needs a ports list)
-  #   ports:                        # host:container, mandatory when mode is bridge
-  #     - 8080:8080
+  #   mode: host                    # host | bridge
+  #   ports:                        # host:container. Omitted in bridge mode, the
+  #     - 8080:8080                 # same 17 ports k8s defaults to are published
 
 podman:
   # runtime: podman                 # command to exec; same forms as docker.runtime
@@ -152,6 +219,8 @@ podman:
   #     nofile: "2448:1048576"
   #     memlock: "-1"
   #     core: "-1"
+  #   healthCheck:                  # same shape as docker.container.healthCheck
+  #     enabled: true               # built-in readiness probe; needs broker 10.26+
   # network:
   #   mode: host
   #   ports:

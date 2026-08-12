@@ -29,6 +29,27 @@ func load(t *testing.T, p config.Platform) *config.Config {
 	return c
 }
 
+// healthCheckFixture enables the health check with no cmd, so the goldens show the
+// built-in readiness probe, and with the timings ApplyDefaults fills. Shared by the
+// quadlet and compose cases so the two goldens differ only in framing.
+func healthCheckFixture() config.HealthCheck {
+	return config.HealthCheck{
+		Enabled:     true,
+		Interval:    "5s",
+		Timeout:     "5s",
+		Retries:     3,
+		StartPeriod: "60s",
+	}
+}
+
+// modernTag is a broker release new enough for the built-in readiness probe, which
+// config.Validate requires before the probe can be enabled. The health-check cases
+// pin it rather than relying on the sample's tag: env/sample.yaml is a template
+// whose tag is meant to be edited, and these two cases would render a config
+// Validate rejects if it were ever set below 10.26. It is why those goldens carry a
+// different image tag from every other one.
+const modernTag = "10.26.0.5"
+
 func envLines(pairs []EnvPair) []byte {
 	var b strings.Builder
 	for _, p := range pairs {
@@ -83,6 +104,79 @@ func TestGolden(t *testing.T) {
 			},
 		},
 		{
+			// The CR knobs that used to be hardcoded or inexpressible. pullPolicy
+			// replaces a literal; podAnnotations/podLabels are new optional blocks,
+			// so the cases above prove they stay out when unset. The values here
+			// carry a colon and a quote to exercise the escaping.
+			name: "k8s broker CR with pull policy and pod metadata",
+			file: "k8s_broker_cr_podmeta.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.K8s)
+				c.Image.PullPolicy = "Always"
+				c.K8s.PodAnnotations = map[string]string{
+					"prometheus.io/scrape": "true",
+					"example.com/note":     `a: "quoted" value`,
+				}
+				c.K8s.PodLabels = map[string]string{"example.com/tier": "messaging"}
+				return BrokerCR(c)
+			},
+		},
+		{
+			// The additive affinity blocks alongside the legacy anti-affinity term:
+			// the fixed broker-spread term must still come first, unchanged, with the
+			// configured terms after it.
+			name: "k8s broker CR with node and pod affinity",
+			file: "k8s_broker_cr_affinity.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.K8s)
+				c.K8s.Placement.NodeAffinity = config.NodeAffinity{
+					Preferred: []config.WeightedNodeTerm{{
+						Weight: 80,
+						Match: []config.NodeMatchExpr{
+							{Key: "topology.kubernetes.io/zone", Operator: "In", Values: []string{"az-1", "az-2"}},
+						},
+					}},
+					Required: []config.NodeMatchExpr{
+						{Key: "solace.com/broker", Operator: "Exists"},
+						{Key: "kubernetes.io/arch", Operator: "NotIn", Values: []string{"arm64"}},
+					},
+				}
+				c.K8s.Placement.PodAffinity = []config.PodAffinityTerm{{
+					Weight:      20,
+					TopologyKey: "topology.kubernetes.io/zone",
+					MatchLabels: map[string]string{"app": "gateway"},
+					Namespaces:  []string{"edge"},
+				}}
+				c.K8s.Placement.PodAntiAffinity = []config.PodAffinityTerm{{
+					TopologyKey: "topology.kubernetes.io/zone",
+					MatchLabels: map[string]string{"app.kubernetes.io/name": "pubsubpluseventbroker"},
+				}}
+				return BrokerCR(c)
+			},
+		},
+		{
+			// loadBalancer.annotations and placement.labels* are user-supplied
+			// "key: value" fragments that used to be pasted into the manifest
+			// verbatim. The values here carry a colon, a slash and a URL, which only
+			// stay intact because both halves are quoted. This is also the only case
+			// covering nodeSelector and tolerations at all.
+			name: "k8s broker CR with annotations and node labels",
+			file: "k8s_broker_cr_labels.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.K8s)
+				c.K8s.LoadBalancer.Annotations = []string{
+					"external-dns.alpha.kubernetes.io/hostname: broker.example.com",
+					"service.beta.kubernetes.io/target: https://lb.example.com:8443",
+				}
+				c.K8s.Placement.LabelsPrimary = []string{"nodetype: solace"}
+				c.K8s.Placement.LabelsBackup = []string{"nodetype: solace"}
+				c.K8s.Placement.LabelsMonitor = []string{"nodetype: solace"}
+				c.K8s.Placement.TolerationsPrimary = []string{"dedicated=solace:NoSchedule"}
+				c.K8s.Placement.TolerationsMonitor = []string{"dedicated:NoExecute"}
+				return BrokerCR(c)
+			},
+		},
+		{
 			name: "podman quadlet primary",
 			file: "podman_quadlet_primary.golden",
 			gen: func(t *testing.T) []byte {
@@ -99,11 +193,36 @@ func TestGolden(t *testing.T) {
 			},
 		},
 		{
-			name: "docker run args primary",
-			file: "docker_run_args_primary.golden",
+			// The health check is opt-in, so every other container case proves the
+			// artifacts stay unchanged without it; this one proves both framings.
+			name: "podman quadlet with health check",
+			file: "podman_quadlet_healthcheck.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.Podman)
+				c.Image.Tag = modernTag
+				c.Podman.Container.HealthCheck = healthCheckFixture()
+				return Quadlet(c, c.ResolveNode(config.Primary))
+			},
+		},
+		{
+			name: "docker compose with health check",
+			file: "docker_compose_healthcheck.golden",
 			gen: func(t *testing.T) []byte {
 				c := load(t, config.Docker)
-				return []byte(strings.Join(RunArgs(c, c.ResolveNode(config.Primary)), "\n") + "\n")
+				c.Image.Tag = modernTag
+				c.Docker.Container.HealthCheck = healthCheckFixture()
+				return Compose(c, c.ResolveNode(config.Primary))
+			},
+		},
+		{
+			// Standalone drops the whole redundancy block from the compose file,
+			// including its secret reference -- one secret instead of two.
+			name: "docker compose standalone",
+			file: "docker_compose_standalone.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.Docker)
+				c.Redundancy = "no"
+				return Compose(c, c.ResolveNode(config.Primary))
 			},
 		},
 		{
@@ -127,6 +246,33 @@ func TestGolden(t *testing.T) {
 				return envLines(EnvPairs(c, c.ResolveNode(config.Primary)))
 			},
 		},
+		{
+			// The env file is the same pairs in env-file framing, and the whole
+			// point is that it is printable -- so the golden also pins the absence
+			// of the admin password and the PSK.
+			name: "container env file primary HA",
+			file: "container_envfile_primary.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.Podman)
+				return EnvFile(c, c.ResolveNode(config.Primary))
+			},
+		},
+		{
+			name: "podman secret script HA",
+			file: "podman_secret_script.golden",
+			gen:  func(t *testing.T) []byte { return SecretScript(load(t, config.Podman), config.Podman) },
+		},
+		{
+			// Docker's script writes the file-backed sources instead, and a value
+			// carrying a quote proves shQuote keeps the line intact.
+			name: "docker secret script HA",
+			file: "docker_secret_script.golden",
+			gen: func(t *testing.T) []byte {
+				c := load(t, config.Docker)
+				c.Admin.Pass = `pa'ss "w" $ord`
+				return SecretScript(c, config.Docker)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -147,6 +293,186 @@ func TestGolden(t *testing.T) {
 				t.Errorf("%s mismatch\n--- got ---\n%s\n--- want ---\n%s", tc.file, got, want)
 			}
 		})
+	}
+}
+
+// TestArtifactsCarryNoSecrets is the regression guard behind the secret
+// externalization: every deployment artifact must reference the admin password
+// and the redundancy pre-shared key by name and never carry their values, so
+// `--gen-only` output is safe to share. Distinctive values make a leak
+// unmistakable -- the goldens alone would not catch one reintroduced together
+// with a regenerated golden.
+func TestArtifactsCarryNoSecrets(t *testing.T) {
+	const (
+		pass = "UNIQUE-ADMIN-PASSWORD-VALUE"
+		psk  = "UNIQUE-PRESHARED-KEY-VALUE"
+	)
+	secrets := []string{pass, psk}
+
+	for _, p := range []config.Platform{config.K8s, config.Docker, config.Podman} {
+		c := load(t, p)
+		c.Admin.Pass = pass
+		c.Nodes.PSK = psk
+		id := c.ResolveNode(config.Primary)
+
+		artifacts := map[string][]byte{}
+		switch p {
+		case config.K8s:
+			artifacts["broker CR"] = BrokerCR(c)
+		case config.Podman:
+			artifacts["quadlet"] = Quadlet(c, id)
+			artifacts["env file"] = EnvFile(c, id)
+		default:
+			artifacts["compose"] = Compose(c, id)
+			artifacts["env file"] = EnvFile(c, id)
+		}
+		for name, body := range artifacts {
+			for _, secret := range secrets {
+				if bytes.Contains(body, []byte(secret)) {
+					t.Errorf("%s %s artifact carries the secret %q; it must reference it by name instead", p, name, secret)
+				}
+			}
+		}
+		if p == config.K8s {
+			continue
+		}
+		// SecretScript is the one renderer that must carry the values: it is what
+		// creates the secrets, and only --gen-secrets-only prints it.
+		script := SecretScript(c, p)
+		for _, secret := range secrets {
+			if !bytes.Contains(script, []byte(secret)) {
+				t.Errorf("%s secret script is missing %q; it is what creates the secrets", p, secret)
+			}
+		}
+	}
+}
+
+// TestContainerSecretsRedundancy pins which secrets exist per mode: standalone has
+// no mate link, so the PSK secret must not be referenced at all there.
+func TestContainerSecretsRedundancy(t *testing.T) {
+	c := load(t, config.Podman)
+
+	ha := ContainerSecrets(c)
+	if len(ha) != 2 {
+		t.Fatalf("HA secrets = %d, want 2 (admin password + PSK)", len(ha))
+	}
+	if ha[0].EnvKey != "username_admin_password" || ha[1].EnvKey != "redundancy_authentication_presharedkey_key" {
+		t.Errorf("HA secret env keys = %q, %q", ha[0].EnvKey, ha[1].EnvKey)
+	}
+	if got := ha[0].FilePathKey(); got != "username_admin_passwordfilepath" {
+		t.Errorf("FilePathKey = %q", got)
+	}
+	if got := ha[0].MountPath(); got != "/run/secrets/solace-admin-password" {
+		t.Errorf("MountPath = %q", got)
+	}
+
+	c.Redundancy = "no"
+	if standalone := ContainerSecrets(c); len(standalone) != 1 {
+		t.Errorf("standalone secrets = %d, want 1 (admin password only)", len(standalone))
+	}
+
+	// An encrypted server-certificate key adds a third secret, and only then: an
+	// empty passphrase must not produce one the broker would use to unlock a plain
+	// key. The broker reads it from the mounted file via the *filepath variant.
+	c.TLS.CertPassphrase = "cert-pass"
+	withPass := ContainerSecrets(c)
+	if len(withPass) != 2 {
+		t.Fatalf("standalone + passphrase = %d secrets, want 2", len(withPass))
+	}
+	pass := withPass[1]
+	if pass.EnvKey != "tls_servercertificate_passphrase" {
+		t.Errorf("passphrase env key = %q", pass.EnvKey)
+	}
+	if got := pass.FilePathKey(); got != "tls_servercertificate_passphrasefilepath" {
+		t.Errorf("passphrase file-path key = %q", got)
+	}
+}
+
+// TestShQuote guards the secret-script quoting: a value with a single quote must
+// survive as itself rather than ending the shell string.
+func TestShQuote(t *testing.T) {
+	if got := shQuote(`pa'ss`); got != `'pa'\''ss'` {
+		t.Errorf("shQuote = %q", got)
+	}
+}
+
+// TestQuadletHealthCmdEscapesPercent covers the specifier trap: systemd expands
+// %-specifiers in every assignment in a unit file, not only the quoted
+// Environment= ones, so a percent-encoded character in a probe URL has to be
+// doubled or systemd fails to resolve it and drops the line -- silently disabling
+// the health check. Quotes and backslashes must NOT be escaped here: the value is
+// unquoted and podman splits the command line itself.
+func TestQuadletHealthCmdEscapesPercent(t *testing.T) {
+	c := load(t, config.Podman)
+	hc := healthCheckFixture()
+	// An explicit probe, which is also what an older broker would have to use.
+	hc.Cmd = []string{"curl", "-fs", `http://localhost:5550/health?q=a%20b&s="x"`}
+	c.Podman.Container.HealthCheck = hc
+	got := string(Quadlet(c, c.ResolveNode(config.Primary)))
+
+	if !strings.Contains(got, `HealthCmd=curl -fs http://localhost:5550/health?q=a%%20b&s="x"`) {
+		t.Errorf("HealthCmd must double %% and leave quotes alone:\n%s", got)
+	}
+	// Compose has no specifier expansion, so the same probe must stay literal there:
+	// doubling the percent would change the URL the broker is actually polled with.
+	d := load(t, config.Docker)
+	d.Docker.Container.HealthCheck = hc
+	compose := string(Compose(d, d.ResolveNode(config.Primary)))
+	if !strings.Contains(compose, `q=a%20b`) {
+		t.Errorf("compose must keep the percent single:\n%s", compose)
+	}
+	if strings.Contains(compose, `%%`) {
+		t.Errorf("compose must not apply systemd's percent doubling:\n%s", compose)
+	}
+}
+
+// TestHealthCmdDefaultsToReadiness pins the built-in probe: an enabled block with
+// no cmd polls the broker's own readiness endpoint, and an explicit cmd wins.
+func TestHealthCmdDefaultsToReadiness(t *testing.T) {
+	got := healthCmd(config.HealthCheck{Enabled: true})
+	want := []string{"curl", "-fs", "http://localhost:5550/health-check/readiness"}
+	if len(got) != len(want) {
+		t.Fatalf("default probe = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("default probe = %v, want %v", got, want)
+			break
+		}
+	}
+	custom := []string{"/opt/probe.sh"}
+	if only := healthCmd(config.HealthCheck{Enabled: true, Cmd: custom}); only[0] != custom[0] || len(only) != 1 {
+		t.Errorf("an explicit cmd must win, got %v", only)
+	}
+}
+
+// TestSecretPreflight pins the precondition `deploy` and `--gen-secrets-only`
+// share: creating a secret with an empty value leaves the broker with a blank
+// password or mate-link key that only fails later, so it is refused up front.
+func TestSecretPreflight(t *testing.T) {
+	c := load(t, config.Podman) // HA sample: admin password and PSK both set
+	if err := SecretPreflight(c, config.Podman); err != nil {
+		t.Fatalf("a fully configured deployment must pass preflight: %v", err)
+	}
+
+	c.Nodes.PSK = ""
+	err := SecretPreflight(c, config.Podman)
+	if err == nil {
+		t.Fatal("an empty PSK must be refused before a secret is created from it")
+	}
+	if !strings.Contains(err.Error(), "nodes.psk") || !strings.Contains(err.Error(), "prep host") {
+		t.Errorf("the error should name the field and the fix, got: %v", err)
+	}
+
+	// Standalone has no mate link, so an empty PSK is not a secret at all there.
+	c.Redundancy = "no"
+	if err := SecretPreflight(c, config.Podman); err != nil {
+		t.Errorf("standalone does not need a PSK: %v", err)
+	}
+
+	c.Admin.Pass = ""
+	if err := SecretPreflight(c, config.Podman); err == nil || !strings.Contains(err.Error(), "admin.pass") {
+		t.Errorf("an empty admin password must be refused, got: %v", err)
 	}
 }
 

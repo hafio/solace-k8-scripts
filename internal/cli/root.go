@@ -33,7 +33,9 @@ func newRootCmd(app *App) *cobra.Command {
 
 	root.PersistentFlags().StringVarP(&app.EnvName, "env", "e", config.EnvFileDefault, "env file name, searched in the base dir then <base-dir>/env; a value with a directory is used as-is")
 	root.PersistentFlags().StringVar(&app.BaseDir, "base-dir", "", "directory searched for the env file, and holding env/ (default: current directory)")
-	root.PersistentFlags().BoolVar(&app.GenOnly, "gen", false, "render the artifact this command would apply and print it; change nothing")
+	root.PersistentFlags().BoolVar(&app.GenOnly, "gen-only", false, "render the deployment artifact this command would apply and print it; change nothing")
+	root.PersistentFlags().BoolVar(&app.GenSecretsOnly, "gen-secrets-only", false, "render this deployment's secrets (k8s Secret manifests; container secret-creation commands) and print them; change nothing")
+	root.PersistentFlags().BoolVar(&app.GenEnvOnly, "gen-env-only", false, "render the container broker settings as an env file and print them; change nothing (docker/podman only)")
 	root.PersistentFlags().BoolVar(&app.DryRun, "dry-run", false, "print the external commands instead of running them")
 	root.PersistentFlags().BoolVarP(&app.Yes, "yes", "y", false, "skip confirmation prompts (does NOT imply --purge)")
 

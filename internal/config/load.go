@@ -102,8 +102,12 @@ func ResolveEnvPath(baseDir, name string) (string, error) {
 // Only fields that are safe to default are touched; mandatory fields are left
 // empty so Validate can flag them. Secrets are never defaulted to a literal.
 func (c *Config) ApplyDefaults(p Platform) {
+	// Unset means a single standalone broker on every platform. HA provisions three
+	// brokers (and, on k8s, three PVCs), so it is the choice that has to be made
+	// explicitly -- the safe default is the smaller deployment. It also matches the
+	// legacy k8s bootstrap, whose SOLBK_REDUNDANCY defaulted to false.
 	if c.Redundancy == "" {
-		c.Redundancy = "yes"
+		c.Redundancy = "no"
 	}
 
 	// The cluster CLI (bash KUBE). Defaulted for every platform, not just k8s, so
@@ -170,6 +174,12 @@ func (c *Config) applyContainerDefaults(p Platform) {
 
 	setDefault(&c.Docker.Network.Mode, "host")
 	setDefault(&c.Podman.Network.Mode, "host")
+	// Bridge mode publishes nothing unless ports are listed, and an incomplete list
+	// silently hides protocols. Default it to the same set k8s uses, as host:container
+	// pairs, so bridge is usable without enumerating 17 ports by hand. Host mode is
+	// untouched -- there is nothing to publish there.
+	applyBridgePortDefaults(&c.Docker.Network)
+	applyBridgePortDefaults(&c.Podman.Network)
 
 	setDefault(&c.Admin.User, "admin")
 
@@ -186,6 +196,14 @@ func (c *Config) applyContainerDefaults(p Platform) {
 
 	if p == Docker {
 		setDefaultCmd(&c.Docker.Runtime, "docker")
+		// The compose plugin is a subcommand of the runtime, so its default is
+		// derived from the (possibly overridden) runtime rather than hardcoded --
+		// a host with only the standalone v1 binary sets docker.compose instead.
+		if len(c.Docker.Compose) == 0 {
+			compose := make(Command, 0, len(c.Docker.Runtime)+1)
+			compose = append(compose, c.Docker.Runtime...)
+			c.Docker.Compose = append(compose, "compose")
+		}
 	}
 	if p == Podman {
 		setDefaultCmd(&c.Podman.Runtime, "podman")
@@ -214,6 +232,12 @@ func applyContainerBlockDefaults(b *Container) {
 	setDefault(&b.Ulimits.NoFile, "2448:1048576")
 	setDefault(&b.Ulimits.MemLock, "-1")
 	setDefault(&b.Ulimits.Core, "-1")
+	// Health-check timings only reach an artifact when the block is enabled, so
+	// defaulting them unconditionally keeps a disabled block inert.
+	setDefault(&b.HealthCheck.Interval, "5s")
+	setDefault(&b.HealthCheck.Timeout, "5s")
+	setDefault(&b.HealthCheck.StartPeriod, "60s")
+	setDefaultInt(&b.HealthCheck.Retries, 3)
 }
 
 // ContainerRuntime returns the runtime command for the container platform p --
@@ -258,6 +282,9 @@ func xdgConfigHome() string {
 
 func defaultK8sPorts() []string {
 	return []string{
+		// The operator's own service.ports default leads with tcp-ssh; without it a
+		// deployment that never sets k8s.ports silently loses CLI-over-SSH access.
+		"tcp-ssh=2222",
 		"tcp-semp=8080", "tls-semp=1943",
 		"tcp-smf=55555", "tcp-smfcomp=55003", "tls-smf=55443", "tcp-smfroute=55556",
 		"tcp-web=8008", "tls-web=1443",
@@ -266,6 +293,26 @@ func defaultK8sPorts() []string {
 		"tcp-mqtt=1883", "tls-mqtt=8883",
 		"tcp-mqttweb=8000", "tls-mqttweb=8443",
 	}
+}
+
+// applyBridgePortDefaults fills an empty bridge-mode port list.
+func applyBridgePortDefaults(n *Network) {
+	if n.Mode == "bridge" && len(n.Ports) == 0 {
+		n.Ports = defaultContainerPorts()
+	}
+}
+
+// defaultContainerPorts is the k8s default port set as container host:container
+// pairs. It is derived from defaultK8sPorts rather than duplicated, so the two
+// cannot drift.
+func defaultContainerPorts() []string {
+	k8sPorts := defaultK8sPorts()
+	out := make([]string, 0, len(k8sPorts))
+	for _, entry := range k8sPorts {
+		_, port, _ := strings.Cut(entry, "=")
+		out = append(out, port+":"+port)
+	}
+	return out
 }
 
 func setDefault(p *string, v string) {

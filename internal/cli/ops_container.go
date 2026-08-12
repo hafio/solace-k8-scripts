@@ -9,7 +9,6 @@ import (
 	"solace/internal/broker"
 	"solace/internal/config"
 	"solace/internal/container"
-	"solace/internal/engine"
 	"solace/internal/render"
 )
 
@@ -38,6 +37,8 @@ func ctrManager(a *App) *container.Manager {
 	m := container.NewManager(a.Runner, a.Cfg, a.Platform, step, os.Stdout)
 	m.In = os.Stdin
 	m.EnvPath = a.envPath
+	m.Restart = a.restart
+	m.Confirm = confirmRestart
 	return m
 }
 
@@ -47,10 +48,10 @@ func opCtrCheck(a *App) error    { return ctrManager(a).Check(bg()) }
 func opCtrPrepAll(a *App) error  { return ctrManager(a).PrepHost(bg()) }
 func opCtrPrepHost(a *App) error { return ctrManager(a).PrepHost(bg()) }
 
-// opCtrDeploy renders the deploy artifact and starts the container; with --gen it
-// only prints the artifact.
+// opCtrDeploy renders the deploy artifact and starts the container; with a
+// --gen-*-only flag it only prints the requested artifact.
 func opCtrDeploy(a *App, role config.Role) error {
-	if a.GenOnly {
+	if a.anyGen() {
 		return emitCtrArtifact(a, role)
 	}
 	return ctrManager(a).Deploy(bg(), role)
@@ -177,29 +178,48 @@ func ctrLogin(a *App, o *broker.Ops) error {
 }
 
 // day-2 ops (node-local)
-func opCtrStatus(a *App) error { return ctrManager(a).Status(bg()) }
-func opCtrLogs(a *App) error   { return ctrManager(a).Logs(bg()) }
-func opCtrCLI(a *App) error    { return ctrManager(a).CLI(bg()) }
-func opCtrShell(a *App) error  { return ctrManager(a).Shell(bg()) }
+func opCtrStatus(a *App) error   { return ctrManager(a).Status(bg()) }
+func opCtrLogs(a *App) error     { return ctrManager(a).Logs(bg()) }
+func opCtrCLI(a *App) error      { return ctrManager(a).CLI(bg()) }
+func opCtrShell(a *App) error    { return ctrManager(a).Shell(bg()) }
+func opCtrDescribe(a *App) error { return ctrManager(a).Describe(bg()) }
+
+func opCtrCopyFrom(a *App, files []string) error { return ctrManager(a).CopyFrom(bg(), files) }
+func opCtrCopyInto(a *App, files []string) error {
+	return ctrManager(a).CopyInto(bg(), files, a.destDir)
+}
+
+// opCtrTeardownDomainCerts removes the configured domain CAs from this host's
+// broker. The operation is platform-agnostic and already ran over this transport
+// for the loading half; domainCANames is shared with the k8s handler.
+func opCtrTeardownDomainCerts(a *App) error {
+	return ctrOps(a).RemoveDomainCerts(bg(), config.Primary, domainCANames(a.Cfg))
+}
 func opCtrGen(a *App, role config.Role) error {
 	return emitCtrArtifact(a, role)
 }
 
-// emitCtrArtifact renders and prints the deploy artifact for the platform:
-// podman -> systemd quadlet; docker -> a compose file (mode compose) or the
-// `<runtime> run ...` command line (mode run). Ports the gen_*() + --only-gen
-// contract of the bash deploy scripts.
+// emitCtrArtifact prints the artifact the gen flag asked for, changing nothing.
+// The flag picks the artifact, not the command: --gen-only renders the deploy
+// artifact (podman quadlet / docker compose file), --gen-secrets-only the
+// commands that create this host's secrets, --gen-env-only the broker settings as
+// an env file. Ports the gen_*() + --only-gen contract of the bash deploy scripts.
 func emitCtrArtifact(a *App, role config.Role) error {
 	id := a.Cfg.ResolveNode(role)
-	switch a.Platform {
-	case config.Podman:
+	switch {
+	case a.GenSecretsOnly:
+		// The script's own header tells the operator to run it, so it gets the same
+		// preflight the real deploy does -- printing one that would create an empty
+		// secret is worse than refusing.
+		if err := render.SecretPreflight(a.Cfg, a.Platform); err != nil {
+			return err
+		}
+		return emit(render.SecretScript(a.Cfg, a.Platform))
+	case a.GenEnvOnly:
+		return emit(render.EnvFile(a.Cfg, id))
+	case a.Platform == config.Podman:
 		return emit(render.Quadlet(a.Cfg, id))
 	default: // docker
-		if a.Cfg.Docker.Mode == "run" {
-			rt := a.Cfg.ContainerRuntime(a.Platform)
-			line := engine.Quote(rt.Name(), rt.Args(render.RunArgs(a.Cfg, id)...)...)
-			return emit([]byte(line + "\n"))
-		}
 		return emit(render.Compose(a.Cfg, id))
 	}
 }

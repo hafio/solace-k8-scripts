@@ -23,6 +23,9 @@ func newContainerCmd(app *App, p config.Platform) *cobra.Command {
 		Short: short,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			app.Platform = p
+			if err := checkGenFlags(cmd, app); err != nil {
+				return err
+			}
 			return app.load()
 		},
 	}
@@ -39,9 +42,12 @@ func newContainerCmd(app *App, p config.Platform) *cobra.Command {
 	c.AddCommand(leaf(app, "logs", "Tail the local broker container logs", opCtrLogs))
 	c.AddCommand(leaf(app, "cli", "Open an interactive Solace CLI in the container", opCtrCLI))
 	c.AddCommand(leaf(app, "shell", "Open an interactive shell in the container", opCtrShell))
+	c.AddCommand(newCtrDescribeCmd(app))
+	c.AddCommand(newCtrCopyCmd(app))
 	c.AddCommand(newCtrGenCmd(app))
 
 	// --- teardown + orchestration ---
+	c.AddCommand(newCtrTeardownCmd(app))
 	c.AddCommand(newCtrDeleteCmd(app))
 	c.AddCommand(newCtrUpCmd(app))
 	c.AddCommand(newCtrDownCmd(app))
@@ -59,11 +65,12 @@ func newCtrPrepCmd(app *App) *cobra.Command {
 	return prep
 }
 
-// deploy honors --gen: opCtrDeploy renders the artifact instead of applying it.
-// The annotation is what the generated command reference reads, so it is set
-// here even though only the k8s tree enforces it via rejectGenIfUnsupported.
+// deploy honors the --gen-*-only flags: opCtrDeploy renders the requested
+// artifact instead of applying it. The annotation is both what the generated
+// command reference reads and what checkGenFlags gates on, so a gen flag on any
+// other container command fails loud rather than being ignored.
 func newCtrDeployCmd(app *App) *cobra.Command {
-	return genCapable(&cobra.Command{
+	c := genCapable(&cobra.Command{
 		Use:   "deploy [primary|backup|monitor]",
 		Short: "Deploy the broker on this host (role required in HA, ignored in standalone)",
 		Args:  cobra.MaximumNArgs(1),
@@ -75,6 +82,8 @@ func newCtrDeployCmd(app *App) *cobra.Command {
 			return opCtrDeploy(app, role)
 		},
 	})
+	addRestartFlag(c, app)
+	return c
 }
 
 func newCtrConfigCmd(app *App) *cobra.Command {
@@ -157,6 +166,45 @@ func newCtrGenCmd(app *App) *cobra.Command {
 	})
 }
 
+// newCtrDescribeCmd is the container analog of `k8s describe`. "inspect" is an
+// alias because that is the container-world name for the same question, and the
+// underlying call is literally `<runtime> inspect`.
+func newCtrDescribeCmd(app *App) *cobra.Command {
+	c := leaf(app, "describe", "Show detailed inspection of the broker container (podman: also the installed unit)", opCtrDescribe)
+	c.Aliases = []string{"inspect"}
+	return c
+}
+
+// newCtrCopyCmd mirrors `k8s copy`. The transport is node-local, so the files are
+// already on this host -- the verbs exist so a script does not have to know which
+// platform it is driving.
+func newCtrCopyCmd(app *App) *cobra.Command {
+	c := &cobra.Command{Use: "copy", Short: "Copy files to/from the broker container"}
+	from := &cobra.Command{
+		Use:   "from files...",
+		Short: "Copy files from the broker container to the host",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  func(_ *cobra.Command, args []string) error { return opCtrCopyFrom(app, args) },
+	}
+	into := &cobra.Command{
+		Use:   "into files...",
+		Short: "Copy files from the host into the broker container",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  func(_ *cobra.Command, args []string) error { return opCtrCopyInto(app, args) },
+	}
+	into.Flags().StringVar(&app.destDir, "dir", "", "destination directory inside the container")
+	c.AddCommand(from, into)
+	return c
+}
+
+// newCtrTeardownCmd removes broker-scoped prerequisites the container itself
+// outlives, mirroring the k8s verb: `config X` applies, `teardown X` removes.
+func newCtrTeardownCmd(app *App) *cobra.Command {
+	t := &cobra.Command{Use: "teardown", Short: "Remove broker-scoped prerequisites (the container itself: see delete)"}
+	t.AddCommand(leaf(app, "domain-certs", "Remove domain CA certificates", opCtrTeardownDomainCerts))
+	return t
+}
+
 func newCtrDeleteCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "delete",
@@ -169,7 +217,7 @@ func newCtrDeleteCmd(app *App) *cobra.Command {
 }
 
 func newCtrUpCmd(app *App) *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "up [primary|backup|monitor]",
 		Short: "Orchestrate check -> prep host -> deploy <role>",
 		Args:  cobra.MaximumNArgs(1),
@@ -181,6 +229,8 @@ func newCtrUpCmd(app *App) *cobra.Command {
 			return opCtrUp(app, role)
 		},
 	}
+	addRestartFlag(c, app)
+	return c
 }
 
 func newCtrDownCmd(app *App) *cobra.Command {

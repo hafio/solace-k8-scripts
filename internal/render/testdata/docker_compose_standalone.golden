@@ -1,0 +1,33 @@
+services:
+  solace:
+    image: registry.example.com/solace-pubsub-standard:10.26.0.8755
+    container_name: solace
+    hostname: solace-primary
+    user: "0:0"
+    restart: always
+    shm_size: 1g
+    ulimits:
+      nofile:
+        soft: 2448
+        hard: 1048576
+      memlock: -1
+      core: -1
+    network_mode: host
+    volumes:
+      - "/opt/solace/data:/var/lib/solace:Z"
+      - "certs/tls.crt:/run/secrets/tls.crt:ro"
+    environment:
+      routername: "solace-primary"
+      nodetype: "message_routing"
+      redundancy_enable: "no"
+      tls_servercertificate_filepath: "/run/secrets/tls.crt"
+      system_scaling_maxconnectioncount: "1000"
+      system_scaling_maxqueuemessagecount: "100"
+      messagespool_maxspoolusage: "100000"
+      username_admin_globalaccesslevel: "admin"
+      username_admin_passwordfilepath: "/run/secrets/solace-admin-password"
+    secrets:
+      - solace-admin-password
+secrets:
+  solace-admin-password:
+    file: ./solace-secrets/solace-admin-password

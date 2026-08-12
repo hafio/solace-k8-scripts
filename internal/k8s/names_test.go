@@ -53,6 +53,18 @@ func TestHARoles(t *testing.T) {
 	}
 }
 
+// TestRestartOrder pins the safe bounce order for a manual pod restart: the
+// monitor carries no messaging traffic, the backup is standby, and the node most
+// likely to be serving clients goes last.
+func TestRestartOrder(t *testing.T) {
+	if got := RestartOrder(haCfg()); len(got) != 3 || got[0] != config.Monitor || got[1] != config.Backup || got[2] != config.Primary {
+		t.Errorf("RestartOrder(HA) = %v, want [m b p]", got)
+	}
+	if got := RestartOrder(saCfg()); len(got) != 1 || got[0] != config.Primary {
+		t.Errorf("RestartOrder(standalone) = %v, want [p]", got)
+	}
+}
+
 func TestProductKeyRoles(t *testing.T) {
 	if got := ProductKeyRoles(haCfg()); len(got) != 2 || got[0] != config.Primary || got[1] != config.Backup {
 		t.Errorf("ProductKeyRoles(HA) = %v, want [p b]", got)

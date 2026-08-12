@@ -116,6 +116,14 @@ func (o *Ops) ProductKeys(ctx context.Context, keys []string, roles ...config.Ro
 	if len(keys) == 0 {
 		return fmt.Errorf("no product keys configured")
 	}
+	// Each key is interpolated into a line of a CLI script that runs with admin
+	// already enabled, so it is checked before anything is uploaded -- the sibling
+	// DomainCerts does the same for CA names and filenames.
+	for _, k := range keys {
+		if err := validCLILine("product key", k); err != nil {
+			return err
+		}
+	}
 	var combined bytes.Buffer
 	for _, role := range roles {
 		o.logf("Applying product key(s) to %q node...", role)

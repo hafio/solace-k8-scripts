@@ -194,3 +194,20 @@ func validName(kind, s string) error {
 	}
 	return nil
 }
+
+// validCLILine checks a value that is written verbatim into one line of a Solace
+// CLI script. Unlike validName it does not constrain the character set -- a
+// product key is an opaque vendor string and its alphabet is not ours to decide --
+// but it rejects the one thing that changes the script's meaning: a control
+// character. A newline would turn a single `product-key <k>` line into extra
+// commands run in the already-elevated session (§3 boundary validation).
+func validCLILine(kind, s string) error {
+	if strings.TrimSpace(s) == "" {
+		return fmt.Errorf("invalid %s: must not be empty", kind)
+	}
+	if i := strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }); i >= 0 {
+		return fmt.Errorf("invalid %s %q: contains a control character (0x%02x) at offset %d; it must be a single line",
+			kind, s, s[i], i)
+	}
+	return nil
+}

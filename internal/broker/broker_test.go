@@ -421,6 +421,70 @@ func TestProductKeysEmpty(t *testing.T) {
 	}
 }
 
+// TestProductKeysRejectsMultilineKey closes the injection path: each key is written
+// into one line of a script that runs with admin already enabled, so a newline
+// would append extra commands to that elevated session. The charset itself is not
+// constrained -- a product key is an opaque vendor string -- so this pins the
+// control-character rejection and that nothing is uploaded before it.
+func TestProductKeysRejectsMultilineKey(t *testing.T) {
+	for _, bad := range []string{
+		"KEY-1\nshow running-config",
+		"KEY-1\rmore",
+		"   ",
+	} {
+		ft := &fakeTransport{}
+		o, _ := newTestOps(t, &config.Config{}, ft)
+		if err := o.ProductKeys(context.Background(), []string{bad}, config.Primary); err == nil {
+			t.Errorf("ProductKeys should reject %q", bad)
+		}
+		if len(ft.uploads) != 0 || len(ft.outputs) != 0 {
+			t.Errorf("ProductKeys must validate before running anything, got uploads=%v runs=%v", ft.uploads, ft.outputs)
+		}
+	}
+	// A key with vendor punctuation outside the identifier charset must still pass:
+	// the alphabet of a product key is not ours to decide.
+	ft := &fakeTransport{}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	if err := o.ProductKeys(context.Background(), []string{"AbC+dE/f12=="}, config.Primary); err != nil {
+		t.Errorf("an opaque vendor key must be accepted: %v", err)
+	}
+}
+
+// TestRemoveDomainCerts covers the removal half of the domain-CA pair, which had
+// no coverage at all before the container tree gained its own teardown path.
+func TestRemoveDomainCerts(t *testing.T) {
+	ft := &fakeTransport{}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	if err := o.RemoveDomainCerts(context.Background(), config.Primary, []string{"myca"}); err != nil {
+		t.Fatalf("RemoveDomainCerts error: %v", err)
+	}
+	if body := ft.uploadBody(t, cliScriptPath("remove-domain-certs")); !strings.Contains(body, "myca") {
+		t.Errorf("remove-domain-certs body should name the CA: %q", body)
+	}
+}
+
+func TestRemoveDomainCertsRejectsBadName(t *testing.T) {
+	ft := &fakeTransport{}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	if err := o.RemoveDomainCerts(context.Background(), config.Primary, []string{"bad name"}); err == nil {
+		t.Error("RemoveDomainCerts should reject a CA name with a space")
+	}
+	if len(ft.uploads) != 0 {
+		t.Error("RemoveDomainCerts must not upload before validating the name")
+	}
+}
+
+func TestRemoveDomainCertsEmptySkips(t *testing.T) {
+	ft := &fakeTransport{}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	if err := o.RemoveDomainCerts(context.Background(), config.Primary, nil); err != nil {
+		t.Fatalf("RemoveDomainCerts empty error: %v", err)
+	}
+	if len(ft.uploads) != 0 || len(ft.outputs) != 0 {
+		t.Error("RemoveDomainCerts with no CAs should make no calls")
+	}
+}
+
 func TestExecCLI(t *testing.T) {
 	local := filepath.Join(t.TempDir(), "myscript.cli")
 	ft := &fakeTransport{responder: func(_ config.Role, argv []string, _ []byte) ([]byte, error) {

@@ -19,11 +19,12 @@ func emit(b []byte) error {
 	return err
 }
 
-// genAnnotation marks a command as able to honor --gen (render an artifact instead
-// of applying it). The k8s PersistentPreRunE rejects --gen on any command without it.
+// genAnnotation marks a command as able to honor the --gen-*-only flags (render
+// an artifact instead of applying it). Every platform's PersistentPreRunE rejects
+// them on a command without it.
 const genAnnotation = "solace_gen_capable"
 
-// genCapable tags a command as --gen-aware and returns it, so registration can wrap
+// genCapable tags a command as gen-aware and returns it, so registration can wrap
 // a command inline: genCapable(leaf(...)).
 func genCapable(c *cobra.Command) *cobra.Command {
 	if c.Annotations == nil {
@@ -31,6 +32,44 @@ func genCapable(c *cobra.Command) *cobra.Command {
 	}
 	c.Annotations[genAnnotation] = "true"
 	return c
+}
+
+// anyGen reports whether a gen flag asked for a rendering instead of the real
+// work. Handlers branch on it before doing anything that changes state.
+func (a *App) anyGen() bool { return a.GenOnly || a.GenSecretsOnly || a.GenEnvOnly }
+
+// checkGenFlags validates the --gen-*-only trio for the command about to run.
+// They are root persistent flags, so they parse on every command on every
+// platform, but only a command tagged genCapable renders an artifact: silently
+// ignoring one elsewhere would mask a user mistake -- and could let someone think
+// a destructive command was a dry render -- so we fail loud (§4). Combining them
+// is rejected too: each selects a different artifact, so a pair has no meaning.
+//
+// This is a hand-rolled check rather than cobra's MarkFlagsMutuallyExclusive
+// because the flags are declared on root and validated against the leaf command
+// that inherited them, which also lets the error name the offending command.
+func checkGenFlags(cmd *cobra.Command, app *App) error {
+	var set []string
+	if app.GenOnly {
+		set = append(set, "--gen-only")
+	}
+	if app.GenSecretsOnly {
+		set = append(set, "--gen-secrets-only")
+	}
+	if app.GenEnvOnly {
+		set = append(set, "--gen-env-only")
+	}
+	switch {
+	case len(set) == 0:
+		return nil
+	case len(set) > 1:
+		return fmt.Errorf("%s cannot be combined: each renders a different artifact, so pass exactly one",
+			strings.Join(set, " and "))
+	case cmd.Annotations[genAnnotation] != "true":
+		return fmt.Errorf("%s is only valid on artifact commands (deploy, gen -- plus prep secrets, prep operator and operator deploy on k8s), not %q",
+			set[0], cmd.CommandPath())
+	}
+	return nil
 }
 
 // opFunc is a leaf handler that needs only the app context.
@@ -123,6 +162,25 @@ func confirmDelete(a *App, what string) bool {
 		return false
 	}
 	return promptYesNo(os.Stdin, os.Stderr, fmt.Sprintf("Delete %s? [y/N] ", what))
+}
+
+// addRestartFlag wires --restart onto a container deploy/up command. Deliberately
+// separate from --yes: bouncing a live broker to apply a changed artifact is its
+// own explicit decision, the same way clearing data is.
+func addRestartFlag(c *cobra.Command, app *App) {
+	c.Flags().BoolVar(&app.restart, "restart", false,
+		"restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running)")
+}
+
+// confirmRestart asks whether a running broker may be bounced to apply a changed
+// deploy artifact. A non-interactive session declines: the caller then leaves the
+// new artifact in place and warns, so a scripted deploy never drops messaging
+// traffic unattended.
+func confirmRestart(question string) bool {
+	if !isTTY(os.Stdin) {
+		return false
+	}
+	return promptYesNo(os.Stdin, os.Stderr, question+" [y/N] ")
 }
 
 // confirmPurge decides whether persistent data (PVCs) is cleared alongside a delete.

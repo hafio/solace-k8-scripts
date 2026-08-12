@@ -181,6 +181,37 @@ func (c *Cluster) CopyInto(ctx context.Context, role config.Role, files []string
 // in order (primary, then backup, then monitor in HA), so the primary is ready before
 // the backup joins; unlike the bash original it also waits on the monitor, and the
 // wait is bounded by rolloutTimeout instead of an unbounded busy-wait.
+// RestartPod deletes a role's broker pod so the StatefulSet controller recreates it
+// against the pod template the operator has already updated. This is the step
+// k8s.updateStrategy=manualPodRestart requires after `deploy` changes image.tag:
+// the operator updates the template and then waits for a human, so without this
+// there was no in-tool way to finish an upgrade. --ignore-not-found makes a repeat
+// call harmless, and the readiness wait is bounded like ReplicasStart's.
+func (c *Cluster) RestartPod(ctx context.Context, role config.Role) error {
+	pod := podName(c.Cfg, role)
+	c.logf("deleting pod %s so the statefulset recreates it", pod)
+	if err := c.kubectl(ctx, "delete", "pod", "-n", c.ns(), pod, "--ignore-not-found"); err != nil {
+		return fmt.Errorf("deleting pod %s: %w", pod, err)
+	}
+	sts := stsName(c.Cfg, role)
+	c.logf("waiting for %s to become ready", sts)
+	if err := c.kubectl(ctx, "rollout", "status", "statefulset/"+sts, "-n", c.ns(), "--timeout="+rolloutTimeout); err != nil {
+		return fmt.Errorf("%s did not become ready within %s after restarting %s: %w", sts, rolloutTimeout, pod, err)
+	}
+	return nil
+}
+
+// RestartRolling restarts every broker pod in RestartOrder, stopping at the first
+// failure so a broken restart never cascades into the next role.
+func (c *Cluster) RestartRolling(ctx context.Context) error {
+	for _, role := range RestartOrder(c.Cfg) {
+		if err := c.RestartPod(ctx, role); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *Cluster) ReplicasStart(ctx context.Context) error {
 	for _, role := range HARoles(c.Cfg) {
 		sts := stsName(c.Cfg, role)

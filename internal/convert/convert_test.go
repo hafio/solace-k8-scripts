@@ -181,9 +181,18 @@ func TestConvertLegacyK8sEnv(t *testing.T) {
 	if c.K8s.Runtime.String() != wantRuntime.String() {
 		t.Errorf("k8s.runtime = %v, want %v", c.K8s.Runtime, wantRuntime)
 	}
-	// EXDIR is bash plumbing; every other variable in the file is mapped.
+	// EXDIR is bash plumbing; every other variable in the file is mapped, so the
+	// only warning allowed here is the replication advisory -- this fixture does set
+	// REPL_MATE/REPL_CONN_SSL, and they map into a schema block no command reads
+	// yet. Anything else is still a failure.
 	for _, w := range res.Warnings {
+		if strings.Contains(w, "REPL_MATE") {
+			continue
+		}
 		t.Errorf("unexpected warning converting the sample: %s", w)
+	}
+	if !hasWarning(res.Warnings, "REPL_MATE") {
+		t.Error("the sample configures replication, so the inert-block advisory should have fired")
 	}
 }
 
@@ -362,6 +371,45 @@ func TestConvertRedundancySpellings(t *testing.T) {
 				t.Errorf("warned = %v, want %v (warnings %v)", got, tc.warn, res.Warnings)
 			}
 		})
+	}
+}
+
+// TestConvertRedundancyOmitted covers the unset case, whose legacy default
+// differed by platform: the k8s bootstrap defaulted to standalone -- what this CLI
+// now does, so there is nothing to say -- while the container bootstrap defaulted
+// to HA. That divergence has to be named rather than quietly turning a
+// three-broker group into a single broker. Either way no key is emitted, so the
+// converter keeps its "only what the source set" contract.
+func TestConvertRedundancyOmitted(t *testing.T) {
+	t.Run("container warns about the changed default", func(t *testing.T) {
+		src := "SOLBK_IMAGE=\"r\"\nSOLBK_IMG_TAG=\"t\"\nSOLBK_ADM_PASS=\"p\"\nSOLBK_NODE_PRI_NAME=\"h\"\n"
+		res := convertOK(t, src, config.Docker)
+		if strings.Contains(string(res.YAML), "redundancy:") {
+			t.Errorf("an unset value must emit no key so the CLI default applies:\n%s", res.YAML)
+		}
+		if !hasWarning(res.Warnings, "SOLBK_REDUNDANCY") {
+			t.Errorf("container conversion should name the changed default, got %v", res.Warnings)
+		}
+	})
+	t.Run("k8s stays silent", func(t *testing.T) {
+		src := "SOLBK_NAME=\"b\"\nSOLBK_NS=\"ns\"\nSOLBK_IMAGE=\"r\"\nSOLBK_IMG_TAG=\"t\"\nSOLBK_ADM_PASS=\"p\"\nSOLBK_STORAGE_MSGNODE=\"30Gi\"\n"
+		res := convertOK(t, src, config.K8s)
+		if hasWarning(res.Warnings, "SOLBK_REDUNDANCY") {
+			t.Errorf("the k8s default already matched, so there is nothing to warn about: %v", res.Warnings)
+		}
+	})
+}
+
+// TestConvertDockerRunModeWarns pins the removed run mode: carrying the value over
+// would only fail validation later, so it is dropped and the reason named.
+func TestConvertDockerRunModeWarns(t *testing.T) {
+	src := "SOLBK_IMAGE=\"r\"\nSOLBK_IMG_TAG=\"t\"\nSOLBK_ADM_PASS=\"p\"\nSOLBK_NODE_PRI_NAME=\"h\"\nDOCKER_MODE=\"run\"\n"
+	res := convertOK(t, src, config.Docker)
+	if strings.Contains(string(res.YAML), "mode: run") {
+		t.Errorf("run mode must not be carried over:\n%s", res.YAML)
+	}
+	if !hasWarning(res.Warnings, "DOCKER_MODE") {
+		t.Errorf("warnings should name DOCKER_MODE, got %v", res.Warnings)
 	}
 }
 

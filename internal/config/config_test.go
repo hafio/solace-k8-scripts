@@ -199,8 +199,10 @@ func TestApplyDefaultsK8s(t *testing.T) {
 	c.K8s.Namespace = "sol-ns"
 	c.ApplyDefaults(K8s)
 
-	if c.Redundancy != "yes" {
-		t.Errorf("Redundancy default = %q, want %q", c.Redundancy, "yes")
+	// Unset redundancy means standalone: HA provisions three brokers, so it is the
+	// choice that must be explicit.
+	if c.Redundancy != "no" {
+		t.Errorf("Redundancy default = %q, want %q", c.Redundancy, "no")
 	}
 	if c.K8s.UpdateStrategy != "automatedRolling" {
 		t.Errorf("UpdateStrategy = %q, want automatedRolling", c.K8s.UpdateStrategy)
@@ -280,6 +282,15 @@ func assertContainerBlockDefaults(t *testing.T, b Container) {
 	if b.Ulimits.Core != "-1" {
 		t.Errorf("Ulimits.Core = %q", b.Ulimits.Core)
 	}
+	// The health check stays disabled by default, but its timings are filled so the
+	// block only needs `enabled` and `cmd` to be useful.
+	if b.HealthCheck.Enabled {
+		t.Error("HealthCheck must be opt-in")
+	}
+	if b.HealthCheck.Interval != "5s" || b.HealthCheck.Timeout != "5s" ||
+		b.HealthCheck.StartPeriod != "60s" || b.HealthCheck.Retries != 3 {
+		t.Errorf("HealthCheck timing defaults = %+v", b.HealthCheck)
+	}
 }
 
 func assertContainerScaling(t *testing.T, c *Config) {
@@ -298,6 +309,11 @@ func TestApplyDefaultsDocker(t *testing.T) {
 	}
 	if c.Docker.Mode != "compose" {
 		t.Errorf("Docker.Mode = %q, want compose", c.Docker.Mode)
+	}
+	// The compose default is derived from the runtime, not hardcoded, so a runtime
+	// override carries into it.
+	if c.Docker.Compose.String() != "docker compose" {
+		t.Errorf("Docker.Compose = %q, want 'docker compose'", c.Docker.Compose)
 	}
 	if c.Docker.Network.Mode != "host" {
 		t.Errorf("Docker.Network.Mode = %q, want host", c.Docker.Network.Mode)
@@ -478,6 +494,156 @@ func TestValidateContainerMissingMandatory(t *testing.T) {
 	}
 }
 
+// TestApplyBridgePortDefaults covers the bridge-mode port list: k8s has always
+// defaulted its ports, while bridge mode published nothing unless every port was
+// listed by hand. Host mode is untouched -- there is nothing to publish there.
+func TestApplyBridgePortDefaults(t *testing.T) {
+	for _, p := range []Platform{Docker, Podman} {
+		c := &Config{}
+		if p == Docker {
+			c.Docker.Network.Mode = "bridge"
+		} else {
+			c.Podman.Network.Mode = "bridge"
+		}
+		c.ApplyDefaults(p)
+		got := c.NetworkBlock(p).Ports
+		if len(got) != len(defaultK8sPorts()) {
+			t.Errorf("%s bridge ports = %d entries, want the k8s port count %d", p, len(got), len(defaultK8sPorts()))
+		}
+		if len(got) > 0 && got[0] != "2222:2222" {
+			t.Errorf("%s bridge ports[0] = %q, want host:container pairs derived from the k8s set", p, got[0])
+		}
+	}
+
+	// Host mode (the default) stays empty, and an explicit list is never replaced.
+	c := &Config{}
+	c.ApplyDefaults(Docker)
+	if len(c.Docker.Network.Ports) != 0 {
+		t.Errorf("host mode should publish nothing, got %v", c.Docker.Network.Ports)
+	}
+	c2 := &Config{}
+	c2.Docker.Network.Mode = "bridge"
+	c2.Docker.Network.Ports = []string{"8080:8080"}
+	c2.ApplyDefaults(Docker)
+	if len(c2.Docker.Network.Ports) != 1 {
+		t.Errorf("an explicit port list must be left alone, got %v", c2.Docker.Network.Ports)
+	}
+}
+
+// TestImageTagVersion covers the tag parsing the health-check gate rests on. The
+// unknown case is the important one: a tag with no version must report "unknown",
+// never a guess in either direction.
+func TestImageTagVersion(t *testing.T) {
+	cases := []struct {
+		tag          string
+		major, minor int
+		known        bool
+	}{
+		{"10.26.1.5", 10, 26, true},
+		{"10.26", 10, 26, true},
+		{"11.0.0.1", 11, 0, true},
+		{"10.26.0-rc1", 10, 26, true},
+		{"9.13.1.4", 9, 13, true},
+		{"latest", 0, 0, false},
+		{"", 0, 0, false},
+		{"10", 0, 0, false}, // no minor to compare
+		{"stable.build", 0, 0, false},
+	}
+	for _, tc := range cases {
+		major, minor, known := Image{Tag: tc.tag}.TagVersion()
+		if known != tc.known || (known && (major != tc.major || minor != tc.minor)) {
+			t.Errorf("TagVersion(%q) = (%d, %d, %v), want (%d, %d, %v)",
+				tc.tag, major, minor, known, tc.major, tc.minor, tc.known)
+		}
+	}
+
+	// AtLeast compares major before minor, so a newer major with a lower minor wins.
+	for _, tc := range []struct {
+		tag       string
+		ok, known bool
+	}{
+		{"10.26.0.1", true, true},
+		{"10.27.0.1", true, true},
+		{"11.0.0.1", true, true},
+		{"10.25.9.9", false, true},
+		{"9.99.0.0", false, true},
+		{"latest", false, false},
+	} {
+		ok, known := Image{Tag: tc.tag}.AtLeast(HealthCheckMinMajor, HealthCheckMinMinor)
+		if ok != tc.ok || known != tc.known {
+			t.Errorf("AtLeast(%q) = (%v, %v), want (%v, %v)", tc.tag, ok, known, tc.ok, tc.known)
+		}
+	}
+}
+
+// TestValidateHealthCheck covers the opt-in probe. With no cmd it uses the built-in
+// readiness endpoint, which only exists from 10.26 -- so an older or
+// unidentifiable tag is refused rather than deploying a probe that fails forever
+// (and, under podman's auto-restart, loops). An explicit cmd is the escape hatch
+// and skips the gate.
+func TestValidateHealthCheck(t *testing.T) {
+	enabled := func(p Platform, tag string) *Config {
+		c := validContainerConfig(p, "yes")
+		c.Image.Tag = tag
+		block := &c.Docker.Container
+		if p == Podman {
+			block = &c.Podman.Container
+		}
+		block.HealthCheck.Enabled = true
+		return c
+	}
+
+	t.Run("built-in probe needs 10.26 or later", func(t *testing.T) {
+		c := enabled(Docker, "10.26.0.5")
+		if err := c.Validate(Docker); err != nil {
+			t.Errorf("10.26 must be accepted: %v", err)
+		}
+		c = enabled(Podman, "11.1.0.0")
+		if err := c.Validate(Podman); err != nil {
+			t.Errorf("a later major must be accepted: %v", err)
+		}
+	})
+
+	t.Run("an older broker is refused", func(t *testing.T) {
+		c := enabled(Docker, "10.25.1.4")
+		err := c.Validate(Docker)
+		if err == nil || !strings.Contains(err.Error(), "older than 10.26") {
+			t.Fatalf("expected the too-old error, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "healthCheck.cmd") {
+			t.Errorf("the error should offer the explicit-cmd escape hatch, got: %v", err)
+		}
+	})
+
+	t.Run("an unidentifiable tag is refused", func(t *testing.T) {
+		c := enabled(Docker, "latest")
+		err := c.Validate(Docker)
+		if err == nil || !strings.Contains(err.Error(), "cannot be read from image.tag") {
+			t.Fatalf("expected the unknown-version error, got: %v", err)
+		}
+	})
+
+	t.Run("an explicit cmd skips the version gate", func(t *testing.T) {
+		c := enabled(Docker, "9.13.1.4") // far older than the built-in probe needs
+		c.Docker.Container.HealthCheck.Cmd = []string{"curl", "-fs", "http://localhost:8080/SEMP/v2/monitor"}
+		if err := c.Validate(Docker); err != nil {
+			t.Errorf("an operator-supplied probe must not be version-gated: %v", err)
+		}
+		// It still reaches exec, so it keeps the boundary check.
+		c.Docker.Container.HealthCheck.Cmd = []string{"curl", "-fs\n"}
+		if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "healthCheck.cmd") {
+			t.Errorf("expected a control-character error for the probe argv, got: %v", err)
+		}
+	})
+
+	t.Run("disabled is the default and stays legal on any tag", func(t *testing.T) {
+		c := validContainerConfig(Podman, "no") // tag "latest", health check off
+		if err := c.Validate(Podman); err != nil {
+			t.Errorf("a disabled health check must validate: %v", err)
+		}
+	})
+}
+
 func TestValidateContainerBridge(t *testing.T) {
 	// Bridge without ports -> error.
 	c := validContainerConfig(Docker, "yes")
@@ -496,6 +662,183 @@ func TestValidateContainerBridge(t *testing.T) {
 	}
 }
 
+// TestValidateContainerIdentifiers covers the format checks on the values that
+// reach the compose/quadlet artifact in structural positions: a container or node
+// name carrying a colon, '=' or newline would produce a broken artifact instead of
+// an error.
+func TestValidateContainerIdentifiers(t *testing.T) {
+	bad := []string{"sol ace", "sol:ace", "sol=ace", "sol\nace", "sol/ace"}
+	for _, name := range bad {
+		t.Run("container.name "+name, func(t *testing.T) {
+			c := validContainerConfig(Docker, "yes")
+			c.Docker.Container.Name = name
+			if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "docker.container.name") {
+				t.Errorf("expected a container.name format error for %q, got: %v", name, err)
+			}
+		})
+		t.Run("nodes.backup.name "+name, func(t *testing.T) {
+			c := validContainerConfig(Podman, "yes")
+			c.Nodes.Backup.Name = name
+			if err := c.Validate(Podman); err == nil || !strings.Contains(err.Error(), "nodes.backup.name") {
+				t.Errorf("expected a nodes.backup.name format error for %q, got: %v", name, err)
+			}
+		})
+	}
+	// Standalone leaves the backup/monitor rows empty, which must stay legal: the
+	// format check skips empty values, since emptiness is requireAll's job.
+	c := validContainerConfig(Docker, "no")
+	c.Nodes.Backup.Name, c.Nodes.Monitor.Name = "", ""
+	if err := c.Validate(Docker); err != nil {
+		t.Errorf("standalone with empty backup/monitor names must validate: %v", err)
+	}
+}
+
+// TestValidateContainerRunUser pins the uid[:gid] form: the default "0:0" carries a
+// colon, so the identifier check cannot be reused verbatim here.
+func TestValidateContainerRunUser(t *testing.T) {
+	for _, ok := range []string{"0:0", "1000", "1000:1000", "solace:solace"} {
+		c := validContainerConfig(Docker, "yes")
+		c.Docker.Container.RunUser = ok
+		if err := c.Validate(Docker); err != nil {
+			t.Errorf("runUser %q must be accepted: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"1000 1000", "1000:", "root:root:root", "root\n"} {
+		c := validContainerConfig(Docker, "yes")
+		c.Docker.Container.RunUser = bad
+		if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "runUser") {
+			t.Errorf("expected a runUser format error for %q, got: %v", bad, err)
+		}
+	}
+}
+
+// TestValidateK8sKeyValueEntries covers the "key: value" fragments the CR renderer
+// emits as mapping entries. The renderer quotes both halves, so the only
+// unrecoverable shape is an entry with no key -- which used to be pasted into the
+// manifest verbatim and corrupt it.
+func TestValidateK8sKeyValueEntries(t *testing.T) {
+	cases := []struct {
+		name  string
+		apply func(*Config)
+		field string
+	}{
+		{"lb annotation without a colon", func(c *Config) {
+			c.K8s.LoadBalancer.Annotations = []string{"not-a-pair"}
+		}, "k8s.loadBalancer.annotations[0]"},
+		{"label with an empty key", func(c *Config) {
+			c.K8s.Placement.LabelsPrimary = []string{" : solace"}
+		}, "k8s.placement.labelsPrimary[0]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validK8sConfig()
+			tc.apply(c)
+			err := c.Validate(K8s)
+			if err == nil || !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("expected an error naming %s, got: %v", tc.field, err)
+			}
+		})
+	}
+	// A value carrying a colon is fine: the renderer quotes it.
+	c := validK8sConfig()
+	c.K8s.LoadBalancer.Annotations = []string{"external-dns.alpha.kubernetes.io/target: https://x:8443"}
+	c.K8s.Placement.LabelsPrimary = []string{"nodetype: solace"}
+	if err := c.Validate(K8s); err != nil {
+		t.Errorf("a quoted-safe value must be accepted: %v", err)
+	}
+}
+
+// TestValidatePullPolicy covers the enum plus the empty case, which must stay
+// legal: unset means the renderer keeps writing the IfNotPresent it always did.
+func TestValidatePullPolicy(t *testing.T) {
+	for _, ok := range []string{"", "Always", "IfNotPresent", "Never"} {
+		c := validK8sConfig()
+		c.Image.PullPolicy = ok
+		if err := c.Validate(K8s); err != nil {
+			t.Errorf("pullPolicy %q must be accepted: %v", ok, err)
+		}
+	}
+	c := validK8sConfig()
+	c.Image.PullPolicy = "always" // k8s is case-sensitive here
+	if err := c.Validate(K8s); err == nil || !strings.Contains(err.Error(), "image.pullPolicy must be") {
+		t.Errorf("expected a pullPolicy enum error, got: %v", err)
+	}
+}
+
+// TestValidatePlacementAffinity covers the additive affinity blocks: an operator or
+// topologyKey the API server would reject should fail here, where the message can
+// name the field.
+func TestValidatePlacementAffinity(t *testing.T) {
+	cases := []struct {
+		name  string
+		apply func(*Config)
+		want  string
+	}{
+		{"unknown operator", func(c *Config) {
+			c.K8s.Placement.NodeAffinity.Required = []NodeMatchExpr{{Key: "k", Operator: "Contains"}}
+		}, "operator \"Contains\" is invalid"},
+		{"missing key", func(c *Config) {
+			c.K8s.Placement.NodeAffinity.Required = []NodeMatchExpr{{Operator: "Exists"}}
+		}, "required[0].key must be set"},
+		{"In without values", func(c *Config) {
+			c.K8s.Placement.NodeAffinity.Required = []NodeMatchExpr{{Key: "k", Operator: "In"}}
+		}, "values must not be empty"},
+		{"preferred term operator", func(c *Config) {
+			c.K8s.Placement.NodeAffinity.Preferred = []WeightedNodeTerm{
+				{Weight: 50, Match: []NodeMatchExpr{{Key: "k", Operator: "nope"}}},
+			}
+		}, "preferred[0].match[0].operator"},
+		{"pod affinity without topologyKey", func(c *Config) {
+			c.K8s.Placement.PodAffinity = []PodAffinityTerm{{MatchLabels: map[string]string{"a": "b"}}}
+		}, "podAffinity[0].topologyKey must be set"},
+		{"pod anti-affinity without topologyKey", func(c *Config) {
+			c.K8s.Placement.PodAntiAffinity = []PodAffinityTerm{{Weight: 10}}
+		}, "podAntiAffinity[0].topologyKey must be set"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validK8sConfig()
+			tc.apply(c)
+			err := c.Validate(K8s)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected an error containing %q, got: %v", tc.want, err)
+			}
+		})
+	}
+
+	// A fully populated, valid set must pass, including Exists with no values.
+	c := validK8sConfig()
+	c.K8s.Placement.NodeAffinity = NodeAffinity{
+		Preferred: []WeightedNodeTerm{{Weight: 100, Match: []NodeMatchExpr{{Key: "zone", Operator: "In", Values: []string{"a"}}}}},
+		Required:  []NodeMatchExpr{{Key: "solace", Operator: "Exists"}},
+	}
+	c.K8s.Placement.PodAffinity = []PodAffinityTerm{{TopologyKey: "kubernetes.io/hostname", Weight: 5}}
+	c.K8s.Placement.PodAntiAffinity = []PodAffinityTerm{{TopologyKey: "topology.kubernetes.io/zone"}}
+	if err := c.Validate(K8s); err != nil {
+		t.Errorf("a valid affinity set must be accepted: %v", err)
+	}
+}
+
+// TestDefaultK8sPortsMatchesOperator pins the built-in port list against the
+// operator's own default, whose leading entry (tcp-ssh) this tool used to omit.
+func TestDefaultK8sPortsMatchesOperator(t *testing.T) {
+	ports := defaultK8sPorts()
+	if len(ports) != 17 {
+		t.Errorf("defaultK8sPorts has %d entries, want 17 (the operator's own default)", len(ports))
+	}
+	if ports[0] != "tcp-ssh=2222" {
+		t.Errorf("defaultK8sPorts[0] = %q, want tcp-ssh=2222 (the operator lists it first)", ports[0])
+	}
+	seen := map[string]bool{}
+	for _, p := range ports {
+		name, _, _ := strings.Cut(p, "=")
+		if seen[name] {
+			t.Errorf("duplicate port name %q in defaultK8sPorts", name)
+		}
+		seen[name] = true
+	}
+}
+
 func TestValidateContainerBadNetworkMode(t *testing.T) {
 	c := validContainerConfig(Podman, "yes")
 	c.Podman.Network.Mode = "sidecar"
@@ -509,6 +852,31 @@ func TestValidateDockerBadMode(t *testing.T) {
 	c.Docker.Mode = "swarm"
 	if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "docker.mode must be") {
 		t.Errorf("expected docker.mode enum error, got: %v", err)
+	}
+}
+
+// TestValidateDockerRunModeRemoved pins the removed value's own error: an env file
+// migrated from run mode has to be told why and what to set, not just that the
+// enum is wrong.
+func TestValidateDockerRunModeRemoved(t *testing.T) {
+	c := validContainerConfig(Docker, "yes")
+	c.Docker.Mode = "run"
+	err := c.Validate(Docker)
+	if err == nil || !strings.Contains(err.Error(), "was removed") {
+		t.Fatalf("expected the run-mode removal error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "docker.compose") {
+		t.Errorf("removal error should mention docker.compose, got: %v", err)
+	}
+}
+
+// TestValidateDockerComposeCommand covers the compose command as an exec-bound
+// Command, the same boundary check k8s.runtime and docker.runtime get.
+func TestValidateDockerComposeCommand(t *testing.T) {
+	c := validContainerConfig(Docker, "yes")
+	c.Docker.Compose = Command{"docker", ""}
+	if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "docker.compose[1]") {
+		t.Errorf("expected an empty-argument error for docker.compose, got: %v", err)
 	}
 }
 

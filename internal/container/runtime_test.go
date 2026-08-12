@@ -23,6 +23,23 @@ func withSudo(rest ...string) []string {
 	return append([]string{"-n", "docker"}, rest...)
 }
 
+// TestManagerReachableProbesRuntimeThenCompose: on docker both the engine and the
+// compose command are probed, and the compose default derives from the wrapped
+// runtime -- a `sudo -n docker` runtime must yield `sudo -n docker compose`, not a
+// bare `docker compose` that would bypass the wrapper.
+func TestManagerReachableProbesRuntimeThenCompose(t *testing.T) {
+	m, rr, _ := newCapMgr(wrappedCtrCfg(), config.Docker)
+	if err := m.Reachable(context.Background()); err != nil {
+		t.Fatalf("Reachable: %v", err)
+	}
+	if !hasCall(rr, "sudo", withSudo("version")) {
+		t.Errorf("Reachable should probe the engine through the wrapper:\n%+v", rr.calls)
+	}
+	if !hasCall(rr, "sudo", withSudo("compose", "version")) {
+		t.Errorf("Reachable should probe compose through the wrapper:\n%+v", rr.calls)
+	}
+}
+
 // TestManagerHonoursRuntime: the manager's own shell-outs run argv[0] from the
 // configured runtime with its leading arguments ahead of the subcommand.
 func TestManagerHonoursRuntime(t *testing.T) {
@@ -39,10 +56,13 @@ func TestManagerHonoursRuntime(t *testing.T) {
 			wantArgs:   withSudo("logs", "-f", "solace"),
 		},
 		{
+			// Reachable probes the engine then the compose command, so the compose
+			// probe is the last call; the engine probe is asserted separately in
+			// TestManagerReachableProbesRuntimeThenCompose.
 			name:       "output",
 			call:       func(m *Manager) error { return m.Reachable(context.Background()) },
 			wantMethod: "Output",
-			wantArgs:   withSudo("version"),
+			wantArgs:   withSudo("compose", "version"),
 		},
 		{
 			name:       "cli",

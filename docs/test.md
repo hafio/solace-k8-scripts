@@ -46,46 +46,46 @@ test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
-25 test files, 346 test functions. `TestHelperProcess` in `internal/engine` is not a real
+25 test files, 393 test functions. `TestHelperProcess` in `internal/engine` is not a real
 test -- it is the os/exec helper-process shim, a no-op unless `GO_WANT_HELPER_PROCESS=1`.
 
 | Package | Files | Tests |
 | --- | --- | --- |
-| internal/broker | 4 | 85 |
-| internal/k8s | 10 | 68 |
-| internal/container | 3 | 58 |
-| internal/config | 2 | 49 |
-| internal/cli | 2 | 39 |
-| internal/convert | 1 | 25 |
+| internal/broker | 4 | 89 |
+| internal/k8s | 10 | 71 |
+| internal/container | 3 | 74 |
+| internal/config | 2 | 60 |
+| internal/cli | 2 | 44 |
+| internal/convert | 1 | 27 |
 | internal/engine | 1 | 13 |
 | internal/tools/vulnjudge | 1 | 5 |
-| internal/render | 1 | 4 |
-| **Total** | **25** | **346** |
+| internal/render | 1 | 10 |
+| **Total** | **25** | **393** |
 
 ## Coverage
 
-Last recorded run, from `scripts/logs/cov.log` (2026-08-09). Re-run `cov` after any change;
+Last recorded run, from `scripts/logs/cov.log` (2026-08-12). Re-run `cov` after any change;
 these figures go stale the moment tests move.
 
 | Package | Coverage |
 | --- | --- |
-| internal/config | 98.4% |
-| internal/container | 96.8% |
-| internal/convert | 96.3% |
-| internal/cli | 90.0% |
-| internal/k8s | 89.5% |
-| internal/render | 89.0% |
-| internal/broker | 84.9% |
+| internal/config | 97.9% |
+| internal/render | 96.6% |
+| internal/convert | 96.4% |
+| internal/container | 95.9% |
+| internal/k8s | 89.8% |
+| internal/cli | 89.6% |
+| internal/broker | 89.0% |
 | internal/tools/vulnjudge | 83.1% |
 | internal/engine | 79.7% |
-| **total** | **90.4%** |
+| **total** | **92.3%** |
 
 ---
 
 ## internal/config
 
 Config loading, defaults, validation, and env-file resolution, plus the `Command`
-type behind the platform CLI overrides. 49 tests across 2 files.
+type behind the platform CLI overrides. 60 tests across 2 files.
 
 ### command_test.go
 
@@ -119,7 +119,7 @@ type behind the platform CLI overrides. 49 tests across 2 files.
 | `TestNetworkBlock` | Network block is selected per platform |
 | `TestApplyDefaultsK8s` | Every k8s default lands: redundancy, update strategy, admin secret, diag dir, CLI folder, storage, resources, operator image/resources, scaling, ports, anti-affinity |
 | `TestApplyDefaultsK8sTLS` | TLS cert/key default only when `tls.serverSecret` is set |
-| `TestApplyDefaultsDocker` | Docker defaults (runtime, compose mode, host network, admin user, container name) plus the shared `k8s.*` fields containers reuse |
+| `TestApplyDefaultsDocker` | Docker defaults (runtime, compose mode, the compose command derived from the runtime, host network, admin user, container name) plus the shared `k8s.*` fields containers reuse |
 | `TestApplyDefaultsPodmanRootful` | Rootful podman gets the system quadlet dir, no `--user`, `multi-user.target` |
 | `TestApplyDefaultsPodmanRootlessXDG` | Rootless quadlet dir derives from `XDG_CONFIG_HOME`, with `--user` and `default.target` |
 | `TestApplyDefaultsPodmanRootlessHomeDir` | Empty `XDG_CONFIG_HOME` falls back to the user home dir branch |
@@ -130,8 +130,19 @@ type behind the platform CLI overrides. 49 tests across 2 files.
 | `TestValidateContainerStandalone` | Standalone only requires `nodes.primary.name` among the node fields |
 | `TestValidateContainerMissingMandatory` | Missing container fields (image, admin, all three node name/ip pairs) are all named |
 | `TestValidateContainerBridge` | `network.mode=bridge` without ports errors; with ports it passes |
+| `TestValidateContainerIdentifiers` | Container and node names that reach the compose/quadlet artifact in structural positions are format-checked, so a colon, '=', space or newline is an error instead of a broken artifact. Empty backup/monitor names stay legal in standalone |
+| `TestValidateContainerRunUser` | runUser keeps its own `uid[:gid]` pattern -- the default "0:0" carries a colon the identifier check would reject |
+| `TestValidateK8sKeyValueEntries` | The "key: value" fragments (loadBalancer.annotations, placement.labels*) must carry a key; a value holding a colon is fine because the renderer quotes both halves |
+| `TestValidatePullPolicy` | `image.pullPolicy` enum, including the empty case that keeps the renderer's own IfNotPresent |
+| `TestValidatePlacementAffinity` | The additive affinity blocks: unknown operator, missing key, In without values, and a pod term with no topologyKey each fail naming the field; a full valid set passes |
+| `TestDefaultK8sPortsMatchesOperator` | The built-in port list is the operator's own 17 entries, led by the tcp-ssh entry this tool used to omit, with no duplicate names |
+| `TestApplyBridgePortDefaults` | Bridge mode with no ports defaults to the k8s set as host:container pairs on both platforms; host mode and an explicit list are untouched |
+| `TestImageTagVersion` | Tag parsing behind the health-check gate: dotted versions, a `-rc1` suffix, and a two-part tag parse; `latest`, empty, a bare major and a non-numeric tag report *unknown* rather than guessing; `AtLeast` compares major before minor |
+| `TestValidateHealthCheck` | The opt-in probe: with no cmd it uses the built-in readiness endpoint, so 10.26+ is accepted while an older tag and an unidentifiable one are both refused (naming the explicit-cmd escape hatch); an explicit cmd skips the version gate but keeps the exec-boundary check; disabled stays legal on any tag |
 | `TestValidateContainerBadNetworkMode` | Unknown network mode is rejected loud |
-| `TestValidateDockerBadMode` | `docker.mode` enum (compose/run) is rejected loud |
+| `TestValidateDockerBadMode` | An unknown `docker.mode` is rejected loud |
+| `TestValidateDockerRunModeRemoved` | The removed `run` value gets its own error naming why it went and what to set, not a bare enum message |
+| `TestValidateDockerComposeCommand` | `docker.compose` gets the same exec-boundary check as the runtimes: an empty argument is rejected |
 | `TestValidateUnknownPlatform` | An unrecognised platform fails rather than validating nothing |
 | `TestValidateBadRedundancy` | `redundancy` enum is rejected loud |
 | `TestResolveEnvPath` | Env-file lookup over a real temp tree: base dir first, `env/` fallback, base dir shadows `env/`, default name, no extension inference, a path used verbatim with no `env/` retry, a directory is not a match, both candidates named in the not-found error, control characters rejected |
@@ -151,7 +162,7 @@ type behind the platform CLI overrides. 49 tests across 2 files.
 ## internal/cli
 
 Command-tree wiring, global flags, confirm prompts, and end-to-end `--dry-run` /
-`--gen` passes over the sample env, plus the generated command reference. 39 tests across
+gen-flag passes over the sample env, plus the generated command reference. 44 tests across
 two files.
 
 ### cli_test.go
@@ -167,7 +178,7 @@ two files.
 | `TestTreeStructure` | Every platform and a representative set of leaf command paths exist in the tree |
 | `TestFlagsRegistered` | Per-command flags (`purge`/`clear-data`/`keep-data`, `keep-yaml`, `days`, `pod`, `dir`) are registered where expected |
 | `TestHelpNoConfig` | `--help` at root and per platform short-circuits before config load, so no env is needed |
-| `TestGenWired` | Every render-only path emits the right artifact: k8s CR (`apiVersion:`), compose (`services:`), quadlet (`[Unit]`) |
+| `TestGenWired` | Every render-only path emits the right artifact: k8s CR (`apiVersion:`), Secret manifests, compose (`services:`), quadlet (`[Unit]`), the container secret script, and the container env file -- via both the `gen` command and the `--gen-*-only` flags |
 | `TestCtrWiredDryRun` | Every container command safe under `--dry-run` reaches its handler and echoes the expected runtime/systemctl/mkdir command |
 | `TestCtrRoleGuards` | Node-local HA guards: leader must run on the primary, redundancy rejects the monitor, bad roles error, and standalone self-skips |
 | `TestCtrConfigDryRun` | Container config steps run clean on a standalone env; cert/product-key-gated steps self-skip |
@@ -180,13 +191,18 @@ two files.
 | `TestK8sVerifyDiagnosticsDryRun` | k8s diagnostics echoes the gather/download sequence for all three nodes (isolated for its dir side-effect) |
 | `TestK8sGenOperatorWired` | `gen operator` and `operator deploy --gen` emit the bundle with every template marker resolved |
 | `TestSecretsNeverEchoed` | A secret-bearing command under `--dry-run` shows stdin as a byte count and never the password |
-| `TestK8sErrorPaths` | k8s handler boundaries: missing cert/key, no product keys, failed login, missing exec-cli file, bad `--pod`, `--gen` rejected on non-artifact commands, mutually exclusive data flags |
+| `TestK8sErrorPaths` | k8s handler boundaries: missing cert/key, no product keys, failed login, missing exec-cli file, bad `--pod`, `--gen-only` rejected on non-artifact commands, `--gen-env-only` rejected as having no k8s equivalent, mutually exclusive data flags |
 | `TestConfirmFlagShortcuts` | `--yes` confirms a delete; `--purge`/`--keep-data` drive retention without reading stdin |
 | `TestConfirmNonTTY` | Without a TTY and without `--yes`, delete refuses and purge keeps data |
 | `TestPromptYesNo` | Lenient delete prompt: `y`/`yes` in any case accept, everything else declines |
 | `TestPromptYes` | Strict purge prompt: only an exact trimmed `yes` accepts; a bare `y` does not |
 | `TestErrorPaths` | Global rejections: unresolvable env file, invalid node roles across container and k8s leaves, unknown `gen` target |
-| `TestGenDockerRunMode` | With `docker.mode=run` the generated artifact is the `docker run ...` command line, not a compose file |
+| `TestDockerRunModeRejected` | An env file still carrying `docker.mode: run` fails with the removal reason and points at `docker.compose` |
+| `TestK8sGenSecretsWired` | The Secret manifests render through both the `gen secrets` target and `--gen-secrets-only`, on the standalone env rather than the HA sample whose tls.serverSecret points at cert files absent from a checkout |
+| `TestGenSecretsRefusesEmptyValue` | The printed script invites execution, so it is refused when running it would create an empty secret -- while `--gen-only` stays renderable, since the deploy artifact only references secrets by name |
+| `TestGenFlagsAreExclusive` | Two gen flags at once is a loud error, not a silent precedence rule |
+| `TestCtrGenFlagsRejectedOnNonArtifactCommands` | Every gen flag on every non-artifact container command (`delete`, `down`, `status`, `check`) fails loud -- being ignored on `delete` would run the real delete while the user believed they asked for a render |
+| `TestGenNeverLeaksSecrets` | End-to-end: `--gen-only` and `--gen-env-only` output on both container platforms omits the admin password, while `--gen-secrets-only` carries it (it is what creates the secret) |
 | `TestCtrVerifyAll` | `verify` role arms: unknown host fails loud, this-host-is-monitor skips redundancy, standalone skips redundancy |
 | `TestCtrConfigAllArms` | `config` with every optional step configured runs all three gated arms, and the private key never reaches stdout |
 | `TestCtrExecCLIPathSeparator` | An exec-cli argument containing a separator is used as-is, not joined under the CLI scripts folder |
@@ -225,6 +241,8 @@ mapping, and the YAML emitter. 25 tests.
 | `TestConvertKubeEchoIsDropped` | `KUBE="echo"` was the bash dry-run trick, so it warns pointing at `--dry-run` and emits no `runtime`, rather than becoming a runtime that no-ops every command |
 | `TestConvertKubeSilentOnContainerPlatform` | `KUBE` belongs to the k8s bootstrap: a container conversion consumes it silently and never emits `k8s.runtime` |
 | `TestConvertRedundancySpellings` | `true`/`yes` and `false`/`no` normalise (any case); anything else copies through with a warning |
+| `TestConvertRedundancyOmitted` | An unset SOLBK_REDUNDANCY emits no key either way, but a container source is warned that its bootstrap defaulted to HA while this CLI defaults to standalone; a k8s source stays silent because the defaults already agree |
+| `TestConvertDockerRunModeWarns` | DOCKER_MODE=run is dropped with the removal reason rather than carried over to fail validation later |
 | `TestConvertBadNumberWarns` | A non-numeric value for a numeric field warns and is not written |
 | `TestConvertBadBooleanWarns` | An unparseable boolean (`SOLOP_WATCH_SOLBK_NS`, which the bootstrap never enum-checked) warns and is not written |
 | `TestGeneratedHeaderSanitisesSource` | A control character in the source name cannot end the header comment and inject document structure |
@@ -273,6 +291,10 @@ state machines, and the node-local HA variants. 85 tests across 4 files.
 | `TestProductKeys` | The generated product-key script is uploaded verbatim |
 | `TestProductKeysDetectsError` | A broker-reported failure in the output fails loud |
 | `TestProductKeysEmpty` | No keys configured is an error |
+| `TestProductKeysRejectsMultilineKey` | A product key with a newline or CR is rejected before anything is uploaded -- it would append commands to a CLI script already running as admin -- while an opaque vendor key with `+`, `/` or `=` is accepted, since a key's alphabet is not this tool's to constrain |
+| `TestRemoveDomainCerts` | The removal half of the domain-CA pair emits a script naming the CA (previously untested, and now reachable from both platforms) |
+| `TestRemoveDomainCertsRejectsBadName` | A CA name with a space is rejected before any upload |
+| `TestRemoveDomainCertsEmptySkips` | No configured CAs makes no calls |
 | `TestExecCLI` | A local script is uploaded under its base name and cleaned up afterwards |
 | `TestExecCLIRejectsBadName` | A base name of `..` is rejected before upload |
 | `TestLogin` | A 2xx SEMP response succeeds, and the password rides stdin, never the argv |
@@ -371,6 +393,7 @@ and the pod transport. 68 tests across 10 files.
 | Test | What it covers |
 | --- | --- |
 | `TestResourceNames` | Pod, PVC, StatefulSet, and load-balancer service names for every role |
+| `TestRestartOrder` | The safe manual-bounce order (monitor, backup, primary; standalone just the primary) |
 | `TestHARoles` | HA yields all three roles; standalone yields only the primary |
 | `TestProductKeyRoles` | Product keys target primary+backup in HA, primary only in standalone |
 
@@ -461,6 +484,8 @@ and the pod transport. 68 tests across 10 files.
 | `TestCLIAndShellAreInteractive` | `cli` and `shell` run interactively with the right in-pod command |
 | `TestCopyFrom` | Each file downloads under its base name; an empty list errors; failures are aggregated after every file is attempted |
 | `TestCopyInto` | Uploads into the target dir, defaults it to `.`, errors on an empty list, aggregates failures |
+| `TestRestartPod` | The manualPodRestart step: delete the role's pod with --ignore-not-found, then wait for the statefulset within the bounded rollout timeout |
+| `TestRestartRolling` | HA bounces monitor -> backup -> primary in that order, standalone only the primary, and a pod that does not come back stops the sequence before the next role |
 | `TestReplicasStart` | HA scales and waits for all three roles, standalone only the primary, and a stuck rollout fails loud at the first role |
 | `TestReplicasStop` | HA scales all three to zero, standalone only the primary |
 
@@ -488,13 +513,14 @@ and the pod transport. 68 tests across 10 files.
 
 ## internal/container
 
-The host-local Docker/Podman manager and its node-local transport. 58 tests across 3 files.
+The host-local Docker/Podman manager and its node-local transport. 74 tests across 3 files.
 
 ### runtime_test.go
 
 | Test | What it covers |
 | --- | --- |
 | `TestManagerHonoursRuntime` | The manager's shell-outs (`run`, `output`, `CLI`, `Shell`) run argv[0] from `docker.runtime` with its leading arguments ahead of the subcommand -- the bash bootstrap expanded `${CONTAINER_RUNTIME}` unquoted, so a wrapper like `sudo -n docker` has to reach exec as argv |
+| `TestManagerReachableProbesRuntimeThenCompose` | Docker `Reachable` probes both the engine and compose, and the derived compose default keeps the runtime wrapper (`sudo -n docker compose`, not a bare `docker compose`) |
 | `TestCtrTransportHonoursRuntime` | The node-local transport does the same for `exec`, the stdin `Upload`, and `cp` |
 | `TestCtrRuntimeDefaultArgvUnchanged` | A single-token runtime produces exactly the argv it did before, for both docker and podman |
 
@@ -508,16 +534,30 @@ The host-local Docker/Podman manager and its node-local transport. 58 tests acro
 | `TestManagerPrepHostDryRunDoesNotWritePSK` | Dry-run leaves the env file untouched, never generates a PSK, and still echoes mkdir/chown |
 | `TestManagerPrepHostWritesPSK` | The generated PSK is written into `nodes.psk`, the replication PSK is untouched, and the data dir is created and chowned |
 | `TestManagerPrepHostRootlessUsesUnshareChown` | Rootless podman chowns via `podman unshare` |
-| `TestManagerDeployDockerComposeWritesFile` | Compose mode writes the file and runs `compose up -d` |
-| `TestManagerDeployDockerRun` | Run mode issues `docker run` |
+| `TestManagerDeployDockerComposeWritesFile` | Deploy writes the compose file and runs `compose up -d` |
+| `TestManagerDockerComposeCommandOverride` | A `docker.compose` override (the standalone `docker-compose` binary) is what every compose call goes through |
+| `TestManagerDockerCheckProbesCompose` | Docker `check` probes the compose command, so a missing plugin fails at check time rather than at deploy time |
+| `TestManagerDockerCheckFailsWhenComposeMissing` | With only the compose probe failing, the error names the `docker.compose` override |
+| `TestManagerDeployDockerWritesSecretFiles` | Deploy writes each secret 0600 under `solace-secrets/`, and the compose file references them without carrying either value |
+| `TestManagerDeployPodmanCreatesSecrets` | Deploy loads both secrets into podman's store with `secret create --replace`, values on stdin and never in an argv; the quadlet unit is 0600 |
+| `TestManagerDeployRejectsEmptySecret` | An empty required secret fails the deploy naming the field and the fix (`prep host` for the PSK) rather than starting a broker without one |
+| `TestManagerDeployDryRunCreatesNoSecretFiles` | Dry-run creates no secret files and stays previewable before `prep host` has generated the PSK |
+| `TestManagerDeployPodmanDryRunHidesSecretBytes` | The dry-run echo shows the secret-create command and a stdin byte count, never the values |
 | `TestManagerDeployPodmanWritesUnit` | The quadlet unit is written, then daemon-reload and service start |
 | `TestManagerDeployPodmanDryRunSkipsWrite` | Dry-run echoes the systemctl steps without writing the unit |
 | `TestManagerPodmanEUIDGuardSkippedOnDryRun` | The rootless/rootful euid guard does not run under dry-run |
 | `TestManagerDeletePodmanRemovesUnit` | Delete stops the service, removes the unit, and daemon-reloads |
 | `TestManagerDeletePodmanPurgeRootless` | Rootless purge removes the data dir via `podman unshare` |
 | `TestManagerDeleteDockerComposeDownWhenFileExists` | With a compose file present, delete runs `compose down` |
-| `TestManagerDeleteDockerRunStopsAndRemoves` | Run mode stops and removes the container, and purge removes the data dir |
+| `TestManagerDeleteDockerPurgeRemovesDataDir` | Delete runs `compose down` and, with purge, removes the data dir |
 | `TestManagerDeleteDockerComposeNoFileFallsBackToStopRm` | A missing compose file falls back to stop+rm |
+| `TestManagerRedeployUnchangedIsNoOp` | Re-deploying an unchanged artifact against a running broker touches nothing on either platform and says there was nothing to do |
+| `TestManagerRedeployChangedNeedsConsent` | A changed artifact against a running broker is written but not applied without consent (warning that the broker is still on the previous one); `--restart` and an accepted prompt both apply it. This is the podman silent no-op fixed: `systemctl start` on an active unit left the old image running while reporting success |
+| `TestManagerDescribe` | `<runtime> inspect` on both platforms, plus the installed unit on podman, with a missing unit tolerated |
+| `TestManagerCopy` | The copy verbs: cp out of and into the container, per-file reporting, an error with no files, and a non-zero exit when any file fails |
+| `TestManagerPrepHostRegistryLogin` | prep logs in to the registry with the password on stdin, never in an argv -- credentials that were previously ignored on containers entirely |
+| `TestManagerPrepHostNoLoginWithoutCreds` | No credentials means no login attempt |
+| `TestManagerPrepHostRejectsHalfCredentials` | A user with no password (or the reverse) fails loud rather than attempting a broken login |
 | `TestManagerStatusPodman` | Status shows the systemd unit and lists the container |
 | `TestManagerStatusDockerCompose` | Compose-mode status runs `compose ps` and a filtered `docker ps` |
 | `TestManagerLogsCLIShell` | `logs` follows, `cli` and `shell` exec interactively into the container |
@@ -539,14 +579,15 @@ The host-local Docker/Podman manager and its node-local transport. 58 tests acro
 | `TestManagerDeployPodmanEUIDGuardFails` | Rootless-as-root is rejected by the euid guard |
 | `TestManagerDeployDockerComposeWriteError` | An unwritable compose path fails deploy |
 | `TestManagerDeployDockerComposeUpError` | A `compose up` failure propagates |
-| `TestManagerDeployDockerRunError` | A `docker run` failure propagates |
+| `TestManagerDeployPodmanSecretCreateError` | A failed `secret create` aborts the deploy, naming the config key behind the secret |
+| `TestManagerDeployDockerSecretWriteError` | An uncreatable secrets directory aborts the deploy |
 | `TestManagerDeletePodmanStopTolerated` | A failed stop is tolerated with a warning |
 | `TestManagerDeletePodmanDaemonReloadError` | A daemon-reload failure during delete propagates |
 | `TestManagerDeletePodmanRemoveUnitError` | An unremovable unit path fails delete |
 | `TestManagerDeleteDockerComposeDownError` | A `compose down` failure propagates |
-| `TestManagerDeleteDockerRunStopTolerated` | A failed run-mode stop is tolerated with a warning |
+| `TestManagerDeleteDockerStopTolerated` | A failed stop in the no-compose-file fallback is tolerated with a warning |
 | `TestManagerDeletePurgeError` | A failing data-dir removal under `--purge` propagates |
-| `TestManagerStatusDockerRun` | Run-mode status lists the container and never calls compose |
+| `TestManagerStatusDockerNoComposeFile` | With no compose file on disk, status lists the container and never calls compose |
 | `TestManagerStatusPodmanUnitInactiveTolerated` | An inactive unit warns but status still lists the container |
 | `TestManagerStatusDockerComposePsTolerated` | A failing `compose ps` warns but the plain `ps` still runs |
 | `TestManagerCheckPodmanEUID` | The euid guard across rootless/rootful x root/non-root, and skipped on a non-POSIX euid |
@@ -592,13 +633,19 @@ The command runner seam: `Echo` (dry-run) and `Exec` (real subprocess), plus dis
 
 ## internal/render
 
-Manifest and unit-file rendering, guarded by committed goldens. 4 tests.
+Manifest and unit-file rendering, guarded by committed goldens. 10 tests.
 
 ### render_test.go
 
 | Test | What it covers |
 | --- | --- |
-| `TestGolden` | Eight renderings from the sample env match their goldens: k8s broker CR (the sample omits `k8s.ports`, `timezone` and both security blocks, so this covers the 16 default ports and the omitted branches), the same CR with an explicit port list (a container port differing from the service port, and an explicit protocol), the same CR with timezone and both security blocks set, podman quadlet, docker compose, docker run args, and container env pairs for HA (no `timezone`, so no TZ pair) and standalone (`timezone` set, so the TZ pair is present) |
+| `TestGolden` | Fourteen renderings from the sample env match their goldens: k8s broker CR (the sample omits `k8s.ports`, `timezone` and both security blocks, so this covers the default ports and the omitted branches), the same CR with an explicit port list (a container port differing from the service port, and an explicit protocol), the same CR with timezone and both security blocks set, podman quadlet, docker compose in HA and standalone (standalone drops the redundancy block and its PSK secret reference), container env pairs for HA (no `timezone`, so no TZ pair) and standalone (`timezone` set, so the TZ pair is present), the container env file, the podman and docker secret scripts (the docker case uses a password holding a quote, a space and a `$`), the quadlet and compose forms of the opt-in health check, the CR with an explicit pullPolicy plus podAnnotations/podLabels, the CR with node and pod affinity alongside the legacy anti-affinity term, and the CR with loadBalancer annotations, node labels and tolerations (values carrying a colon and a URL, which survive only because both halves are quoted) |
+| `TestArtifactsCarryNoSecrets` | The externalization guard: with distinctive values in `admin.pass` and `nodes.psk`, no deployment artifact on any platform (broker CR, quadlet, compose file, env file) contains either value, while `SecretScript` -- the renderer that creates them -- contains both |
+| `TestContainerSecretsRedundancy` | HA lists both secrets in a fixed order with the expected broker settings, `FilePathKey`/`MountPath` derive docker's file-backed form, and standalone lists the admin password only (no mate link, so no PSK secret). An encrypted server-certificate key adds a third secret reaching the broker as `tls_servercertificate_passphrasefilepath`, and only when the passphrase is actually set |
+| `TestQuadletHealthCmdEscapesPercent` | systemd expands %-specifiers in every unit assignment, not just the quoted `Environment=` ones, so a percent-encoded character in a probe URL is doubled or the line is dropped and the health check silently disabled. Quotes and backslashes stay untouched there (the value is unquoted and podman splits it itself), and compose keeps the percent literal since it has no specifier expansion |
+| `TestHealthCmdDefaultsToReadiness` | An enabled block with no cmd polls `/health-check/readiness` on 5550, and an explicit cmd wins |
+| `TestSecretPreflight` | The precondition `deploy` and `--gen-secrets-only` share: an empty secret value is refused up front, naming the field and `prep host` for the PSK. Standalone needs no PSK, so an empty one is fine there |
+| `TestShQuote` | Secret-script quoting: a value holding a single quote survives as itself instead of ending the shell string |
 | `TestParsePort` | Port entries across the `name=container`, `container:service`, and `/PROTO` forms |
 | `TestParseToleration` | Toleration Equal (`key=value:effect`) and Exists (`key:effect`) forms |
 | `TestQuadletEscape` | systemd `Environment=` escaping of `%`, `"`, and `\` |
@@ -655,8 +702,9 @@ new fake.
 | internal/k8s | `haCfg`, `saCfg` (names_test.go), `adminCfg` (prep_test.go), `loadK8s` (secrets_test.go) | Config builders |
 | internal/k8s | `checkGolden`, `-update` flag (secrets_test.go) | Golden comparison for the whole package |
 | internal/cli | `renderCommandDocs`, `-update` flag (commanddoc_test.go) | Renders `docs/commands.md` from the cobra tree; the doc is the golden |
-| internal/container | `capRunner` / `failOn` (transport_test.go) | Capturing runner whose `fail` hook errors on a targeted command, driving each error-wrap branch |
-| internal/container | `newEchoMgr`, `newCapMgr`, `ctrCfg` (manager_test.go) | Manager over dry-run Echo, or over the capturing runner for real file writes |
+| internal/container | `capRunner` / `failOn` (transport_test.go) | Capturing runner whose `fail` (Run family) and `outFail` (Output family) hooks error on a targeted command, driving each error-wrap branch. `outFail` exists because the blanket `outErr` cannot single out one of two probes in the same call |
+| internal/container | `newEchoMgr`, `newCapMgr`, `ctrCfg` (manager_test.go) | Manager over dry-run Echo, or over the capturing runner for real file writes. `Manager.Confirm` is the injectable restart prompt (nil declines, which is what a non-interactive run must do) and `Manager.Restart` is the `--restart` pre-approval |
+| internal/container | `assertMode` (manager_test.go) | Permission-bit assertion for the artifacts and secret files the manager writes; skipped on Windows, which carries no POSIX mode |
 | internal/cli | `runRoot`, `capture`/`captureStdout`/`captureStderr` (cli_test.go) | Builds a fresh command tree per call and captures a standard stream through a pipe |
 | internal/cli | `bashEnv`, `writeBashEnv` (cli_test.go) | Minimal legacy env file for the convert command tests |
 | internal/convert | `strictDecode` (convert_test.go) | Re-reads generated YAML with `KnownFields(true)`, so an emitted key that is not in the schema fails the test |

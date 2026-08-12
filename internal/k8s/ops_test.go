@@ -249,6 +249,69 @@ func TestCopyInto(t *testing.T) {
 	})
 }
 
+// TestRestartPod covers the manualPodRestart step: delete the pod, then wait for
+// the statefulset to bring it back, bounded like every other rollout wait.
+func TestRestartPod(t *testing.T) {
+	rr := &recRunner{}
+	c := newCluster(rr)
+	if err := c.RestartPod(context.Background(), config.Backup); err != nil {
+		t.Fatalf("RestartPod: %v", err)
+	}
+	if len(rr.calls) != 2 {
+		t.Fatalf("RestartPod made %d calls, want 2 (delete + rollout status)", len(rr.calls))
+	}
+	wantDelete := []string{"delete", "pod", "-n", "solace", "dev-broker-pubsubplus-b-0", "--ignore-not-found"}
+	if !eqArgs(rr.calls[0].args, wantDelete) {
+		t.Errorf("delete argv = %v, want %v", rr.calls[0].args, wantDelete)
+	}
+	wantWait := []string{"rollout", "status", "statefulset/dev-broker-pubsubplus-b", "-n", "solace", "--timeout=300s"}
+	if !eqArgs(rr.calls[1].args, wantWait) {
+		t.Errorf("rollout argv = %v, want %v", rr.calls[1].args, wantWait)
+	}
+}
+
+func TestRestartRolling(t *testing.T) {
+	t.Run("HA bounces all three in order", func(t *testing.T) {
+		rr := &recRunner{}
+		c := newCluster(rr)
+		if err := c.RestartRolling(context.Background()); err != nil {
+			t.Fatalf("RestartRolling: %v", err)
+		}
+		if len(rr.calls) != 6 {
+			t.Fatalf("RestartRolling(HA) made %d calls, want 6 (delete+wait x3)", len(rr.calls))
+		}
+		// Monitor first, primary last: the delete calls carry the pod names.
+		for i, want := range []string{"dev-broker-pubsubplus-m-0", "dev-broker-pubsubplus-b-0", "dev-broker-pubsubplus-p-0"} {
+			if got := rr.calls[i*2].args[4]; got != want {
+				t.Errorf("delete %d targeted %q, want %q", i, got, want)
+			}
+		}
+	})
+	t.Run("standalone bounces only the primary", func(t *testing.T) {
+		rr := &recRunner{}
+		c := NewCluster(rr, saCfg(), nil, nil)
+		if err := c.RestartRolling(context.Background()); err != nil {
+			t.Fatalf("RestartRolling: %v", err)
+		}
+		if len(rr.calls) != 2 {
+			t.Fatalf("RestartRolling(standalone) made %d calls, want 2", len(rr.calls))
+		}
+	})
+	t.Run("a failed restart stops before the next role", func(t *testing.T) {
+		// Let the monitor's delete succeed, then fail the readiness wait: a pod that
+		// never comes back must not be followed by bouncing the next one.
+		rr := &recRunner{runErrQueue: []error{nil, errFake}}
+		c := newCluster(rr)
+		err := c.RestartRolling(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "did not become ready") {
+			t.Fatalf("RestartRolling should fail loud on a pod that stays down, got %v", err)
+		}
+		if len(rr.calls) != 2 {
+			t.Errorf("RestartRolling made %d calls, want 2 -- it must not continue to the next role", len(rr.calls))
+		}
+	})
+}
+
 func TestReplicasStart(t *testing.T) {
 	t.Run("HA scales and waits for all three roles", func(t *testing.T) {
 		rr := &recRunner{}
