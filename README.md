@@ -271,8 +271,11 @@ parsing would fix either:
   `--kubeconfig` is accepted as that flag's value whatever it says. The hard guarantee covers
   the binary and every bare word -- not flag values.
 
-Rendering is always safe: `gen` and the `--gen-*-only` flags execute nothing at all, so an
-untrusted env file can be inspected before it is ever run.
+Rendering executes nothing: `gen` and the `--gen-*-only` flags never run an external command,
+so pointing them at an env file you did not write cannot run anything. Note that they still
+*load* the file, so one whose command field breaks the rules above fails there rather than
+printing an artifact -- which is itself the answer you wanted about that file. To read a
+command field without loading anything at all, open the file.
 
 ### Secrets
 

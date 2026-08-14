@@ -95,7 +95,7 @@ this artifact.
 
 Config loading, defaults, validation, and env-file resolution, plus the `Command`
 type behind the platform CLI overrides and the execution guard that decides what a
-`Command` may be. 79 tests across 3 files.
+`Command` may be. 82 tests across 3 files.
 
 ### command_test.go
 
@@ -203,7 +203,7 @@ validator and every executor enforce it from one definition.
 
 Command-tree wiring, global flags, confirm prompts, and end-to-end `--dry-run` /
 gen-flag passes over the sample env, plus the generated command reference and the
-end-to-end behaviour of the execution guard. 73 tests across three files.
+end-to-end behaviour of the execution guard. 74 tests across three files.
 
 ### cli_test.go
 
@@ -511,7 +511,7 @@ only its own half.
 ## internal/k8s
 
 Everything driven through `kubectl`: the read-only permission preflight, prep, deploy,
-operator, day-2 ops, secrets, and the pod transport. 95 tests across 11 files.
+operator, day-2 ops, secrets, and the pod transport. 96 tests across 11 files.
 
 ### names_test.go
 
@@ -669,7 +669,7 @@ operator, day-2 ops, secrets, and the pod transport. 95 tests across 11 files.
 ## internal/container
 
 The host-local Docker/Podman manager, its node-local transport, and the engine
-preflight that precedes every mutating operation. 87 tests across 4 files.
+preflight that precedes every mutating operation. 85 tests across 4 files.
 
 ### runtime_test.go
 
