@@ -16,7 +16,6 @@ image:
 admin:
   pass: adminpassword123
   monitorPass: monitorpassword123
-  userSecret: solace-cli-secret
 
 tls:
   cert: "/path/to/tls.crt"
@@ -45,6 +44,7 @@ k8s:
   runtime: "kubectl --kubeconfig /home/localadmin/.kubeconfig-dev"
   name: solace-broker
   namespace: solace-namespace
+  adminSecret: solace-cli-secret
   updateStrategy: automatedRolling
   cliScriptsFolder: cliscripts
   diagDir: "/path/to/diag-configs/dir"

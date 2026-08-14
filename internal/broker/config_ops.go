@@ -141,6 +141,57 @@ func (o *Ops) ProductKeys(ctx context.Context, keys []string, roles ...config.Ro
 	return nil
 }
 
+// AdditionalUsers creates the management (CLI) users listed in
+// admin.additionalUsers, each with its password and global access level. It exists
+// because the operator has no declarative route for them: extra data keys in the
+// credentials Secret are ignored, and extraEnvVars/extraEnvVarsSecret would put the
+// passwords in the pod's environment. Container platforms do not use this -- they
+// create the users at boot from the mounted secret file and the access-level setting.
+//
+// Unlike every sibling op it does NOT show the CLI output: `cli -Apes` echoes the
+// command lines it ran, which here contain the passwords. The output is inspected in
+// memory and discarded. (The transport still streams the child's stderr, so a
+// process-level failure message from the CLI binary itself can reach the terminal;
+// the transcript, which is what carries the commands, goes to stdout and is captured.)
+func (o *Ops) AdditionalUsers(ctx context.Context, role config.Role, users []config.AdditionalUser) error {
+	if len(users) == 0 {
+		return fmt.Errorf("no additional users configured")
+	}
+	// Every value is interpolated into a CLI line, so all of them are checked before
+	// anything is uploaded -- the same order ProductKeys and DomainCerts use.
+	for _, u := range users {
+		if err := validName("additional user", u.Username); err != nil {
+			return err
+		}
+		if err := validCLILine("additional user access level", u.AccessLevel); err != nil {
+			return err
+		}
+		if err := validCLIPassword(u.Username, u.Password); err != nil {
+			return err
+		}
+	}
+
+	const script = "additional-users"
+	o.logf("Creating %d additional CLI user(s) on the %q node...", len(users), role)
+	// Deferred, not sequential: the uploaded body carries every password, so a failed
+	// run must not leave it behind in the broker's cliscripts dir.
+	defer o.removeCLI(ctx, role, script)
+	out, err := o.RunCLI(ctx, role, script, additionalUsersScript(users))
+	if err != nil {
+		return err
+	}
+	// `create username` fails when the user already exists. That is reported rather
+	// than reconciled: silently re-setting a password an operator may have rotated on
+	// the broker is worse than refusing.
+	if containsAnyFold(string(out), "error", "fail", "already exists", "invalid") {
+		return fmt.Errorf("creating additional users on the %q node reported an error; the output is "+
+			"withheld because it repeats the passwords. A user that already exists is the likeliest "+
+			"cause -- delete it on the broker, or drop it from admin.additionalUsers", role)
+	}
+	o.logf("[ OK ] created %d additional CLI user(s).", len(users))
+	return nil
+}
+
 // ExecCLI uploads a local Solace CLI script and runs it in the node, porting 059.
 // The remote name is the file's basename, validated to keep it out of shell/CLI
 // injection range. It warns (does not fail) when the output looks like an error,

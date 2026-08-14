@@ -201,6 +201,33 @@ func validName(kind, s string) error {
 // but it rejects the one thing that changes the script's meaning: a control
 // character. A newline would turn a single `product-key <k>` line into extra
 // commands run in the already-elevated session (§3 boundary validation).
+// cliForbiddenPassword are the characters the broker CLI rejects inside a quoted
+// `create username ... password "..."` value. A package-local copy of
+// config.cliForbiddenPassword: config validates the env file at load so a bad value
+// fails before any deploy, and this is the boundary that actually protects the CLI
+// line it is interpolated into (§3 -- validate at the app boundary AND sanitize where
+// the value is consumed). One small copy per package, as with nameRE.
+const cliForbiddenPassword = ":()\";'<>,`\\*&|"
+
+// validCLIPassword checks a password bound for a quoted CLI value. Unlike
+// validCLILine it never puts the offending value in its error -- only the user it
+// belongs to and the single character at fault (§3).
+func validCLIPassword(user, pass string) error {
+	if pass == "" {
+		return fmt.Errorf("password for additional user %q must not be empty", user)
+	}
+	if i := strings.IndexFunc(pass, func(r rune) bool { return r < 0x20 || r == 0x7f }); i >= 0 {
+		return fmt.Errorf("password for additional user %q contains a control character at offset %d; "+
+			"it must be a single line", user, i)
+	}
+	if i := strings.IndexAny(pass, cliForbiddenPassword); i >= 0 {
+		return fmt.Errorf("password for additional user %q contains %q, which the broker CLI rejects in a "+
+			"password; none of %s may appear (the value itself is not shown)",
+			user, string(pass[i]), cliForbiddenPassword)
+	}
+	return nil
+}
+
 func validCLILine(kind, s string) error {
 	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("invalid %s: must not be empty", kind)

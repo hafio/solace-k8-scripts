@@ -6,6 +6,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,11 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) error
 	// RunInput is Run with stdin fed from in (used for `kubectl apply -f -`).
 	RunInput(ctx context.Context, in []byte, name string, args ...string) error
+	// RunEnv is Run with extra "KEY=value" variables added to the child's
+	// environment. It carries secret values to a child that reads them from its
+	// environment (docker compose's environment-sourced secrets) without ever
+	// putting them in an argv -- so implementations must never echo a value.
+	RunEnv(ctx context.Context, extraEnv []string, name string, args ...string) error
 	// RunInteractive wires this process's stdio through to the child, for
 	// interactive sessions (`exec -it`, a Solace CLI, a shell).
 	RunInteractive(ctx context.Context, name string, args ...string) error
@@ -34,8 +40,52 @@ type Runner interface {
 // Exec is the real Runner backed by os/exec.
 type Exec struct{}
 
+// ResolveOut is where the pre-exec `exec:` line is written. It exists so a test can
+// capture the line; production leaves it nil and the line goes to stderr, which
+// keeps it out of any rendered artifact piped from stdout.
+var ResolveOut io.Writer
+
+func resolveOut() io.Writer {
+	if ResolveOut != nil {
+		return ResolveOut
+	}
+	return os.Stderr
+}
+
+// command resolves name through PATH and builds the exec.Cmd, announcing the
+// resolved binary on stderr before the caller runs it:
+//
+//	exec: /usr/bin/kubectl get pods -n solace
+//
+// Resolution is explicit rather than left to exec.Command so two things are true at
+// the moment they matter. First, an unexpected binary LOCATION is visible -- the
+// allowlist in config guarantees `kubectl` is what was asked for, and this line
+// shows which kubectl actually answered. Second, exec.ErrDot is an error here, not
+// a fallback: Go reports it when a bare name resolved relative to the current
+// directory, which is precisely the "attacker-supplied file shipped alongside the
+// config" case, so it is refused rather than run.
+func command(ctx context.Context, name string, args []string) (*exec.Cmd, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		// LookPath returns the path it found ALONGSIDE ErrDot, so the message can
+		// name the file that would have run.
+		if errors.Is(err, exec.ErrDot) {
+			return nil, fmt.Errorf("refusing to run %q from the current directory: it resolved to %q, which is "+
+				"not on your PATH -- a binary shipped beside an env file must never run implicitly; "+
+				"install it, or add its directory to PATH", name, path)
+		}
+		return nil, fmt.Errorf("%s: not found on PATH: %w", name, err)
+	}
+	fmt.Fprintln(resolveOut(), "exec: "+Quote(path, args...))
+	cmd := exec.CommandContext(ctx, path, args...)
+	return cmd, nil
+}
+
 func (Exec) Run(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return err
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -45,7 +95,10 @@ func (Exec) Run(ctx context.Context, name string, args ...string) error {
 }
 
 func (Exec) RunInput(ctx context.Context, in []byte, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return err
+	}
 	cmd.Stdin = bytes.NewReader(in)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -55,8 +108,32 @@ func (Exec) RunInput(ctx context.Context, in []byte, name string, args ...string
 	return nil
 }
 
+func (Exec) RunEnv(ctx context.Context, extraEnv []string, name string, args ...string) error {
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return err
+	}
+	// Inherit and extend: the child still needs PATH, HOME and DOCKER_* from this
+	// process, so this adds to the environment rather than replacing it. Appending
+	// also means a name that somehow collided with an inherited one would be a
+	// duplicate entry rather than an override -- but nothing config-derived can
+	// produce a bare PATH/LD_PRELOAD name in the first place, since every variable
+	// here is a secret name carrying a fixed literal suffix (render.ContainerSecret;
+	// pinned by TestComposeSecretEnvNamesCannotBeSystemVars).
+	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	return nil
+}
+
 func (Exec) RunInteractive(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return err
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -67,7 +144,10 @@ func (Exec) RunInteractive(ctx context.Context, name string, args ...string) err
 }
 
 func (Exec) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return nil, err
+	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
@@ -78,7 +158,10 @@ func (Exec) Output(ctx context.Context, name string, args ...string) ([]byte, er
 }
 
 func (Exec) OutputInput(ctx context.Context, in []byte, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := command(ctx, name, args)
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stdin = bytes.NewReader(in)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -108,6 +191,31 @@ func (e Echo) Run(_ context.Context, name string, args ...string) error {
 func (e Echo) RunInput(_ context.Context, in []byte, name string, args ...string) error {
 	fmt.Fprintf(e.w(), "+ %s  <<< (%d bytes on stdin)\n", Quote(name, args...), len(in))
 	return nil
+}
+
+// RunEnv echoes the variable names it would set with their values masked: the
+// whole point of the environment is to carry secrets, and --dry-run output is
+// printed, logged and pasted into tickets (§3). The names are annotated AFTER the
+// command, the way RunInput annotates its stdin, so every echoed line still reads
+// as "+ <the command>".
+func (e Echo) RunEnv(ctx context.Context, extraEnv []string, name string, args ...string) error {
+	if len(extraEnv) == 0 {
+		return e.Run(ctx, name, args...)
+	}
+	fmt.Fprintf(e.w(), "+ %s  <<< (env: %s)\n", Quote(name, args...), MaskEnv(extraEnv))
+	return nil
+}
+
+// MaskEnv renders "KEY=value" pairs as a printable "KEY=*** KEY2=***", keeping the
+// names (which are what a reader needs to check the wiring) and dropping every
+// value. Exported so any other display path masks identically.
+func MaskEnv(env []string) string {
+	masked := make([]string, 0, len(env))
+	for _, pair := range env {
+		key, _, _ := strings.Cut(pair, "=")
+		masked = append(masked, quoteTok(key)+"=***")
+	}
+	return strings.Join(masked, " ")
 }
 
 func (e Echo) RunInteractive(_ context.Context, name string, args ...string) error {

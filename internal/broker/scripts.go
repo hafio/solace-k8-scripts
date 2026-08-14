@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"solace/internal/config"
 )
 
 // The functions here are pure: each returns the exact Solace CLI script body a
@@ -158,6 +160,32 @@ func disableDefaultUsersScript(vpns []string) string {
 		fmt.Fprintf(&b, "client-username default message-vpn %q\nshutdown\nexit\n", vpn)
 	}
 	b.WriteString("end\nshow client-username default message-vpn *\n")
+	return b.String()
+}
+
+// additionalUsersScript creates each management (CLI) user with its password and
+// global access level. It has no bash ancestor: the operator offers no way to
+// deliver extra users declaratively -- extra data keys in the credentials Secret are
+// ignored, and extraEnvVars/extraEnvVarsSecret would expose the passwords in the
+// pod's environment -- so on k8s the users are created over the CLI instead.
+//
+// `create` fails when the user already exists, which is deliberate: the caller
+// surfaces that as an error rather than silently reconciling a password the operator
+// may have changed on purpose. Both values are quoted, and the password's characters
+// are constrained upstream (config.cliForbiddenPassword) to the set the CLI accepts
+// inside quotes, so no escaping is possible or needed here.
+//
+// CONTAINS SECRETS: the returned body carries every password, so the caller must
+// upload it on stdin and must not echo the CLI's own output, which repeats the
+// command lines back.
+func additionalUsersScript(users []config.AdditionalUser) string {
+	var b strings.Builder
+	b.WriteString("home\nno paging\nenable\nconfigure\n")
+	for _, u := range users {
+		fmt.Fprintf(&b, "create username %q password %q\n", u.Username, u.Password)
+		fmt.Fprintf(&b, "global-access-level %s\nexit\n", u.AccessLevel)
+	}
+	b.WriteString("end\n")
 	return b.String()
 }
 

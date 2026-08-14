@@ -34,6 +34,12 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Fprint(os.Stdout, strings.Join(args[1:], " "))
 	case "cat":
 		_, _ = io.Copy(os.Stdout, os.Stdin)
+	case "env":
+		// Prints the value of the variable named by the next arg, which is how the
+		// RunEnv test proves the child actually received it.
+		if len(args) > 1 {
+			fmt.Fprint(os.Stdout, os.Getenv(args[1]))
+		}
 	case "fail":
 		os.Exit(3)
 	default:
@@ -181,6 +187,58 @@ func TestEchoRunInput(t *testing.T) {
 	}
 }
 
+// TestEchoRunEnv is the dry-run half of the secret-carrying path: the variable
+// names must be visible (they are what an operator checks) and no value may be.
+// The command still leads the line, so "+ <cmd>" stays greppable.
+func TestEchoRunEnv(t *testing.T) {
+	var buf bytes.Buffer
+	e := Echo{W: &buf}
+	env := []string{"SOLACE_ADMIN_PASSWORD=hunter2", "SOLACE_REDUNDANCY_PSK=psk-value"}
+	if err := e.RunEnv(context.Background(), env, "docker", "compose", "up", "-d"); err != nil {
+		t.Fatalf("RunEnv: unexpected err %v", err)
+	}
+	want := "+ docker compose up -d  <<< (env: SOLACE_ADMIN_PASSWORD=*** SOLACE_REDUNDANCY_PSK=***)\n"
+	if got := buf.String(); got != want {
+		t.Errorf("RunEnv wrote %q, want %q", got, want)
+	}
+}
+
+// TestEchoRunEnvNoEnv covers the empty-environment arm: with nothing to annotate
+// the line is exactly what Run would print, rather than a dangling "(env: )".
+func TestEchoRunEnvNoEnv(t *testing.T) {
+	var buf bytes.Buffer
+	e := Echo{W: &buf}
+	if err := e.RunEnv(context.Background(), nil, "docker", "compose", "ps"); err != nil {
+		t.Fatalf("RunEnv: unexpected err %v", err)
+	}
+	want := "+ docker compose ps\n"
+	if got := buf.String(); got != want {
+		t.Errorf("RunEnv wrote %q, want %q", got, want)
+	}
+}
+
+func TestMaskEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{"none", nil, ""},
+		{"one", []string{"A=b"}, "A=***"},
+		{"two", []string{"A=b", "C=d"}, "A=*** C=***"},
+		{"valueWithEquals", []string{"A=b=c"}, "A=***"},
+		{"emptyValue", []string{"A="}, "A=***"},
+		{"oddName", []string{"A B=c"}, "'A B'=***"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskEnv(tt.in); got != tt.want {
+				t.Errorf("MaskEnv(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEchoOutput(t *testing.T) {
 	var buf bytes.Buffer
 	e := Echo{W: &buf}
@@ -279,6 +337,51 @@ func TestExecRunInput(t *testing.T) {
 	if !strings.Contains(got, "meow") {
 		t.Errorf("RunInput(cat) streamed %q, want it to contain %q", got, "meow")
 	}
+
+	// Failure path: proves RunInput wraps a child failure the same way
+	// Run/RunEnv/RunInteractive do (name: err), not just on success.
+	nameFail, argsFail := helperCommand("fail")
+	var errFail error
+	_ = captureStdout(t, func() {
+		errFail = Exec{}.RunInput(context.Background(), []byte("meow"), nameFail, argsFail...)
+	})
+	if errFail == nil {
+		t.Fatal("RunInput(fail): expected err, got nil")
+	}
+	if !strings.Contains(errFail.Error(), nameFail) {
+		t.Errorf("RunInput(fail) err = %q, want it to contain binary name %q", errFail, nameFail)
+	}
+}
+
+// TestExecRunEnv proves both halves of RunEnv's contract: the child receives the
+// extra variable, and it still inherits this process's environment (the helper
+// only runs at all because GO_WANT_HELPER_PROCESS was inherited).
+func TestExecRunEnv(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
+	name, args := helperCommand("env", "SOLACE_TEST_SECRET")
+	var err error
+	got := captureStdout(t, func() {
+		err = Exec{}.RunEnv(context.Background(), []string{"SOLACE_TEST_SECRET=from-parent"}, name, args...)
+	})
+	if err != nil {
+		t.Fatalf("RunEnv: unexpected err %v", err)
+	}
+	if !strings.Contains(got, "from-parent") {
+		t.Errorf("RunEnv child printed %q, want it to contain the injected value", got)
+	}
+
+	nameFail, argsFail := helperCommand("fail")
+	var errFail error
+	_ = captureStdout(t, func() {
+		errFail = Exec{}.RunEnv(context.Background(), []string{"A=b"}, nameFail, argsFail...)
+	})
+	if errFail == nil {
+		t.Fatal("RunEnv(fail): expected err, got nil")
+	}
+	if !strings.Contains(errFail.Error(), nameFail) {
+		t.Errorf("RunEnv(fail) err = %q, want it to name the binary %q", errFail, nameFail)
+	}
 }
 
 func TestExecRunInteractive(t *testing.T) {
@@ -291,5 +394,77 @@ func TestExecRunInteractive(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("RunInteractive: unexpected err %v", err)
+	}
+
+	// Failure path: proves RunInteractive wraps a child failure the same way
+	// Run/RunInput/RunEnv do (name: err); this backs `exec -it` / shell
+	// sessions, so a silent-failure regression here would hide a broken shell.
+	nameFail, argsFail := helperCommand("fail")
+	var errFail error
+	_ = captureStdout(t, func() {
+		errFail = Exec{}.RunInteractive(context.Background(), nameFail, argsFail...)
+	})
+	if errFail == nil {
+		t.Fatal("RunInteractive(fail): expected err, got nil")
+	}
+	if !strings.Contains(errFail.Error(), nameFail) {
+		t.Errorf("RunInteractive(fail) err = %q, want it to contain binary name %q", errFail, nameFail)
+	}
+}
+
+// TestExecOutputInput proves OutputInput wires stdin from `in` into the child
+// and captures stdout into the returned buffer -- not streamed to the real
+// stdout -- since this is the curl -K - path with no other way to get the
+// response body back to the caller.
+func TestExecOutputInput(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
+	name, args := helperCommand("cat")
+	in := []byte("secret-body")
+	out, err := Exec{}.OutputInput(context.Background(), in, name, args...)
+	if err != nil {
+		t.Fatalf("OutputInput(cat): unexpected err %v", err)
+	}
+	if !strings.Contains(string(out), "secret-body") {
+		t.Errorf("OutputInput(cat) = %q, want it to contain %q", out, "secret-body")
+	}
+}
+
+// TestExecOutputInputFail mirrors TestExecOutputFail: OutputInput must wrap a
+// child failure the same way its stdin-less sibling Output does.
+func TestExecOutputInputFail(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
+	name, args := helperCommand("fail")
+	out, err := Exec{}.OutputInput(context.Background(), []byte("secret-body"), name, args...)
+	if err == nil {
+		t.Fatalf("OutputInput(fail): expected err, got nil (out=%q)", out)
+	}
+	if !strings.Contains(err.Error(), name) {
+		t.Errorf("OutputInput(fail) err = %q, want it to contain binary name %q", err, name)
+	}
+}
+
+// TestEchoOutputInput is the dry-run half of OutputInput, the same
+// credential-bearing call RunInput backs (curl -K - with a password on
+// stdin): the byte count must be visible but the stdin body must never reach
+// dry-run output, which is printed, logged and pasted into tickets (S3).
+func TestEchoOutputInput(t *testing.T) {
+	var buf bytes.Buffer
+	e := Echo{W: &buf}
+	in := []byte("password=hunter2")
+	out, err := e.OutputInput(context.Background(), in, "curl", "-K", "-")
+	if err != nil {
+		t.Fatalf("OutputInput: unexpected err %v", err)
+	}
+	if out != nil {
+		t.Errorf("OutputInput returned %v, want nil", out)
+	}
+	want := fmt.Sprintf("+ curl -K -  <<< (%d bytes on stdin)\n", len(in))
+	if got := buf.String(); got != want {
+		t.Errorf("OutputInput wrote %q, want %q", got, want)
+	}
+	if strings.Contains(buf.String(), "hunter2") {
+		t.Errorf("OutputInput leaked stdin body into dry-run output: %q", buf.String())
 	}
 }

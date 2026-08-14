@@ -34,8 +34,10 @@ Environment="system_scaling_maxconnectioncount=1000"
 Environment="system_scaling_maxqueuemessagecount=100"
 Environment="messagespool_maxspoolusage=100000"
 Environment="username_admin_globalaccesslevel=admin"
-Secret=solace-admin-password,type=env,target=username_admin_password
-Secret=solace-redundancy-psk,type=env,target=redundancy_authentication_presharedkey_key
+Environment="username_admin_passwordfilepath=/run/secrets/username_admin_password"
+Environment="redundancy_authentication_presharedkey_keyfilepath=/run/secrets/redundancy_authentication_presharedkey_key"
+Secret=solace-admin-password,type=mount,target=username_admin_password
+Secret=solace-redundancy-psk,type=mount,target=redundancy_authentication_presharedkey_key
 
 [Service]
 Restart=always

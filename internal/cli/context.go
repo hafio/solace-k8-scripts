@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"solace/internal/config"
@@ -24,10 +25,23 @@ type App struct {
 	GenSecretsOnly bool // --gen-secrets-only: the secret-creation artifact
 	GenEnvOnly     bool // --gen-env-only: the container env file (container-only)
 
+	// AllowCommand is the repeatable --allow-command escape hatch: binaries the
+	// OPERATOR approved for the config's platform command, for this invocation
+	// only. It reaches config through Load's argument list, never through the
+	// schema, so an env file has no way to extend its own allowlist.
+	AllowCommand []string
+
 	Platform config.Platform
 	Cfg      *config.Config
 	Runner   engine.Runner
 	envPath  string // resolved env-file path (container PrepHost writes the PSK back here)
+
+	// Prompt seams, in the spirit of Manager.Resolve/GenPSK/Geteuid: the confirm
+	// helpers gate destructive actions on an interactive terminal, and a test cannot
+	// supply one. Interactive nil means "ask isTTY(os.Stdin)" and PromptIn nil means
+	// os.Stdin, so production behaviour is unchanged and only tests set them.
+	Interactive func() bool
+	PromptIn    io.Reader
 
 	// Command-local flag scratch space. Only one command runs per invocation,
 	// so sharing these on the app context is safe.
@@ -53,7 +67,10 @@ func (a *App) load() error {
 	// Echo the winner: a file in the base dir shadows the env/ copy of the same
 	// name, and that has to be visible rather than silent.
 	step("env file: %s", path)
-	cfg, err := config.Load(path, a.Platform)
+	// The operator's --allow-command approvals go in here, before Validate runs
+	// inside Load, so the execution guard sees the same allowlist the executors
+	// will. Passing them as an argument is what keeps them out of the schema.
+	cfg, err := config.Load(path, a.Platform, a.AllowCommand...)
 	if err != nil {
 		return err
 	}

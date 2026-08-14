@@ -74,19 +74,29 @@ func (v *vuln) fix() string {
 	return fmt.Sprintf("go get %s@%s", v.module, v.fixed)
 }
 
+// main is the thinnest possible wrapper: everything it would otherwise do lives in
+// run, which returns an exit code instead of calling os.Exit, so the argument
+// handling and both failure paths are testable in-process.
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: vulnjudge <govulncheck-json-file>")
-		os.Exit(2)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run is main's body. args excludes the program name; out takes the report and
+// errOut the usage/read failures. It returns the process exit code: 2 for a usage
+// or read error, otherwise whatever judge decided.
+func run(args []string, out, errOut io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(errOut, "usage: vulnjudge <govulncheck-json-file>")
+		return 2
 	}
-	data, err := os.ReadFile(os.Args[1])
+	data, err := os.ReadFile(args[0])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "vulnjudge: %v\n", err)
-		os.Exit(2)
+		fmt.Fprintf(errOut, "vulnjudge: %v\n", err)
+		return 2
 	}
 	code, report := judge(data)
-	fmt.Print(report)
-	os.Exit(code)
+	fmt.Fprint(out, report)
+	return code
 }
 
 // judge parses a govulncheck JSON stream and returns the exit code plus the

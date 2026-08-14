@@ -19,8 +19,9 @@ the whole lifecycle -- `check -> prep -> deploy -> config -> verify` and back do
 - **Build:** Go 1.26+.
 - **Run (Kubernetes):** `kubectl` on your `PATH` and a reachable cluster/context. The
   binary shells out to `kubectl`; it does not embed a Kubernetes client. Set `k8s.runtime`
-  to use something else -- `oc`, `microk8s kubectl`, or a whole profile such as
-  `kubectl --kubeconfig /path/.kubeconfig-dev`.
+  to use `oc` instead, or to carry a whole profile such as
+  `kubectl --kubeconfig /path/.kubeconfig-dev`. A wrapper like `microk8s kubectl` needs
+  `--allow-command` -- see **The command fields are executable content** below.
 - **Run (Docker/Podman):** the `docker` or `podman` binary on your `PATH`, on the host that
   runs the broker. Podman deploys a systemd **quadlet** unit and uses podman's own secret
   store (its host also needs systemd); Docker deploys through **compose**, so that host also
@@ -28,9 +29,13 @@ the whole lifecycle -- `check -> prep -> deploy -> config -> verify` and back do
   set `docker.compose` when it is the latter. The binary shells out to the runtime; it embeds
   no container client. `docker.runtime` / `podman.runtime` override the command the same way.
 - **Podman secrets:** `deploy` stores the broker's secrets with
-  `podman secret create --replace`, which older podman builds do not support. Confirm yours
-  does (`podman secret create --help | grep -- --replace`) -- `check` only proves the runtime
+  `podman secret create --replace` and mounts them into the container
+  (`type=mount`), neither of which the oldest podman builds support. Confirm yours does
+  (`podman secret create --help | grep -- --replace`) -- `check` only proves the runtime
   answers `version`, so an unsupported flag surfaces at deploy time.
+- **Docker compose secrets:** the generated compose file sources each secret from a host
+  environment variable, which needs **compose v2.23.1 or later** (`docker compose version`).
+  On an older compose the `environment:` secret source is not understood and `up` fails.
 - `--dry-run` needs no cluster, runtime, or `kubectl`/`docker`/`podman` binary -- it prints
   the commands instead of running them.
 
@@ -145,7 +150,16 @@ solace k8s check -e prod.yaml --dry-run
   written `0600` and an existing file is **not** overwritten unless you pass `--force`.
 
 The output carries every secret from the source file verbatim -- treat it like the source,
-and never commit it.
+and never commit it. (Switch the values to their `*Env` reference keys afterwards and it
+becomes safe to commit; see **Secrets** below.) `SOLBK_USR_SECRET` converts to
+`k8s.adminSecret`, and each `SOLBK_USR_PASS` entry to an `admin.additionalUsers` entry with
+`accessLevel: none` -- the bash flow set no level, so the converter picks the least
+privileged one and says so; raise it per user as needed.
+
+**Renamed keys.** An env file written for an earlier version fails loud on the unknown key
+(strict decoding), so the two renames are visible immediately rather than silently ignored:
+`admin.userSecret` is now `k8s.adminSecret`, and the `admin.userPasswords`
+`["user=password"]` list is now `admin.additionalUsers`.
 
 **`env/sample.yaml` is the authoritative, fully annotated schema** -- start there rather
 than from this README. The most-used keys:
@@ -169,18 +183,130 @@ Common optional knobs:
 | `image.registry` | docker.io | Registry prefix for the image reference |
 | `k8s.storage.class` | cluster default | StorageClass for the broker PVCs |
 | `k8s.updateStrategy` | `automatedRolling` | `automatedRolling` or `manualPodRestart` |
-| `k8s.runtime` | `kubectl` | Cluster CLI (legacy `KUBE`). A scalar is split on whitespace, so it can be a drop-in (`oc`), a wrapper (`microk8s kubectl`), or a profile (`kubectl --kubeconfig <file>`). Use a list when a token contains a space |
-| `docker.runtime` / `podman.runtime` | `docker` / `podman` | Container CLI (legacy `CONTAINER_RUNTIME`), same forms as `k8s.runtime` |
-| `docker.compose` | `<runtime> compose` | The compose invocation. Set it to `docker-compose` on a host carrying only the standalone v1 binary; same scalar/list forms as `runtime` |
+| `k8s.runtime` | `kubectl` | Cluster CLI (legacy `KUBE`). A scalar is split on whitespace, so it can be a drop-in (`oc`) or a profile (`kubectl --kubeconfig <file>`). **Restricted** -- see [The command fields are executable content](#the-command-fields-are-executable-content) |
+| `docker.runtime` / `podman.runtime` | `docker` / `podman` | Container CLI (legacy `CONTAINER_RUNTIME`), same forms and the same restrictions as `k8s.runtime` |
+| `docker.compose` | `<runtime> compose` | The compose invocation. Set it to `docker-compose` on a host carrying only the standalone v1 binary; same forms and restrictions as `runtime`, plus the one permitted `compose` subcommand |
 | `<docker\|podman>.container.healthCheck.enabled` | `false` | Adds an engine health check polling the broker's own `/health-check/readiness` on port 5550 every 5s, so `docker ps` and podman's auto-restart see readiness rather than liveness. Needs broker **10.26 or later** and a version-numbered `image.tag`; set `healthCheck.cmd` to supply your own probe instead (which skips the version check). Container-only by design -- on Kubernetes the operator already probes the pods |
 | `tls.serverSecret` | -- | Name of the TLS secret; its presence enables the CR's TLS block |
+| `k8s.adminSecret` | `solace-admin-secret` | Name of the Kubernetes Secret holding the admin/monitor credentials. Was `admin.userSecret` |
+| `admin.additionalUsers` | -- | Extra CLI (management) users, each `{username, accessLevel, password\|passwordEnv}` with `accessLevel` one of `none`, `read-only`, `mesh-manager`, `read-write`, `admin`. Replaces the old `admin.userPasswords` `user=password` list. Created at boot on containers, and by `k8s config additional-users` on Kubernetes -- see below |
+| `admin.passEnv` (and every other `*Env`) | -- | Name of an environment variable holding the secret, instead of the value itself. See **Secrets** below |
 | `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
 | `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |
 | `k8s.containerSecurity` | -- | `runAsUser`/`runAsGroup`/`readOnlyRootFilesystem` for the broker container |
 
-**Secrets** belong in the env file (or your own secret store). The tool never echoes
-them: under `--dry-run`, values piped to a command on stdin are shown as
-`<<< (N bytes on stdin)`, never as their contents.
+### The command fields are executable content
+
+`k8s.runtime`, `docker.runtime`, `podman.runtime` and `docker.compose` each name a binary
+this tool runs **on your machine**. Env files travel -- repositories, pull requests, shared
+archives -- so the person who wrote one is routinely not the person who runs it. Treat an
+env file the way you would treat a script someone sent you: **read the command fields before
+running anything with it.**
+
+To make that review short, the fields are restricted. A command is accepted only when:
+
+1. **Every token is inert and visible.** No control characters, no whitespace inside a single
+   argument (any Unicode whitespace, not just the ASCII space), no invisible formatting
+   characters (zero-width spaces and joiners, bidirectional overrides), no quotes, no
+   backslash, no backtick, and none of `$ ; | & < > ( ) * ? [ ] { } ~ # !`. Nothing is ever
+   passed through a shell, so these are not injections -- but tokens end up in logs,
+   `--dry-run` output and generated files, and a token you cannot see is one you cannot
+   review. A Windows path in a flag value therefore needs forward slashes:
+   `--kubeconfig C:/Users/you/.kube/config`.
+2. **The binary is a bare name from the allowlist.** No `/` or `\` anywhere in it: a path
+   would run a file the env file chose -- such as a `./kubectl` unpacked beside it -- rather
+   than the one on your `PATH`. One optional `.exe` is stripped, then the name must be:
+
+   | Platform | Allowed |
+   | --- | --- |
+   | Kubernetes | `kubectl`, `oc` |
+   | Docker | `docker`, `docker-compose`, `nerdctl` |
+   | Podman | `podman` |
+
+3. **Nothing after it is a bare word.** Flags and their values are fine
+   (`kubectl --context prod -n solace`); a bare word is not, because this tool appends its
+   own subcommand and a word in that position would run ahead of it. `kubectl delete` in a
+   config is exactly the attack. The literal `--` is refused for the same reason.
+
+Anything else -- a wrapper such as `microk8s kubectl` or `lima nerdctl`, a site-specific
+shim -- runs only when **you** approve it, per invocation:
+
+```sh
+solace k8s deploy --allow-command microk8s
+solace docker up --allow-command lima
+```
+
+`--allow-command` is repeatable, takes a bare name (never a path), and exists **only** as a
+command-line flag. There is deliberately no env-file key, environment variable, or any other
+way for a config to widen its own allowlist: the authority to run something unusual belongs
+to the person who can see what they are approving. It is rejected on `gen` and on any
+`--gen-*-only` run, where nothing executes.
+
+**Privilege escalation is never approvable**, by the config or by you: `sudo`, `doas`, `su`,
+`pkexec`, `run0`, `runas` and `gsudo` are refused as `--allow-command` values. This is not a
+ban on running as root -- rootful podman needs it. It is about *where* you elevate. A
+`runtime: sudo podman` elevates every command this tool issues, for the whole life of an env
+file, decided by whoever wrote that file. Elevate the tool instead, at the moment you run it,
+so the privilege belongs to one invocation you chose:
+
+```sh
+sudo solace podman deploy -e prod.yaml     # yes
+# runtime: sudo podman  in the env file    # never
+```
+
+The same check runs twice -- once when the env file is loaded, and again immediately before
+any command line is built -- from a single implementation, so a hostile file is inert even
+on a path that skipped validation.
+
+**What this does not protect against.** Two things are out of scope, and no amount of
+parsing would fix either:
+
+- **A compromised machine.** If an attacker has already put a trojan `kubectl` on your
+  `PATH`, they own the host; nothing this tool checks can help. What it does do is make the
+  binary's real location visible -- every execution prints `exec: <resolved path> <args>` to
+  stderr before it runs -- and refuse to resolve a bare name from the current directory.
+- **Config that is malicious but perfectly legitimate in form.** `k8s.namespace: production`,
+  or a valid `kubectl --context` aimed at the wrong cluster, is a review problem. So is a
+  flag's *value*: this tool cannot know how many arguments a flag takes, so the token after
+  `--kubeconfig` is accepted as that flag's value whatever it says. The hard guarantee covers
+  the binary and every bare word -- not flag values.
+
+Rendering is always safe: `gen` and the `--gen-*-only` flags execute nothing at all, so an
+untrusted env file can be inspected before it is ever run.
+
+### Secrets
+
+Every secret field takes either the value itself or -- through a sibling `*Env` key --
+the **name of an environment variable** to read it from. Setting both is an error, and so
+is naming a variable that is unset or empty: the load fails naming the key and the
+variable rather than deploying a broker with a blank password.
+
+| Value key | Reference key |
+| --- | --- |
+| `admin.pass` | `admin.passEnv` |
+| `admin.monitorPass` | `admin.monitorPassEnv` |
+| `admin.additionalUsers[].password` | `admin.additionalUsers[].passwordEnv` |
+| `tls.certPassphrase` | `tls.certPassphraseEnv` |
+| `image.pass` | `image.passEnv` |
+| `nodes.psk` | `nodes.pskEnv` |
+
+```yaml
+admin:
+  passEnv: SOLACE_ADMIN_PASS     # export SOLACE_ADMIN_PASS before any command
+```
+
+With the `*Env` form the env file carries no secret and is safe to commit and share. A
+value is otherwise used **verbatim** on every platform -- a `$VAR` or `${VAR}` inside one
+is a literal password, never expanded. `nodes.pskEnv` also opts out of PSK generation:
+`prep host` only generates a key when the literal `nodes.psk` is empty, so with the
+reference form create it yourself (`openssl rand -base64 60`) and export the same value on
+all three hosts.
+
+The tool never echoes a secret. Values piped to a command on stdin show as
+`<<< (N bytes on stdin)` under `--dry-run`, values passed to a child process's environment
+as `NAME=***`, and `check`/`status` report only whether each one is set. The two
+exceptions are explicit: `--gen-secrets-only` and `k8s gen secrets` print values, because
+printing them is what those flags are for.
 
 ## Global flags
 
@@ -191,14 +317,40 @@ These apply to every subcommand:
 | `-e`, `--env <file>` | `env.yaml` | Env file to load: a file name searched in the base dir then `<base-dir>/env`, or a path used as-is. |
 | `--base-dir <dir>` | current dir | Directory searched for the env file, and holding `env/`. |
 | `--gen-only` | `false` | Render the deployment artifact this command would apply and print it; change nothing. |
-| `--gen-secrets-only` | `false` | Render this deployment's secrets and print them; change nothing. **Prints secret values.** |
+| `--gen-secrets-only` | `false` | Render this deployment's secrets and print them; change nothing -- k8s Secret manifests, podman `secret create` commands, docker `export` lines to source. **Prints secret values.** |
 | `--gen-env-only` | `false` | Render the container broker settings as an env file and print them; change nothing (docker/podman only). |
 | `--dry-run` | `false` | Print the external commands instead of running them. |
 | `-y`, `--yes` | `false` | Skip confirmation prompts. Does **not** imply `--purge`. |
 
+On the `k8s`, `docker` and `podman` trees only:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--allow-command <name>` | -- | Approve one extra binary for this env file's platform command, for this run only. Repeatable; a bare name, never a path. See [The command fields are executable content](#the-command-fields-are-executable-content). |
+
 The three `--gen-*-only` flags are mutually exclusive (passing two is an error) and are
 valid only on commands that render an artifact; passing one to any other command --
 `delete` above all -- is rejected loudly rather than ignored, on every platform.
+`--allow-command` is the mirror image: it is rejected on `gen` and on any `--gen-*-only`
+run, because nothing executes there and a flag that is harmless everywhere gets pasted
+everywhere.
+
+### Before anything changes: the preflight
+
+Every command that writes a file or changes remote state runs one cheap **read-only** probe
+first, using the same command the real work will use:
+
+| Platform | Probe | Answers |
+| --- | --- | --- |
+| Kubernetes | `<runtime> auth can-i <verb> <resource> -n <namespace>` | Is the context live, and may this identity do the thing? |
+| Docker / Podman | `<runtime> info` | Is the daemon up and reachable as this user? |
+
+If it fails, the command stops nonzero **before the first byte is written**, passes the
+CLI's own error through, and adds one line saying what to do -- log in, ask for a role
+binding, start the daemon. It never logs you in or starts anything on your behalf, and
+there is no flag to skip it: the one legitimate reason to skip it is previewing without a
+cluster, which is what `--dry-run` is for (there the probe is echoed and its answer
+skipped, like the other cluster checks).
 
 ## Command reference (Kubernetes)
 
@@ -208,6 +360,11 @@ every command, its arguments, and every flag with its default -- see
 
 Run `solace k8s --help` (or `--help` on any subcommand) for the live tree. A `[role]`
 positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to primary.
+
+The verbs fall into two halves. `check`, `prep` and `deploy` build the deployment and are
+what `up` orchestrates. Everything under **`config` and `verify` is post-deployment**: each
+step drives the Solace CLI inside a broker that is already running, so none of it is part
+of `deploy` and none of it is run by `up` -- wait for the pods to be ready, then run it.
 
 ### Lifecycle
 
@@ -220,12 +377,13 @@ positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to p
 | `prep secrets` | Create admin/monitor, TLS, and image-pull secrets (honors `--gen-secrets-only`). |
 | `prep labels` | Label nodes for primary/backup/monitor placement (interactive). |
 | `deploy` | Render and apply the PubSubPlusEventBroker custom resource (honors the `--gen-*-only` trio). `--keep-yaml` keeps the rendered manifest on disk. |
-| `config` | Post-deploy configuration; with no subcommand runs all applicable steps. |
+| `config` | **Post-deployment** configuration, applied over the Solace CLI to a broker that is already deployed and running. Not part of `deploy`, and not run by `up`. With no subcommand runs all applicable steps in order. |
 | `config leader` | Assert the config-sync leader (HA only). |
 | `config server-cert` | Load/update the TLS server certificate. |
 | `config domain-certs` | Load domain CA certificates. |
 | `config disable-default-vpn` | Shut down the default message-VPN. |
 | `config disable-default-users` | Shut down default client-usernames in all VPNs. |
+| `config additional-users` | Create the `admin.additionalUsers` CLI users over the broker CLI. **Not re-runnable** -- see **Extra CLI users differ by platform**. |
 | `config product-keys` | Apply product keys. |
 | `config exec-cli [file]` | Run a Solace CLI script inside a pod. `--pod <p\|b\|m>` targets a role; `[file]` is required. |
 | `verify` | Verify broker health; with no subcommand runs redundancy (HA) then a SEMP login. |
@@ -292,7 +450,9 @@ destructive run:
 
 To review the exact artifact before it touches a cluster or a host, use a `--gen-*-only`
 flag on an artifact-producing command, or the dedicated `gen` command. Both print to
-stdout and change nothing:
+stdout and change nothing -- they run no external command at all, which is what makes them
+the safe way to inspect an env file you did not write (see
+[The command fields are executable content](#the-command-fields-are-executable-content)):
 
 ```
 solace k8s gen broker -e dev.yaml                 # the PubSubPlusEventBroker CR
@@ -303,7 +463,7 @@ solace k8s operator deploy -e dev.yaml --gen-only # equivalent to gen operator
 solace docker gen primary -e dev.yaml             # the compose file
 solace podman gen primary -e dev.yaml             # the quadlet unit
 solace docker gen primary -e dev.yaml --gen-env-only     # the broker settings, key=value
-solace docker gen primary -e dev.yaml --gen-secrets-only # commands that create the secrets
+solace docker gen primary -e dev.yaml --gen-secrets-only # commands that supply the secrets
 ```
 
 The flag selects the artifact, not the command: any artifact command honors all three.
@@ -311,13 +471,56 @@ They are valid only on artifact commands (`deploy`, `gen`, plus `prep secrets`,
 `prep operator` and `operator deploy` on Kubernetes) -- using one elsewhere is rejected
 with a clear error on every platform, so a gen flag can never turn into a real `delete`.
 
-**Secrets are never part of a deployment artifact.** The broker admin password and the HA
-pre-shared key live in podman's secret store, in file-backed compose secrets (written
-0600 under `solace-secrets/` beside the compose file), or in Kubernetes Secrets -- and the
-compose file, quadlet unit, and CR reference them by name. So `--gen-only` output is safe
-to review, diff, and share, while **`--gen-secrets-only` prints the values themselves** and
-must be handled exactly like the env file. `--gen-env-only` is container-only; on
-Kubernetes the broker settings are part of the CR, so it is rejected there.
+**Secrets are never part of a deployment artifact.** Each one lives in podman's secret
+store, in a host environment variable the compose file names, or in a Kubernetes Secret --
+and the quadlet unit, compose file, and CR reference it by name only. So `--gen-only`
+output is safe to review, diff, and share, while **`--gen-secrets-only` prints the values
+themselves** and must be handled exactly like the env file. `--gen-env-only` is
+container-only; on Kubernetes the broker settings are part of the CR, so it is rejected
+there.
+
+**Every platform hands the broker its secrets as files**, read through the setting's
+`*filepath` variant, and named after the setting they feed -- so the layout inside a
+container matches the data keys of the equivalent Kubernetes Secret:
+
+| Secret | In-container path | Host-side name |
+| --- | --- | --- |
+| `admin.pass` | `/run/secrets/username_<admin.user>_password` | `<container.name>-admin-password` |
+| `admin.additionalUsers[].password` | `/run/secrets/username_<username>_password` | `<container.name>-user-<username>-password` |
+| `nodes.psk` (HA) | `/run/secrets/redundancy_authentication_presharedkey_key` | `<container.name>-redundancy-psk` |
+| `tls.certPassphrase` | `/run/secrets/tls_servercertificate_passphrase` | `<container.name>-tls-passphrase` |
+
+The host-side name carries `container.name` (default `solace`) so two brokers on one host
+never share a podman store entry or a compose variable. On Kubernetes the operator mounts
+the credentials Secret itself, so the only data keys that matter are
+`username_admin_password` and `username_monitor_password`.
+
+### Extra CLI users differ by platform
+
+`admin.additionalUsers` reaches the broker two different ways, because the operator has no
+declarative route for it:
+
+- **Docker / Podman** -- created at container boot, from the mounted password file plus a
+  `username_<username>_globalaccesslevel` setting in the artifact. Nothing to run
+  afterwards.
+- **Kubernetes** -- created post-deployment by **`solace k8s config additional-users`**,
+  which builds a Solace CLI script and runs it on the primary. Verified against a live
+  cluster: extra `username_<user>_password` keys in the credentials Secret are **ignored by
+  the operator**, and the only declarative alternative (`extraEnvVars` /
+  `extraEnvVarsSecret`) would publish the passwords in the pod's environment, where
+  `kubectl describe` and every process in the container can read them. So the CLI is the
+  route, and the Secret carries no extra users at all.
+
+Two consequences on Kubernetes worth knowing:
+
+- **It is not re-runnable.** The broker's `create username` fails if the user exists, and
+  that is reported rather than reconciled -- re-setting a password an operator rotated on
+  the broker would be worse. So a second `config` run stops at this step once the users
+  exist; run the other steps individually, or drop the users from the env file.
+- **The password charset is restricted.** The value goes onto a CLI line, and the broker
+  rejects ``:()";'<>,`\*&|`` inside it. An env file using one of those fails to load *for
+  k8s* with the offending character named (never the password). The same file stays valid
+  for docker and podman, which write the password to a file instead.
 
 ## Command reference (Docker / Podman)
 
@@ -337,7 +540,10 @@ pass it explicitly per host on `deploy`/`up`/`gen`. For `config leader` and
 host name against the `nodes.*` table.
 
 As with Kubernetes, [docs/commands.md](docs/commands.md) carries the complete generated
-reference for both trees.
+reference for both trees. The same two halves apply: `check`, `prep host` and `deploy`
+build the deployment and are what `up` orchestrates, while **`config` and `verify` are
+post-deployment** -- they drive the Solace CLI inside a container that is already running,
+so `up` does not touch them.
 
 ### Lifecycle
 
@@ -346,8 +552,8 @@ reference for both trees.
 | `check` | Validate config, node-name DNS resolution, the container runtime, and (Docker) the compose command. |
 | `prep` | Prepare the host; with no subcommand runs all steps. |
 | `prep host` | Create/own the data dir, verify DNS, and (HA) generate the redundancy PSK. |
-| `deploy [role]` | Create the host's secrets, render the deploy artifact, and start the container/service. Re-runnable: an unchanged artifact is a no-op, a changed one asks before bouncing a running broker (`--restart` pre-approves). Honors the `--gen-*-only` trio. |
-| `config` | Post-deploy configuration; with no subcommand runs all applicable steps **except** `leader`. |
+| `deploy [role]` | Supply the host's secrets, render the deploy artifact, and start the container/service. Re-runnable: an unchanged artifact is a no-op, a changed one asks before bouncing a running broker (`--restart` pre-approves, and on an unchanged artifact forces the recreate/restart that applies a rotated secret). Honors the `--gen-*-only` trio. |
+| `config` | **Post-deployment** configuration, applied over the Solace CLI to a broker already running in this host's container. Not part of `deploy`, and not run by `up`. With no subcommand runs all applicable steps **except** `leader`. |
 | `config leader [role]` | Assert the config-sync leader (HA only; primary-only -- fails loud on backup/monitor). |
 | `config server-cert` | Load/update the TLS server certificate. |
 | `config domain-certs` | Load domain CA certificates. |
@@ -394,6 +600,15 @@ budget) rather than hanging.
 what is already on disk, so the three outcomes are distinguishable:
 
 - **Unchanged, broker running** -- reported as nothing to do; the broker is not touched.
+  With `--restart` it is recreated/restarted anyway, which is how a rotated secret is
+  applied (nothing in the artifact changes when a password does).
+- **Broker not running** -- recreated from the current config, so a rotated secret takes
+  effect without `--restart`. A stopped container would otherwise be *started* with the
+  credentials it was created with; there is no traffic to protect here, so no consent is
+  asked. `--restart` is only needed for a running broker, which is the case where applying
+  a change costs a bounce. Confirmed on Docker (`--force-recreate`); on Podman this relies
+  on quadlet's own container replacement at unit start, which is assumed but has not been
+  independently verified.
 - **Changed, broker not running** -- written and started.
 - **Changed, broker running** -- written, then you are asked before it is bounced.
   `--restart` pre-approves; a non-interactive run declines, leaving the new artifact in
@@ -405,15 +620,33 @@ This is what makes an image-tag bump a one-command upgrade: edit `image.tag`, th
 this because `systemctl start` on an already-active unit is a no-op -- the old
 behaviour rewrote the unit, reported success, and left the previous image running.
 
-**Secrets.** `deploy` externalizes the broker admin password and (HA) the redundancy
-pre-shared key before applying the artifact, so neither value is ever written into the
-compose file or quadlet unit. Podman loads them into its own secret store
-(`podman secret create --replace`, value on stdin); Docker writes them 0600 into
-`solace-secrets/` beside the compose file, which references them as compose secrets and
-points the broker at the mounted files. `--gen-secrets-only` prints the equivalent shell
-commands, one per secret, if you would rather create them yourself. A missing value
-(notably `nodes.psk` before `prep host` has run) fails the deploy loudly rather than
-starting a broker without a password.
+**Secrets.** `deploy` externalizes every secret before applying the artifact, so no value
+is ever written into the compose file or quadlet unit (see the table under
+[Rendering without applying](#rendering-without-applying) for the names and
+paths). Podman loads them into its own secret store (`podman secret create --replace`,
+value on stdin) and the unit mounts them; Docker's compose file names a host environment
+variable per secret, and `deploy` sets those variables for its own `docker compose`
+process, so no value ever reaches an argv or a file beside the compose file. A missing
+value (notably `nodes.psk` before `prep host` has run) fails the deploy loudly rather
+than starting a broker without a password.
+
+What that does and does not buy you: **nothing is written next to the artifact** (no
+plaintext file a project-directory backup, `tar`, or non-root user would pick up, and
+nothing to clean up on teardown), but the value still ends up at rest -- Docker
+materializes each secret into the container's own filesystem as a `0444` root-owned file
+under `/run/secrets`, which is the same at-rest exposure class as podman's store. It is
+not in the container's environment, so `docker inspect` does not show it.
+
+`--gen-secrets-only` prints the equivalent shell, one line per secret, for running compose
+yourself: `podman secret create` commands to run once on Podman, and `export` lines to
+**source** in the shell you run `docker compose` from on Docker. A manual
+`docker compose up` needs those variables exported -- unset, compose refuses.
+
+**Rotating a secret** takes `--restart`. A new password or PSK changes no artifact (its
+value lives in the config and, for Docker, only in the environment), so the ordinary
+"unchanged, nothing to do" path cannot see it; `deploy --restart` recreates the container
+(Docker) or restarts the service (Podman) to pick it up, and the no-op message names that
+as the way to apply one.
 
 **Config source.** The container platform has no separate config namespace: its post-deploy
 `config`/`verify` steps read the shared `k8s.*` fields -- `k8s.domainCerts`,
@@ -421,7 +654,7 @@ starting a broker without a password.
 (server certificate) and `admin.user`/`admin.pass` (SEMP login); the `nodes.*` names drive
 role detection for `config leader` / `verify redundancy`. The rest of the `nodes.*` table
 and `nodes.psk` are consumed earlier, at `prep`/`deploy` (`prep host` generates the PSK and
-bakes it into the deploy artifact). Container-only knobs live under `docker.*` / `podman.*`
+writes it back to the env file; `deploy` externalizes it as a secret). Container-only knobs live under `docker.*` / `podman.*`
 (runtime, container name, data dir, network mode, compose mode, rootless). See
 `env/sample.yaml`.
 

@@ -35,6 +35,30 @@ func TestCheckEnvNoSecretLeak(t *testing.T) {
 	}
 }
 
+// TestCheckEnvSparseConfig proves the negative half of every CheckEnv formatter:
+// env/sample.yaml (the only fixture every other CheckEnv test uses) has every field
+// set, so MISSING admin password, "(not configured)" TLS, "(cluster default)"
+// storage class and "(none)" monitor password have never actually printed. A broken
+// fallback here would silently mislead an operator running `k8s check`.
+func TestCheckEnvSparseConfig(t *testing.T) {
+	cfg := loadK8s(t)
+	cfg.Admin.Pass = ""
+	cfg.Admin.MonitorPass = ""
+	cfg.TLS.ServerSecret = ""
+	cfg.K8s.Storage.Class = ""
+	cfg.K8s.Operator.WatchBrokerNS = boolPtr(false)
+	cfg.K8s.Operator.WatchNamespaces = ""
+	buf := &bytes.Buffer{}
+	c := NewCluster(&recRunner{}, cfg, nil, buf)
+	c.CheckEnv()
+	out := buf.String()
+	for _, want := range []string{"password=MISSING", "(not configured)", "(cluster default)", "monitorPassword=(none)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("CheckEnv sparse config missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 func TestReachable(t *testing.T) {
 	t.Run("reachable", func(t *testing.T) {
 		rr := &recRunner{}
@@ -53,6 +77,21 @@ func TestReachable(t *testing.T) {
 			t.Error("Reachable should fail when the API server errors")
 		}
 	})
+}
+
+// TestCheckAbortsWhenUnreachable pins Check's early return: an unreachable API
+// server must abort before CheckStorageClass wastes a round-trip resolving the
+// default StorageClass.
+func TestCheckAbortsWhenUnreachable(t *testing.T) {
+	rr := &recRunner{outErr: errFake}
+	c := NewCluster(rr, loadK8s(t), nil, &bytes.Buffer{})
+	err := c.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cannot reach") {
+		t.Fatalf("Check error = %v, want it to wrap \"cannot reach\"", err)
+	}
+	if len(rr.calls) != 1 {
+		t.Errorf("Check should stop after the Reachable probe; got %d calls", len(rr.calls))
+	}
 }
 
 func TestCheckStorageClass(t *testing.T) {
@@ -100,6 +139,72 @@ func TestCheckStorageClass(t *testing.T) {
 		}
 		if !strings.Contains(buf.String(), "skipped (dry-run)") {
 			t.Errorf("expected a dry-run skip note; got %q", buf.String())
+		}
+	})
+	// TestCheckStorageClass/default-resolution query fails proves a genuine query
+	// failure (RBAC, connection refused) propagates resolveStorageClass's own wrap,
+	// not just a bare error -- previously only exercised the successful/empty/
+	// multi-value shapes of the lookup, never a real failure end-to-end.
+	t.Run("default-resolution query fails", func(t *testing.T) {
+		cfg := haCfg() // no Storage.Class -> resolves the cluster default
+		rr := &recRunner{outErr: errFake}
+		c := NewCluster(rr, cfg, nil, &bytes.Buffer{})
+		err := c.CheckStorageClass(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "resolving default StorageClass") {
+			t.Fatalf("CheckStorageClass error = %v, want it to wrap \"resolving default StorageClass\"", err)
+		}
+		if len(rr.calls) != 1 {
+			t.Errorf("CheckStorageClass should stop at the failing default-resolution query; got %d calls", len(rr.calls))
+		}
+	})
+	// TestCheckStorageClass/no default and none configured proves the 009-ported
+	// actionable error fires when the class resolves empty (no default, none
+	// configured) -- previously only checked via resolveStorageClass in isolation,
+	// never through the caller that turns "" into a fail-loud error.
+	t.Run("no default and none configured", func(t *testing.T) {
+		cfg := haCfg() // no Storage.Class, no default StorageClass on the cluster
+		rr := &recRunner{out: []byte("")}
+		c := NewCluster(rr, cfg, nil, &bytes.Buffer{})
+		err := c.CheckStorageClass(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "no default StorageClass found") {
+			t.Fatalf("CheckStorageClass error = %v, want \"no default StorageClass found\"", err)
+		}
+	})
+	// TestCheckStorageClass/scColumn read fails proves scColumn's own error return
+	// and the caller's "reading StorageClass %q" wrap (naming the class) both fire --
+	// every other subtest here scripts a successful column read.
+	t.Run("scColumn read fails", func(t *testing.T) {
+		cfg := haCfg()
+		cfg.K8s.Storage.Class = "fast"
+		rr := &recRunner{outErr: errFake}
+		c := NewCluster(rr, cfg, nil, &bytes.Buffer{})
+		err := c.CheckStorageClass(context.Background())
+		if err == nil || !strings.Contains(err.Error(), `reading StorageClass "fast"`) {
+			t.Fatalf(`CheckStorageClass error = %v, want it to wrap reading StorageClass "fast"`, err)
+		}
+		if len(rr.calls) != 1 {
+			t.Errorf("CheckStorageClass should stop at the first failing column read; got %d calls", len(rr.calls))
+		}
+	})
+	// TestCheckStorageClass/second attribute read fails after the first succeeds is
+	// the other real, reachable half of the two-read sequence: volumeBindingMode and
+	// allowVolumeExpansion are two separate kubectl calls, so a transient failure on
+	// just the second is just as real as on the first. Needs outErrQueue to script
+	// differing per-call results -- previously impossible with a single outErr.
+	t.Run("second attribute read fails after the first succeeds", func(t *testing.T) {
+		cfg := haCfg()
+		cfg.K8s.Storage.Class = "fast"
+		rr := &recRunner{
+			outQueue:    [][]byte{[]byte("WaitForFirstConsumer\n")},
+			outErrQueue: []error{nil, errFake},
+		}
+		c := NewCluster(rr, cfg, nil, &bytes.Buffer{})
+		err := c.CheckStorageClass(context.Background())
+		if err == nil || !strings.Contains(err.Error(), `reading StorageClass "fast"`) {
+			t.Fatalf(`CheckStorageClass error = %v, want it to wrap reading StorageClass "fast"`, err)
+		}
+		if len(rr.calls) != 2 {
+			t.Errorf("CheckStorageClass should have attempted both attribute reads; got %d calls", len(rr.calls))
 		}
 	})
 }

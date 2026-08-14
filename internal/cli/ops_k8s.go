@@ -119,6 +119,16 @@ func opK8sConfigAll(a *App) error {
 	if err := o.DisableDefaultUsers(ctx, config.Primary); err != nil {
 		return err
 	}
+	// After the default-user hardening, so the sequence reads harden-then-provision.
+	// NOTE: `create username` fails on a user that already exists, so with
+	// additionalUsers configured a second `config` run stops here -- unlike every other
+	// step, this one is not re-runnable. Run `config additional-users` deliberately, or
+	// the individual steps, once the users exist.
+	if len(a.Cfg.Admin.AdditionalUsers) > 0 {
+		if err := o.AdditionalUsers(ctx, config.Primary, a.Cfg.Admin.AdditionalUsers); err != nil {
+			return err
+		}
+	}
 	if len(a.Cfg.K8s.ProductKeys) > 0 {
 		return o.ProductKeys(ctx, a.Cfg.K8s.ProductKeys, k8s.ProductKeyRoles(a.Cfg)...)
 	}
@@ -144,6 +154,14 @@ func opK8sConfigDisableVPN(a *App) error   { return k8sOps(a).DisableDefaultVPN(
 func opK8sConfigDisableUsers(a *App) error { return k8sOps(a).DisableDefaultUsers(bg(), config.Primary) }
 func opK8sConfigProductKeys(a *App) error {
 	return k8sOps(a).ProductKeys(bg(), a.Cfg.K8s.ProductKeys, k8s.ProductKeyRoles(a.Cfg)...)
+}
+
+// opK8sConfigAdditionalUsers creates the extra CLI users. Primary only: management
+// users are router-level config that config-sync replicates to the mates.
+// ASSUMED, NOT VERIFIED -- if a failover ever surfaces a mate without these users,
+// this is the line to widen to k8s.HARoles(a.Cfg).
+func opK8sConfigAdditionalUsers(a *App) error {
+	return k8sOps(a).AdditionalUsers(bg(), config.Primary, a.Cfg.Admin.AdditionalUsers)
 }
 
 // opK8sExecCLI uploads and runs a local Solace CLI script in the target pod. A bare
@@ -356,7 +374,7 @@ func opK8sUp(a *App) error {
 	if err := c.CreateSecrets(ctx); err != nil {
 		return err
 	}
-	if placementConfigured(a.Cfg) && isTTY(os.Stdin) {
+	if placementConfigured(a.Cfg) && interactive(a) {
 		if err := c.LabelNodes(ctx); err != nil {
 			return err
 		}

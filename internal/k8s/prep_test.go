@@ -15,7 +15,7 @@ import (
 func adminCfg() *config.Config {
 	c := haCfg()
 	c.Admin.Pass = "pw"
-	c.Admin.UserSecret = "solace-admin-secret"
+	c.K8s.AdminSecret = "solace-admin-secret"
 	return c
 }
 
@@ -31,6 +31,18 @@ func TestCreateNamespace(t *testing.T) {
 	}
 	if !strings.Contains(got.stdin, "kind: Namespace") || !strings.Contains(got.stdin, "name: solace") {
 		t.Errorf("CreateNamespace manifest on stdin =\n%s", got.stdin)
+	}
+}
+
+// TestCreateNamespaceApplyFails proves a failing apply (RBAC denial, etc.) surfaces
+// instead of being silently swallowed. This branch was untestable before recRunner
+// grew runInputErr: RunInput unconditionally returned nil, so no RunInput-backed
+// call (apply/deleteStdin) anywhere in the suite could ever be made to fail.
+func TestCreateNamespaceApplyFails(t *testing.T) {
+	rr := &recRunner{runInputErr: errFake}
+	c := newCluster(rr)
+	if err := c.CreateNamespace(context.Background()); err == nil {
+		t.Error("CreateNamespace should fail when the apply fails")
 	}
 }
 
@@ -55,8 +67,8 @@ func TestCreateSecretsAdminOnly(t *testing.T) {
 	if err := c.CreateSecrets(context.Background()); err != nil {
 		t.Fatalf("CreateSecrets: %v", err)
 	}
-	if len(rr.calls) != 1 {
-		t.Fatalf("CreateSecrets made %d calls, want 1 apply", len(rr.calls))
+	if calls := rr.afterPreflight(t, "create", "secrets"); len(calls) != 1 {
+		t.Fatalf("CreateSecrets made %d calls after the probe, want 1 apply", len(calls))
 	}
 	got := rr.last()
 	if got.method != "RunInput" || !eqArgs(got.args, []string{"apply", "-f", "-"}) {
@@ -96,8 +108,8 @@ func TestCreateSecretsAllThree(t *testing.T) {
 	if err := c.CreateSecrets(context.Background()); err != nil {
 		t.Fatalf("CreateSecrets: %v", err)
 	}
-	if len(rr.calls) != 1 {
-		t.Fatalf("CreateSecrets made %d calls, want 1 apply", len(rr.calls))
+	if calls := rr.afterPreflight(t, "create", "secrets"); len(calls) != 1 {
+		t.Fatalf("CreateSecrets made %d calls after the probe, want 1 apply", len(calls))
 	}
 	got := rr.last()
 	if got.method != "RunInput" || !eqArgs(got.args, []string{"apply", "-f", "-"}) {
@@ -149,6 +161,57 @@ func TestCreateSecretsPreflight(t *testing.T) {
 	}
 }
 
+// TestCreateSecretsFailsWithoutAdminFields proves CreateSecrets can pass
+// secretPreflight (which only validates the TLS inputs) and still fail inside
+// GenSecrets when the admin fields are unset -- a real, reachable misconfiguration
+// that secretPreflight's TLS-only guard does not catch.
+func TestCreateSecretsFailsWithoutAdminFields(t *testing.T) {
+	rr := &recRunner{}
+	c := NewCluster(rr, haCfg(), nil, nil) // no Admin.Pass, no K8s.AdminSecret
+	if err := c.CreateSecrets(context.Background()); err == nil {
+		t.Error("CreateSecrets should fail when the admin secret cannot be built")
+	}
+	// The permission probe runs (it precedes GenSecrets, so key material is never
+	// read for a cluster that would refuse it); no apply may follow.
+	if calls := rr.afterPreflight(t, "create", "secrets"); len(calls) != 0 {
+		t.Errorf("CreateSecrets should abort before any apply; the probe passed, GenSecrets should stop it; got %d calls after it", len(calls))
+	}
+}
+
+// TestCreateSecretsStopsOnPreflightFailure: a refused permission stops CreateSecrets
+// before GenSecrets reads the TLS private key off disk. Loading key material into
+// this process for a cluster that will not accept it is work worth not doing.
+func TestCreateSecretsStopsOnPreflightFailure(t *testing.T) {
+	rr := &recRunner{canI: "no"}
+	c := NewCluster(rr, adminCfg(), nil, nil)
+	err := c.CreateSecrets(context.Background())
+	if err == nil {
+		t.Fatal("CreateSecrets must fail when the permission probe answers no")
+	}
+	if !strings.Contains(err.Error(), "not allowed to create secrets") {
+		t.Errorf("error = %v, want it to name the refused permission", err)
+	}
+	if len(rr.calls) != 1 {
+		t.Errorf("%d calls made after a failed probe, want only the probe itself: %+v", len(rr.calls), rr.calls)
+	}
+}
+
+// TestGenSecretsTLSError covers GenSecrets' own guard on the render-only path
+// (`prep secrets --gen-secrets-only`), which calls GenSecrets directly and bypasses
+// Cluster.secretPreflight entirely: a configured tls.serverSecret with unreadable
+// cert files must fail the render rather than emit a broken manifest. Every other
+// exercise of GenSecrets goes through CreateSecrets, which pre-empts this via
+// preflight, so GenSecrets itself had zero direct tests.
+func TestGenSecretsTLSError(t *testing.T) {
+	cfg := adminCfg()
+	cfg.TLS.ServerSecret = "solace-tls-secret"
+	cfg.TLS.Cert = filepath.Join(t.TempDir(), "nope.crt")
+	cfg.TLS.CertKey = filepath.Join(t.TempDir(), "nope.key")
+	if _, err := GenSecrets(cfg); err == nil {
+		t.Error("GenSecrets should fail when the TLS cert files are not readable")
+	}
+}
+
 func TestDeleteSecrets(t *testing.T) {
 	t.Run("all three", func(t *testing.T) {
 		cfg := adminCfg()
@@ -182,6 +245,38 @@ func TestDeleteSecrets(t *testing.T) {
 	})
 }
 
+// TestDeleteSecretsSkipsUnconfiguredAdminSecret proves names' unconditional first
+// entry (c.Cfg.K8s.AdminSecret) is silently skipped when blank, rather than issuing
+// `kubectl delete secret ""` -- the case of a partial/legacy deployment that never
+// configured an admin secret but still calls teardown.
+func TestDeleteSecretsSkipsUnconfiguredAdminSecret(t *testing.T) {
+	cfg := haCfg() // no K8s.AdminSecret, no TLS/pull secret configured
+	rr := &recRunner{}
+	c := NewCluster(rr, cfg, nil, nil)
+	if err := c.DeleteSecrets(context.Background()); err != nil {
+		t.Fatalf("DeleteSecrets: %v", err)
+	}
+	if len(rr.calls) != 0 {
+		t.Errorf("DeleteSecrets should skip the blank admin-secret entry; got %d calls", len(rr.calls))
+	}
+}
+
+// TestDeleteSecretsStopsOnError proves a genuine delete failure (RBAC denial, beyond
+// --ignore-not-found's usual no-op) stops the teardown loop and surfaces, instead of
+// silently continuing to the remaining secrets. DeleteSecrets had no failure test.
+func TestDeleteSecretsStopsOnError(t *testing.T) {
+	cfg := adminCfg()
+	cfg.TLS.ServerSecret = "x"
+	rr := &recRunner{runErr: errFake}
+	c := NewCluster(rr, cfg, nil, nil)
+	if err := c.DeleteSecrets(context.Background()); err == nil {
+		t.Error("DeleteSecrets should fail loud when a delete errors")
+	}
+	if len(rr.calls) != 1 {
+		t.Errorf("DeleteSecrets should stop before the TLS secret; got %d calls", len(rr.calls))
+	}
+}
+
 func TestUpdateServerCertSecret(t *testing.T) {
 	t.Run("applies TLS secret on stdin", func(t *testing.T) {
 		dir := t.TempDir()
@@ -211,6 +306,24 @@ func TestUpdateServerCertSecret(t *testing.T) {
 		c := NewCluster(rr, haCfg(), nil, nil) // no TLS.ServerSecret
 		if err := c.UpdateServerCertSecret(context.Background()); err == nil {
 			t.Error("UpdateServerCertSecret should fail when tls.serverSecret is unset")
+		}
+	})
+	// TestUpdateServerCertSecret/configured secret name but cert files unset proves
+	// the more likely real case: UpdateServerCertSecret's own precondition only
+	// checks tls.serverSecret is set, not that Cert/CertKey are also configured, so a
+	// configured name with missing cert inputs must still fail before any apply.
+	t.Run("configured secret name but cert files unset", func(t *testing.T) {
+		cfg := haCfg()
+		cfg.TLS.ServerSecret = "solace-tls-secret" // Cert/CertKey left unset
+		rr := &recRunner{}
+		c := NewCluster(rr, cfg, nil, nil)
+		if err := c.UpdateServerCertSecret(context.Background()); err == nil {
+			t.Error("UpdateServerCertSecret should fail when tls.cert/tls.certKey are not configured")
+		}
+		// The permission probe runs first (it precedes reading the cert files); no
+		// apply may follow it.
+		if calls := rr.afterPreflight(t, "update", "secrets"); len(calls) != 0 {
+			t.Errorf("no apply should run when TLSSecret fails to build; got %d calls after the probe", len(calls))
 		}
 	})
 }
@@ -312,7 +425,8 @@ func TestLabelNodesHappyPath(t *testing.T) {
 	cfg := saCfg()
 	cfg.K8s.Placement.LabelsPrimary = []string{"topology.kubernetes.io/zone: z1"}
 	rr := &recRunner{outQueue: [][]byte{
-		[]byte("yes\n"),            // auth can-i update nodes
+		// The `auth can-i` probe is answered out of band by recRunner.canI, so the
+		// queue holds only the reads LabelNodes makes itself.
 		[]byte("node-a\nnode-b\n"), // node list
 	}}
 	c, _ := labelCluster(rr, cfg, "1\n") // pick node-a
@@ -337,7 +451,6 @@ func TestLabelNodesReprompt(t *testing.T) {
 	cfg := saCfg()
 	cfg.K8s.Placement.LabelsPrimary = []string{"zone: z2"}
 	rr := &recRunner{outQueue: [][]byte{
-		[]byte("yes\n"),
 		[]byte("node-a\nnode-b\n"),
 	}}
 	c, buf := labelCluster(rr, cfg, "9\nx\n2\n") // out-of-range, non-numeric, then node-b
@@ -373,11 +486,89 @@ func TestLabelNodesEOFNoSelection(t *testing.T) {
 	cfg := saCfg()
 	cfg.K8s.Placement.LabelsPrimary = []string{"zone: z1"}
 	rr := &recRunner{outQueue: [][]byte{
-		[]byte("yes\n"),
 		[]byte("node-a\n"),
 	}}
 	c, _ := labelCluster(rr, cfg, "") // EOF before any selection
 	if err := c.LabelNodes(context.Background()); err == nil {
 		t.Error("LabelNodes should fail when no node selection is provided")
+	}
+}
+
+// TestLabelNodesHAOnlyPrimaryConfigured covers rolePlacementLabels' Backup/Monitor
+// arms and LabelNodes' per-role skip-continue: every other LabelNodes test uses
+// saCfg() (standalone), so HARoles(cfg) only ever yielded Primary and these branches
+// never executed. This is the "which config field feeds which role" branch that
+// could silently break (e.g. Backup reading LabelsPrimary by mistake) with nothing
+// to catch it.
+func TestLabelNodesHAOnlyPrimaryConfigured(t *testing.T) {
+	cfg := haCfg() // HARoles = [primary, backup, monitor]
+	cfg.K8s.Placement.LabelsPrimary = []string{"zone: z1"} // Backup/Monitor left empty
+	rr := &recRunner{outQueue: [][]byte{
+		[]byte("node-a\nnode-b\n"),
+	}}
+	c, buf := labelCluster(rr, cfg, "1\n")
+	if err := c.LabelNodes(context.Background()); err != nil {
+		t.Fatalf("LabelNodes: %v", err)
+	}
+	var labelCalls int
+	for _, call := range rr.calls {
+		if len(call.args) > 0 && call.args[0] == "label" {
+			labelCalls++
+		}
+	}
+	if labelCalls != 1 {
+		t.Errorf("only the primary role has labels configured; got %d label calls, want 1", labelCalls)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Select the node for the backup broker") || strings.Contains(out, "Select the node for the monitor broker") {
+		t.Errorf("backup/monitor must not be prompted when they have no configured labels:\n%s", out)
+	}
+}
+
+// TestNodeNamesError proves nodeNames' own error-wrap fires on a genuine query
+// failure: LabelNodes relies on this failing loud rather than silently prompting
+// with the wrong/empty node list when the cluster is flaky mid-operation.
+func TestNodeNamesError(t *testing.T) {
+	rr := &recRunner{outErr: errFake}
+	c := newCluster(rr)
+	_, err := c.nodeNames(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "listing cluster nodes") {
+		t.Errorf("nodeNames error = %v, want it to wrap \"listing cluster nodes\"", err)
+	}
+}
+
+// TestLabelNodesNoNodesFound covers the edge condition where labelling is allowed
+// (RBAC passes) but the cluster reports zero nodes: LabelNodes must fail loud
+// rather than doing nothing or misbehaving in promptNode with an empty node list.
+func TestLabelNodesNoNodesFound(t *testing.T) {
+	cfg := saCfg()
+	cfg.K8s.Placement.LabelsPrimary = []string{"zone: z1"}
+	rr := &recRunner{outQueue: [][]byte{
+		[]byte(""), // no nodes reported (the `auth can-i` probe passes via recRunner.canI)
+	}}
+	c, _ := labelCluster(rr, cfg, "")
+	err := c.LabelNodes(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no cluster nodes found") {
+		t.Errorf("LabelNodes error = %v, want \"no cluster nodes found\"", err)
+	}
+}
+
+// TestLabelNodesLabelFailureIsNonFatal pins the doc comment's own contract (and
+// CLAUDE.md's fail-loud-vs-skip principle): a single `kubectl label` failure is
+// reported and skipped, not fatal. Every happy-path test until now succeeded on
+// every label call, so this branch had zero coverage.
+func TestLabelNodesLabelFailureIsNonFatal(t *testing.T) {
+	cfg := saCfg()
+	cfg.K8s.Placement.LabelsPrimary = []string{"zone: z1"}
+	rr := &recRunner{
+		outQueue: [][]byte{[]byte("node-a\n")},
+		runErr:   errFake, // fails the kubectl label call itself
+	}
+	c, buf := labelCluster(rr, cfg, "1\n")
+	if err := c.LabelNodes(context.Background()); err != nil {
+		t.Fatalf("a single label failure must not abort LabelNodes, got %v", err)
+	}
+	if !strings.Contains(buf.String(), "[ERROR] failed to apply") {
+		t.Errorf("expected a reported label failure; got %q", buf.String())
 	}
 }

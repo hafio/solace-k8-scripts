@@ -15,10 +15,11 @@ import (
 // --- capturing fake engine.Runner ------------------------------------------
 
 type capCall struct {
-	method string // Run | RunInput | RunInteractive | Output | OutputInput
+	method string // Run | RunInput | RunEnv | RunInteractive | Output | OutputInput
 	name   string
 	args   []string
 	stdin  string
+	env    []string // RunEnv only: the extra "KEY=value" pairs given to the child
 }
 
 type capRunner struct {
@@ -37,15 +38,19 @@ type capRunner struct {
 }
 
 func (r *capRunner) Run(_ context.Context, name string, args ...string) error {
-	r.calls = append(r.calls, capCall{"Run", name, args, ""})
+	r.calls = append(r.calls, capCall{method: "Run", name: name, args: args})
 	return r.failFor(name, args)
 }
 func (r *capRunner) RunInput(_ context.Context, in []byte, name string, args ...string) error {
-	r.calls = append(r.calls, capCall{"RunInput", name, args, string(in)})
+	r.calls = append(r.calls, capCall{method: "RunInput", name: name, args: args, stdin: string(in)})
+	return r.failFor(name, args)
+}
+func (r *capRunner) RunEnv(_ context.Context, extraEnv []string, name string, args ...string) error {
+	r.calls = append(r.calls, capCall{method: "RunEnv", name: name, args: args, env: extraEnv})
 	return r.failFor(name, args)
 }
 func (r *capRunner) RunInteractive(_ context.Context, name string, args ...string) error {
-	r.calls = append(r.calls, capCall{"RunInteractive", name, args, ""})
+	r.calls = append(r.calls, capCall{method: "RunInteractive", name: name, args: args})
 	return r.failFor(name, args)
 }
 func (r *capRunner) failFor(name string, args []string) error {
@@ -55,11 +60,11 @@ func (r *capRunner) failFor(name string, args []string) error {
 	return r.fail(name, args)
 }
 func (r *capRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
-	r.calls = append(r.calls, capCall{"Output", name, args, ""})
+	r.calls = append(r.calls, capCall{method: "Output", name: name, args: args})
 	return r.out, r.outFailFor(name, args)
 }
 func (r *capRunner) OutputInput(_ context.Context, in []byte, name string, args ...string) ([]byte, error) {
-	r.calls = append(r.calls, capCall{"OutputInput", name, args, string(in)})
+	r.calls = append(r.calls, capCall{method: "OutputInput", name: name, args: args, stdin: string(in)})
 	return r.out, r.outFailFor(name, args)
 }
 
@@ -136,13 +141,13 @@ func TestTransportExecArgs(t *testing.T) {
 			"docker Run has no -- and no -i",
 			dockerCfg(), config.Docker,
 			func(tr broker.Transport) { _ = tr.Run(ctx, config.Primary, "show", "version") },
-			capCall{"Run", "docker", []string{"exec", "solace", "show", "version"}, ""},
+			capCall{method: "Run", name: "docker", args: []string{"exec", "solace", "show", "version"}},
 		},
 		{
 			"docker Output ignores role (node-local)",
 			dockerCfg(), config.Docker,
 			func(tr broker.Transport) { _, _ = tr.Output(ctx, config.Backup, "hostname") },
-			capCall{"Output", "docker", []string{"exec", "solace", "hostname"}, ""},
+			capCall{method: "Output", name: "docker", args: []string{"exec", "solace", "hostname"}},
 		},
 		{
 			"podman OutputInput adds -i and rides stdin",
@@ -150,7 +155,9 @@ func TestTransportExecArgs(t *testing.T) {
 			func(tr broker.Transport) {
 				_, _ = tr.OutputInput(ctx, config.Monitor, []byte("user = \"a:b\"\n"), "curl", "-K", "-")
 			},
-			capCall{"OutputInput", "podman", []string{"exec", "-i", "sol-pod", "curl", "-K", "-"}, "user = \"a:b\"\n"},
+			capCall{method: "OutputInput", name: "podman",
+				args:  []string{"exec", "-i", "sol-pod", "curl", "-K", "-"},
+				stdin: "user = \"a:b\"\n"},
 		},
 	}
 	for _, tc := range cases {
@@ -184,9 +191,9 @@ func TestTransportUpload(t *testing.T) {
 	}
 	got := rr.last()
 	want := capCall{
-		"RunInput", "podman",
-		[]string{"exec", "-i", "sol-pod", "sh", "-c", "cat > '" + dest + "'"},
-		secret,
+		method: "RunInput", name: "podman",
+		args:  []string{"exec", "-i", "sol-pod", "sh", "-c", "cat > '" + dest + "'"},
+		stdin: secret,
 	}
 	if got.method != want.method || got.name != want.name || !eqArgs(got.args, want.args) || got.stdin != want.stdin {
 		t.Errorf("Upload\n got: %+v\nwant: %+v", got, want)

@@ -263,8 +263,8 @@ func TestGolden(t *testing.T) {
 			gen:  func(t *testing.T) []byte { return SecretScript(load(t, config.Podman), config.Podman) },
 		},
 		{
-			// Docker's script writes the file-backed sources instead, and a value
-			// carrying a quote proves shQuote keeps the line intact.
+			// Docker's script exports the variables compose reads instead, and a
+			// value carrying a quote proves shQuote keeps the line intact.
 			name: "docker secret script HA",
 			file: "docker_secret_script.golden",
 			gen: func(t *testing.T) []byte {
@@ -304,15 +304,19 @@ func TestGolden(t *testing.T) {
 // with a regenerated golden.
 func TestArtifactsCarryNoSecrets(t *testing.T) {
 	const (
-		pass = "UNIQUE-ADMIN-PASSWORD-VALUE"
-		psk  = "UNIQUE-PRESHARED-KEY-VALUE"
+		pass     = "UNIQUE-ADMIN-PASSWORD-VALUE"
+		psk      = "UNIQUE-PRESHARED-KEY-VALUE"
+		userPass = "UNIQUE-EXTRA-USER-PASSWORD"
 	)
-	secrets := []string{pass, psk}
+	secrets := []string{pass, psk, userPass}
 
 	for _, p := range []config.Platform{config.K8s, config.Docker, config.Podman} {
 		c := load(t, p)
 		c.Admin.Pass = pass
 		c.Nodes.PSK = psk
+		c.Admin.AdditionalUsers = []config.AdditionalUser{
+			{Username: "appuser", AccessLevel: "read-only", Password: userPass},
+		}
 		id := c.ResolveNode(config.Primary)
 
 		artifacts := map[string][]byte{}
@@ -352,7 +356,7 @@ func TestArtifactsCarryNoSecrets(t *testing.T) {
 func TestContainerSecretsRedundancy(t *testing.T) {
 	c := load(t, config.Podman)
 
-	ha := ContainerSecrets(c)
+	ha := ContainerSecrets(c, config.Podman)
 	if len(ha) != 2 {
 		t.Fatalf("HA secrets = %d, want 2 (admin password + PSK)", len(ha))
 	}
@@ -362,12 +366,14 @@ func TestContainerSecretsRedundancy(t *testing.T) {
 	if got := ha[0].FilePathKey(); got != "username_admin_passwordfilepath" {
 		t.Errorf("FilePathKey = %q", got)
 	}
-	if got := ha[0].MountPath(); got != "/run/secrets/solace-admin-password" {
+	// The mount is named after the setting, not the host-side secret, so the layout
+	// inside the container matches the k8s Secret's data keys.
+	if got := ha[0].MountPath(); got != "/run/secrets/username_admin_password" {
 		t.Errorf("MountPath = %q", got)
 	}
 
 	c.Redundancy = "no"
-	if standalone := ContainerSecrets(c); len(standalone) != 1 {
+	if standalone := ContainerSecrets(c, config.Podman); len(standalone) != 1 {
 		t.Errorf("standalone secrets = %d, want 1 (admin password only)", len(standalone))
 	}
 
@@ -375,7 +381,7 @@ func TestContainerSecretsRedundancy(t *testing.T) {
 	// empty passphrase must not produce one the broker would use to unlock a plain
 	// key. The broker reads it from the mounted file via the *filepath variant.
 	c.TLS.CertPassphrase = "cert-pass"
-	withPass := ContainerSecrets(c)
+	withPass := ContainerSecrets(c, config.Podman)
 	if len(withPass) != 2 {
 		t.Fatalf("standalone + passphrase = %d secrets, want 2", len(withPass))
 	}
@@ -385,6 +391,70 @@ func TestContainerSecretsRedundancy(t *testing.T) {
 	}
 	if got := pass.FilePathKey(); got != "tls_servercertificate_passphrasefilepath" {
 		t.Errorf("passphrase file-path key = %q", got)
+	}
+}
+
+// TestContainerSecretNamesAreHostScoped pins the de-confliction: the engine-side
+// name carries the container name, so two brokers on one host never share a podman
+// store entry or a compose variable -- while the in-container filename stays the
+// same everywhere. The default name keeps the historical names byte-for-byte.
+func TestContainerSecretNamesAreHostScoped(t *testing.T) {
+	c := load(t, config.Docker)
+	if got := ContainerSecrets(c, config.Docker)[0].Name; got != "solace-admin-password" {
+		t.Errorf("with the default container name the secret must stay %q, got %q", "solace-admin-password", got)
+	}
+
+	c.Docker.Container.Name = "edge-2.broker"
+	s := ContainerSecrets(c, config.Docker)[0]
+	if s.Name != "edge-2.broker-admin-password" {
+		t.Errorf("secret name = %q, want it prefixed with the container name", s.Name)
+	}
+	if s.Target() != "username_admin_password" || s.MountPath() != "/run/secrets/username_admin_password" {
+		t.Errorf("the in-container name must not carry the host prefix: target=%q path=%q", s.Target(), s.MountPath())
+	}
+	// '.' and '-' cannot appear in a variable name; a leading digit cannot start one.
+	if got := s.EnvVar(); got != "EDGE_2_BROKER_ADMIN_PASSWORD" {
+		t.Errorf("EnvVar = %q", got)
+	}
+	c.Docker.Container.Name = "9lives"
+	if got := ContainerSecrets(c, config.Docker)[0].EnvVar(); got != "_9LIVES_ADMIN_PASSWORD" {
+		t.Errorf("a name starting with a digit must be prefixed to stay exportable, got %q", got)
+	}
+}
+
+// TestAdditionalUsersReachBothHalves pins the extra-user wiring: the password is a
+// secret named per host and mounted under the setting it feeds, while the access
+// level is not a secret and rides the artifact as an ordinary pair.
+func TestAdditionalUsersReachBothHalves(t *testing.T) {
+	c := load(t, config.Docker)
+	c.Redundancy = "no"
+	c.Admin.AdditionalUsers = []config.AdditionalUser{
+		{Username: "appuser", AccessLevel: "read-write", Password: "app-secret"},
+	}
+
+	secrets := ContainerSecrets(c, config.Docker)
+	if len(secrets) != 2 {
+		t.Fatalf("secrets = %d, want 2 (admin + appuser)", len(secrets))
+	}
+	u := secrets[1]
+	if u.Name != "solace-user-appuser-password" || u.EnvKey != "username_appuser_password" {
+		t.Errorf("additional-user secret = %+v", u)
+	}
+	if u.ConfigKey != "admin.additionalUsers.appuser.password" {
+		t.Errorf("ConfigKey = %q; it must name the env-file key for an actionable error", u.ConfigKey)
+	}
+
+	pairs := envLines(EnvPairs(c, c.ResolveNode(config.Primary)))
+	for _, want := range []string{
+		"username_appuser_globalaccesslevel=read-write",
+		"username_appuser_passwordfilepath=/run/secrets/username_appuser_password",
+	} {
+		if !strings.Contains(string(pairs), want) {
+			t.Errorf("env pairs should contain %q:\n%s", want, pairs)
+		}
+	}
+	if strings.Contains(string(pairs), "app-secret") {
+		t.Errorf("env pairs must not carry the password:\n%s", pairs)
 	}
 }
 

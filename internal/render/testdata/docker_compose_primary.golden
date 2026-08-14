@@ -35,13 +35,15 @@ services:
       system_scaling_maxqueuemessagecount: "100"
       messagespool_maxspoolusage: "100000"
       username_admin_globalaccesslevel: "admin"
-      username_admin_passwordfilepath: "/run/secrets/solace-admin-password"
-      redundancy_authentication_presharedkey_keyfilepath: "/run/secrets/solace-redundancy-psk"
+      username_admin_passwordfilepath: "/run/secrets/username_admin_password"
+      redundancy_authentication_presharedkey_keyfilepath: "/run/secrets/redundancy_authentication_presharedkey_key"
     secrets:
-      - solace-admin-password
-      - solace-redundancy-psk
+      - source: solace-admin-password
+        target: username_admin_password
+      - source: solace-redundancy-psk
+        target: redundancy_authentication_presharedkey_key
 secrets:
   solace-admin-password:
-    file: ./solace-secrets/solace-admin-password
+    environment: SOLACE_ADMIN_PASSWORD
   solace-redundancy-psk:
-    file: ./solace-secrets/solace-redundancy-psk
+    environment: SOLACE_REDUNDANCY_PSK

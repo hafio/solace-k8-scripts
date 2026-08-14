@@ -17,9 +17,13 @@ func newK8sCmd(app *App) *cobra.Command {
 			if err := checkGenFlags(cmd, app); err != nil {
 				return err
 			}
+			if err := checkAllowCommand(cmd, app); err != nil {
+				return err
+			}
 			return app.load()
 		},
 	}
+	addAllowCommandFlag(k, app)
 
 	// --- lifecycle: check -> prep -> deploy -> config -> verify ---
 	k.AddCommand(newK8sCheckCmd(app))
@@ -91,8 +95,12 @@ func newK8sDeployCmd(app *App) *cobra.Command {
 func newK8sConfigCmd(app *App) *cobra.Command {
 	cfg := &cobra.Command{
 		Use:   "config",
-		Short: "Post-deploy configuration (certs, hardening, product keys, CLI)",
-		Long:  "With no subcommand, runs all applicable config steps in order (HA-only steps skipped in standalone).",
+		Short: "Configure a DEPLOYED broker (certs, hardening, product keys, CLI)",
+		Long: "Post-deployment configuration: every step here talks to a broker that is already " +
+			"deployed and running, over the Solace CLI. Nothing under `config` is part of `deploy`, " +
+			"and none of it is applied by `up` -- run it after the pods are ready.\n\n" +
+			"With no subcommand, runs all applicable config steps in order (HA-only steps skipped " +
+			"in standalone).",
 		Args:  cobra.NoArgs,
 		RunE:  func(*cobra.Command, []string) error { return opK8sConfigAll(app) },
 	}
@@ -109,6 +117,7 @@ func newK8sConfigCmd(app *App) *cobra.Command {
 		leaf(app, "domain-certs", "Load domain CA certificates", opK8sConfigDomainCerts),
 		leaf(app, "disable-default-vpn", "Shut down the default message-VPN", opK8sConfigDisableVPN),
 		leaf(app, "disable-default-users", "Shut down default client-usernames in all VPNs", opK8sConfigDisableUsers),
+		leaf(app, "additional-users", "Create the admin.additionalUsers CLI users", opK8sConfigAdditionalUsers),
 		leaf(app, "product-keys", "Apply product keys", opK8sConfigProductKeys),
 		execCli,
 	)
@@ -226,13 +235,13 @@ func newK8sOperatorCmd(app *App) *cobra.Command {
 }
 
 func newK8sGenCmd(app *App) *cobra.Command {
-	return genCapable(&cobra.Command{
+	return renderOnly(genCapable(&cobra.Command{
 		Use:       "gen [broker|operator|secrets]",
 		Short:     "Render a manifest to stdout without applying (like --gen-only)",
 		ValidArgs: []string{"broker", "operator", "secrets"},
 		Args:      cobra.MaximumNArgs(1),
 		RunE:      func(_ *cobra.Command, args []string) error { return opK8sGen(app, firstArgOr(args, "broker")) },
-	})
+	}))
 }
 
 func newK8sShowAllCmd(app *App) *cobra.Command {

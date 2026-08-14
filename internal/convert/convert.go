@@ -76,7 +76,13 @@ func Convert(src []byte, source string, platform config.Platform) (Result, error
 		warns = append(warns, fmt.Sprintf("no YAML equivalent, dropped: %s", strings.Join(names, ", ")))
 	}
 	if err := validateOutput(body, p); err != nil {
-		warns = append(warns, fmt.Sprintf("the converted file is incomplete: %v", err))
+		// "will not load as-is" rather than "is incomplete": the failure is usually a
+		// mandatory field the source never set, but it can equally be a legacy
+		// KUBE/CONTAINER_RUNTIME the execution guard refuses (a wrapper such as
+		// `microk8s kubectl`, which now needs --allow-command). Both are the same
+		// thing to the user -- edit the file or approve the binary before running it
+		// -- and the wrapped error names which one it was.
+		warns = append(warns, fmt.Sprintf("the converted file will not load as-is: %v", err))
 	}
 	return Result{YAML: []byte(body), Platform: p, Warnings: warns}, nil
 }
@@ -196,13 +202,36 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		d.kv("pass", v.s("IMAGEREPO_PASS"))
 	})
 
+	// SOLBK_USR_PASS was a flat "user=password" list with no access level, so the
+	// converted users get the least-privileged one and a warning naming the choice --
+	// the schema requires the level explicitly, and guessing "admin" here would hand
+	// out rights the source never granted.
+	converted := 0
 	d.section("admin", func(d *doc) {
 		d.kv("user", v.s("SOLBK_ADM_USER"))
 		d.kv("pass", v.s("SOLBK_ADM_PASS"))
 		d.kv("monitorPass", v.s("SOLBK_MON_PASS"))
-		d.kv("userSecret", v.s("SOLBK_USR_SECRET"))
-		d.list("userPasswords", v.l("SOLBK_USR_PASS"))
+		d.block("additionalUsers", func(d *doc) {
+			for i, entry := range v.l("SOLBK_USR_PASS") {
+				user, pass, ok := strings.Cut(entry, "=")
+				if !ok || user == "" {
+					// The entry is reported by position, never by value: a malformed one
+					// is most likely a bare password pasted without its "user=" prefix,
+					// so the text itself is the secret (§3, no secret in a log line).
+					warns = append(warns, fmt.Sprintf("SOLBK_USR_PASS entry %d is not user=password (value withheld), dropped", i))
+					continue
+				}
+				d.raw("- username: " + scalar(user))
+				d.raw("  accessLevel: none")
+				d.raw("  password: " + scalar(pass))
+				converted++
+			}
+		})
 	})
+	if converted > 0 {
+		warns = append(warns, "SOLBK_USR_PASS became admin.additionalUsers with accessLevel: none -- "+
+			"the bash flow set no access level; give each user the level it actually needs")
+	}
 
 	d.section("tls", func(d *doc) {
 		d.kv("cert", v.s("SOLBK_TLS_CERT"))
@@ -248,6 +277,9 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 			d.kv("runtime", kube)
 			d.kv("name", v.s("SOLBK_NAME"))
 			d.kv("namespace", v.s("SOLBK_NS"))
+			// SOLBK_USR_SECRET named the k8s Secret, so it lands in the k8s section
+			// rather than under admin (where the old schema kept it).
+			d.kv("adminSecret", v.s("SOLBK_USR_SECRET"))
 			d.kv("updateStrategy", v.s("SOLBK_UPDATE_STRATEGY"))
 			d.kv("serviceAccount", v.s("SOLBK_SVC_ACCOUNT"))
 		}

@@ -29,8 +29,10 @@ func NewTransport(r engine.Runner, cfg *config.Config) broker.Transport {
 func (k *kubectlTransport) ns() string { return k.cfg.K8s.Namespace }
 
 // cmd is the configured cluster CLI (k8s.runtime, default `kubectl`): argv[0]
-// plus any leading arguments that precede every call's own.
-func (k *kubectlTransport) cmd() config.Command { return k.cfg.K8s.Runtime }
+// plus any leading arguments that precede every call's own. Like Cluster.cmd it
+// re-runs the execution guard on every call -- the transport is constructed
+// straight from a *config.Config, so it must not assume Validate ever ran.
+func (k *kubectlTransport) cmd() (config.Command, error) { return k.cfg.ClusterCommand() }
 
 // execArgs builds `exec [-i] -n <ns> <pod> -- argv...` for a role's pod. stdin adds
 // the `-i` flag for commands that read stdin (Upload, OutputInput).
@@ -44,17 +46,26 @@ func (k *kubectlTransport) execArgs(role config.Role, stdin bool, argv []string)
 }
 
 func (k *kubectlTransport) Run(ctx context.Context, role config.Role, argv ...string) error {
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return err
+	}
 	return k.r.Run(ctx, kc.Name(), kc.Args(k.execArgs(role, false, argv)...)...)
 }
 
 func (k *kubectlTransport) Output(ctx context.Context, role config.Role, argv ...string) ([]byte, error) {
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return nil, err
+	}
 	return k.r.Output(ctx, kc.Name(), kc.Args(k.execArgs(role, false, argv)...)...)
 }
 
 func (k *kubectlTransport) OutputInput(ctx context.Context, role config.Role, in []byte, argv ...string) ([]byte, error) {
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return nil, err
+	}
 	return k.r.OutputInput(ctx, in, kc.Name(), kc.Args(k.execArgs(role, true, argv)...)...)
 }
 
@@ -64,7 +75,10 @@ func (k *kubectlTransport) OutputInput(ctx context.Context, role config.Role, in
 // tool-generated and validName-checked upstream, so shSingleQuote is defensive.
 func (k *kubectlTransport) Upload(ctx context.Context, role config.Role, data []byte, destPath string) error {
 	shcmd := "cat > " + shSingleQuote(destPath)
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return err
+	}
 	argv := k.execArgs(role, true, []string{"sh", "-c", shcmd})
 	return k.r.RunInput(ctx, data, kc.Name(), kc.Args(argv...)...)
 }
@@ -72,14 +86,20 @@ func (k *kubectlTransport) Upload(ctx context.Context, role config.Role, data []
 // UploadFile copies a local file into the pod via
 // `kubectl cp -n <ns> <local> <pod>:<dest>` (051:51, 069:196, copy scripts:53).
 func (k *kubectlTransport) UploadFile(ctx context.Context, role config.Role, localPath, destPath string) error {
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return err
+	}
 	return k.r.Run(ctx, kc.Name(), kc.Args("cp", "-n", k.ns(), localPath, podName(k.cfg, role)+":"+destPath)...)
 }
 
 // Download copies remotePath from the pod to localPath via
 // `kubectl cp -n <ns> <pod>:<remote> <local>` (051:53, 069:196, copy scripts:42).
 func (k *kubectlTransport) Download(ctx context.Context, role config.Role, remotePath, localPath string) error {
-	kc := k.cmd()
+	kc, err := k.cmd()
+	if err != nil {
+		return err
+	}
 	return k.r.Run(ctx, kc.Name(), kc.Args("cp", "-n", k.ns(), podName(k.cfg, role)+":"+remotePath, localPath)...)
 }
 

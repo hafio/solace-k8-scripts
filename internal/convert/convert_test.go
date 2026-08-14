@@ -102,6 +102,38 @@ func convertOK(t *testing.T, src string, p config.Platform) Result {
 	return res
 }
 
+// TestConvertUserPasswordsBecomeAdditionalUsers covers the one legacy variable with
+// no like-for-like successor: SOLBK_USR_PASS was a flat "user=password" list, and the
+// schema now wants a structured user with an explicit access level. A malformed entry
+// is dropped with a warning that must name its POSITION and not its text -- the text
+// of a malformed entry is most likely a bare password.
+func TestConvertUserPasswordsBecomeAdditionalUsers(t *testing.T) {
+	const secret = "UNIQUE-BARE-PASSWORD"
+	src := k8sEnv + "declare -a SOLBK_USR_PASS=(\"appuser=app-pass\" \"" + secret + "\" \"=nouser\")\n"
+	res := convertOK(t, src, config.K8s)
+	c := strictDecode(t, res.YAML)
+
+	if len(c.Admin.AdditionalUsers) != 1 {
+		t.Fatalf("additionalUsers = %+v, want only the one well-formed entry", c.Admin.AdditionalUsers)
+	}
+	u := c.Admin.AdditionalUsers[0]
+	if u.Username != "appuser" || u.Password != "app-pass" || u.AccessLevel != "none" {
+		t.Errorf("converted user = %+v, want appuser/app-pass with the least-privileged level", u)
+	}
+	// convertOK succeeding is itself the proof that the emitted level is a valid
+	// one: Convert re-reads and validates its own output before returning.
+	for _, want := range []string{"entry 1 is not user=password", "entry 2 is not user=password", "accessLevel: none"} {
+		if !hasWarning(res.Warnings, want) {
+			t.Errorf("warnings %q should mention %q", res.Warnings, want)
+		}
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, secret) {
+			t.Errorf("a warning carried the malformed entry verbatim, which is the password: %q", w)
+		}
+	}
+}
+
 // TestConvertLegacyK8sEnv converts this package's own legacy fixture end to end
 // and pins the result against a committed golden, so the test owns both halves:
 // the legacy input and the YAML it must produce.
@@ -454,8 +486,8 @@ func TestGeneratedHeaderSanitisesSource(t *testing.T) {
 func TestConvertIncompleteEnvWarns(t *testing.T) {
 	// No image or admin password: valid to convert, but not yet usable.
 	res := convertOK(t, "SOLBK_NAME=\"b\"\nSOLBK_NS=\"ns\"\n", config.K8s)
-	if !hasWarning(res.Warnings, "incomplete") {
-		t.Errorf("warnings = %v, want an incomplete-file warning", res.Warnings)
+	if !hasWarning(res.Warnings, "will not load as-is") {
+		t.Errorf("warnings = %v, want a will-not-load warning", res.Warnings)
 	}
 }
 
@@ -469,7 +501,7 @@ func TestConvertUnterminatedArray(t *testing.T) {
 func TestConvertInvalidPlatformSection(t *testing.T) {
 	// An unknown platform still converts the shared sections; validation warns.
 	res := convertOK(t, ctrEnv, config.Platform("nope"))
-	if !hasWarning(res.Warnings, "incomplete") {
+	if !hasWarning(res.Warnings, "will not load as-is") {
 		t.Errorf("warnings = %v, want the validation warning", res.Warnings)
 	}
 }

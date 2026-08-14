@@ -59,7 +59,13 @@ func TestSecretGoldens(t *testing.T) {
 			file: "admin_secret.golden",
 			gen: func(t *testing.T) []byte {
 				cfg := loadK8s(t)
-				cfg.Admin.UserPasswords = []string{"appuser=apppass"} // exercise the per-user branch
+				// additionalUsers are configured but must NOT reach this Secret: the
+				// operator only reads the admin and monitor keys, so extra ones were
+				// passwords written where nothing would ever read them. The golden is
+				// what pins that -- see TestAdminSecretExcludesAdditionalUsers.
+				cfg.Admin.AdditionalUsers = []config.AdditionalUser{
+					{Username: "appuser", AccessLevel: "read-only", Password: "apppass"},
+				}
 				b, err := AdminSecret(cfg)
 				if err != nil {
 					t.Fatalf("AdminSecret: %v", err)
@@ -135,6 +141,32 @@ func TestAdminSecretDecodes(t *testing.T) {
 	}
 }
 
+// TestAdminSecretExcludesAdditionalUsers pins the finding that shaped the k8s user
+// path: the operator reads only the admin and monitor keys out of this Secret, so
+// writing a third user's password into it achieved nothing except putting a secret
+// somewhere nobody reads. Those users are created over the CLI instead
+// (`config additional-users`).
+func TestAdminSecretExcludesAdditionalUsers(t *testing.T) {
+	cfg := loadK8s(t)
+	cfg.Admin.AdditionalUsers = []config.AdditionalUser{
+		{Username: "appuser", AccessLevel: "read-only", Password: "UNIQUE-APPUSER-PASSWORD"},
+	}
+	got, err := AdminSecret(cfg)
+	if err != nil {
+		t.Fatalf("AdminSecret: %v", err)
+	}
+	for _, absent := range []string{"username_appuser_password", "UNIQUE-APPUSER-PASSWORD"} {
+		if bytes.Contains(got, []byte(absent)) {
+			t.Errorf("the admin Secret must not carry %q; the operator ignores it:\n%s", absent, got)
+		}
+	}
+	// The base64 of the password must not appear either -- the data values are encoded.
+	enc := base64.StdEncoding.EncodeToString([]byte("UNIQUE-APPUSER-PASSWORD"))
+	if bytes.Contains(got, []byte(enc)) {
+		t.Errorf("the admin Secret carries the additional user's password base64-encoded:\n%s", got)
+	}
+}
+
 func TestAdminSecretErrors(t *testing.T) {
 	base := loadK8s(t)
 	cases := []struct {
@@ -142,10 +174,7 @@ func TestAdminSecretErrors(t *testing.T) {
 		mutate func(c *config.Config)
 	}{
 		{"empty admin pass", func(c *config.Config) { c.Admin.Pass = "" }},
-		{"empty secret name", func(c *config.Config) { c.Admin.UserSecret = "" }},
-		{"entry without '='", func(c *config.Config) { c.Admin.UserPasswords = []string{"noequals"} }},
-		{"entry with empty user", func(c *config.Config) { c.Admin.UserPasswords = []string{"=nopass"} }},
-		{"entry with bad user", func(c *config.Config) { c.Admin.UserPasswords = []string{"bad user=x"} }},
+		{"empty secret name", func(c *config.Config) { c.K8s.AdminSecret = "" }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

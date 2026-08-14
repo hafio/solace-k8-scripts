@@ -106,7 +106,7 @@ func TestCommandUnmarshalPropagatesDecodeErrors(t *testing.T) {
 }
 
 // TestValidateRejectsBadRuntime: a malformed command fails the load rather than
-// reaching os/exec. validateCommand runs ahead of the platform checks, so the
+// reaching os/exec. The execution guard runs ahead of the platform checks, so the
 // message names the runtime field, not the mandatory fields also missing here.
 func TestValidateRejectsBadRuntime(t *testing.T) {
 	cases := []struct {
@@ -215,44 +215,50 @@ func TestCommandString(t *testing.T) {
 	}
 }
 
-func TestValidateCommandAccepts(t *testing.T) {
+// TestValidateProbeCommandAccepts pins the deliberately loose rules for the ONE
+// command field this tool does not execute: the container health-check probe. It
+// is rendered into the compose/quadlet artifact and run by the container engine
+// inside the broker, so the execution guard's allowlist and subcommand rules would
+// be meaningless -- a probe is legitimately a shell pipeline, and the engine, not
+// this process, decides what it means. Contrast TestCheckCommandRejects, which is
+// the field-by-field opposite for everything that does become argv here.
+func TestValidateProbeCommandAccepts(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  Command
 	}{
-		{"binary", Command{"kubectl"}},
-		{"wrapper", Command{"microk8s", "kubectl"}},
-		{"path with spaces", Command{`C:\Program Files\bin\kubectl.exe`}},
-		// Metacharacters are inert: exec never goes through a shell, so these are
-		// ordinary filename characters, not an injection.
-		{"metacharacters", Command{"kubectl;rm -rf /"}},
+		{"binary", Command{"curl", "-f", "http://localhost:5550/health-check/readiness"}},
+		{"path", Command{"/opt/probe.sh"}},
+		// Metacharacters are inert here: this never becomes argv on the operator's
+		// machine, and a probe that pipes or falls back is a normal probe.
+		{"shell pipeline", Command{"sh", "-c", "curl -sf localhost:5550/health-check/readiness || exit 1"}},
 		// Unset is not an error -- ApplyDefaults fills it before Validate runs.
 		{"unset", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateCommand("k8s.runtime", tc.cmd); err != nil {
-				t.Errorf("validateCommand(%q) = %v, want accepted", tc.cmd, err)
+			if err := validateProbeCommand("docker.container.healthCheck.cmd", tc.cmd); err != nil {
+				t.Errorf("validateProbeCommand(%q) = %v, want accepted", tc.cmd, err)
 			}
 		})
 	}
 }
 
-func TestValidateCommandRejects(t *testing.T) {
+func TestValidateProbeCommandRejects(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  Command
 		want string
 	}{
-		{"empty argument", Command{"kubectl", ""}, "k8s.runtime[1] is an empty argument"},
-		{"newline", Command{"kubectl\n--all"}, "k8s.runtime[0] contains a control character"},
-		{"NUL", Command{"kube\x00ctl"}, "k8s.runtime[0] contains a control character"},
+		{"empty argument", Command{"curl", ""}, "docker.container.healthCheck.cmd[1] is an empty argument"},
+		{"newline", Command{"curl\n-f"}, "docker.container.healthCheck.cmd[0] contains a control character"},
+		{"NUL", Command{"cu\x00rl"}, "docker.container.healthCheck.cmd[0] contains a control character"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateCommand("k8s.runtime", tc.cmd)
+			err := validateProbeCommand("docker.container.healthCheck.cmd", tc.cmd)
 			if err == nil {
-				t.Fatalf("validateCommand(%q) accepted a value it must reject", tc.cmd)
+				t.Fatalf("validateProbeCommand(%q) accepted a value it must reject", tc.cmd)
 			}
 			// The message names the field and the offending index, so the user
 			// can find it in the env file (§4a).
@@ -291,13 +297,13 @@ func TestRuntimeDefaults(t *testing.T) {
 func TestRuntimeExplicitValueSurvivesDefaults(t *testing.T) {
 	c := &Config{}
 	c.K8s.Runtime = Command{"microk8s", "kubectl"}
-	c.Docker.Runtime = Command{"sudo", "docker"}
+	c.Docker.Runtime = Command{"lima", "nerdctl"}
 	c.ApplyDefaults(Docker)
 
 	if got := c.K8s.Runtime.String(); got != "microk8s kubectl" {
 		t.Errorf("k8s.runtime = %q, want the configured value", got)
 	}
-	if got := c.Docker.Runtime.String(); got != "sudo docker" {
+	if got := c.Docker.Runtime.String(); got != "lima nerdctl" {
 		t.Errorf("docker.runtime = %q, want the configured value", got)
 	}
 }

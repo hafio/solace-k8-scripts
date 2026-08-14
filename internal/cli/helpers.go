@@ -34,9 +34,64 @@ func genCapable(c *cobra.Command) *cobra.Command {
 	return c
 }
 
+// renderAnnotation marks a command that ONLY renders -- it never executes an
+// external command, whatever flags it is given. `gen` is the whole set today. It
+// exists so checkAllowCommand can refuse --allow-command where there is nothing to
+// allow, the mirror of what genAnnotation does for the --gen-*-only trio.
+const renderAnnotation = "solace_render_only"
+
+// renderOnly tags a command as never executing, and returns it so registration can
+// wrap inline: renderOnly(genCapable(...)).
+func renderOnly(c *cobra.Command) *cobra.Command {
+	if c.Annotations == nil {
+		c.Annotations = map[string]string{}
+	}
+	c.Annotations[renderAnnotation] = "true"
+	return c
+}
+
 // anyGen reports whether a gen flag asked for a rendering instead of the real
 // work. Handlers branch on it before doing anything that changes state.
 func (a *App) anyGen() bool { return a.GenOnly || a.GenSecretsOnly || a.GenEnvOnly }
+
+// willExecute reports whether this invocation can reach an external command. A
+// --gen-*-only run renders and changes nothing, and a render-only command never
+// executes at all.
+func (a *App) willExecute(cmd *cobra.Command) bool {
+	return !a.anyGen() && cmd.Annotations[renderAnnotation] != "true"
+}
+
+// addAllowCommandFlag wires --allow-command onto a platform subtree. It is the
+// operator's escape hatch for the execution-guard allowlist (config/execguard.go):
+// a binary this tool does not drive by default -- a `microk8s kubectl`, a site
+// wrapper -- runs only when the person at the keyboard names it, for that one
+// invocation. It cannot approve a privilege-escalation wrapper at all: elevate this
+// tool when you run it (`sudo solace ...`), never through an env file.
+//
+// It is a CLI flag and NOTHING else on purpose. There is no config key for it, no
+// environment variable, and no binding layer that could give an env file a way to
+// set it: an env file that could approve its own binary would make the allowlist
+// decorative. It is registered on the platform commands rather than on root so
+// `solace convert --allow-command ...` is a usage error too.
+func addAllowCommandFlag(c *cobra.Command, app *App) {
+	c.PersistentFlags().StringArrayVar(&app.AllowCommand, "allow-command", nil,
+		"approve one extra binary for the config's platform command, for this run only "+
+			"(repeatable; a bare name, never a path). The env file cannot grant this")
+}
+
+// checkAllowCommand rejects --allow-command on an invocation that cannot execute
+// anything. Silently accepting it there would teach the flag as harmless boilerplate
+// -- exactly the habit that gets it pasted into a wrapper script, where it then
+// applies to runs that DO execute. Hand-rolled rather than cobra's flag groups for
+// the same reason checkGenFlags is: the flag is declared on the platform command and
+// validated against the leaf that inherited it, which lets the error name the leaf.
+func checkAllowCommand(cmd *cobra.Command, app *App) error {
+	if len(app.AllowCommand) == 0 || app.willExecute(cmd) {
+		return nil
+	}
+	return fmt.Errorf("--allow-command is only valid on a command that runs something, and %q renders "+
+		"without executing; drop the flag", cmd.CommandPath())
+}
 
 // checkGenFlags validates the --gen-*-only trio for the command about to run.
 // They are root persistent flags, so they parse on every command on every
@@ -127,6 +182,25 @@ func isTTY(f *os.File) bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
+// interactive reports whether this run may prompt. It routes through the App's
+// seam so a test can exercise the prompt branches that gate every destructive
+// action; unset (the production case) it is exactly isTTY(os.Stdin).
+func interactive(a *App) bool {
+	if a != nil && a.Interactive != nil {
+		return a.Interactive()
+	}
+	return isTTY(os.Stdin)
+}
+
+// promptSource is where a confirmation answer is read from -- the App's seam, or
+// os.Stdin in production.
+func promptSource(a *App) io.Reader {
+	if a != nil && a.PromptIn != nil {
+		return a.PromptIn
+	}
+	return os.Stdin
+}
+
 // promptLine writes prompt to out and returns one trimmed line read from in.
 func promptLine(in io.Reader, out io.Writer, prompt string) string {
 	fmt.Fprint(out, prompt)
@@ -157,11 +231,11 @@ func confirmDelete(a *App, what string) bool {
 	if a.Yes {
 		return true
 	}
-	if !isTTY(os.Stdin) {
+	if !interactive(a) {
 		warn("refusing to delete %s without confirmation; pass --yes to proceed", what)
 		return false
 	}
-	return promptYesNo(os.Stdin, os.Stderr, fmt.Sprintf("Delete %s? [y/N] ", what))
+	return promptYesNo(promptSource(a), os.Stderr, fmt.Sprintf("Delete %s? [y/N] ", what))
 }
 
 // addRestartFlag wires --restart onto a container deploy/up command. Deliberately
@@ -176,11 +250,13 @@ func addRestartFlag(c *cobra.Command, app *App) {
 // deploy artifact. A non-interactive session declines: the caller then leaves the
 // new artifact in place and warns, so a scripted deploy never drops messaging
 // traffic unattended.
-func confirmRestart(question string) bool {
-	if !isTTY(os.Stdin) {
+// It takes the App so the prompt goes through the same seams as the other confirm
+// helpers; ops_container wires it to Manager.Confirm as a closure.
+func confirmRestart(a *App, question string) bool {
+	if !interactive(a) {
 		return false
 	}
-	return promptYesNo(os.Stdin, os.Stderr, question+" [y/N] ")
+	return promptYesNo(promptSource(a), os.Stderr, question+" [y/N] ")
 }
 
 // confirmPurge decides whether persistent data (PVCs) is cleared alongside a delete.
@@ -194,10 +270,10 @@ func confirmPurge(a *App) bool {
 	if a.purge {
 		return true
 	}
-	if !isTTY(os.Stdin) {
+	if !interactive(a) {
 		return false
 	}
-	return promptYes(os.Stdin, os.Stderr, "Also clear persistent data (PVCs)? This is irreversible. Type 'yes' to purge: ")
+	return promptYes(promptSource(a), os.Stderr, "Also clear persistent data (PVCs)? This is irreversible. Type 'yes' to purge: ")
 }
 
 func firstArg(args []string) string {

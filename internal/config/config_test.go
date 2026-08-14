@@ -150,13 +150,13 @@ func TestResolveNodeHA(t *testing.T) {
 func TestContainerRuntime(t *testing.T) {
 	c := &Config{}
 	c.Docker.Runtime = Command{"docker"}
-	c.Podman.Runtime = Command{"sudo", "podman"}
+	c.Podman.Runtime = Command{"lima", "podman"}
 	tests := []struct {
 		p    Platform
 		want string
 	}{
 		{Docker, "docker"},
-		{Podman, "sudo podman"}, // leading args survive the lookup
+		{Podman, "lima podman"}, // leading args survive the lookup
 		{K8s, ""},
 	}
 	for _, tc := range tests {
@@ -207,8 +207,8 @@ func TestApplyDefaultsK8s(t *testing.T) {
 	if c.K8s.UpdateStrategy != "automatedRolling" {
 		t.Errorf("UpdateStrategy = %q, want automatedRolling", c.K8s.UpdateStrategy)
 	}
-	if c.Admin.UserSecret != "solace-admin-secret" {
-		t.Errorf("Admin.UserSecret = %q", c.Admin.UserSecret)
+	if c.K8s.AdminSecret != "solace-admin-secret" {
+		t.Errorf("K8s.AdminSecret = %q", c.K8s.AdminSecret)
 	}
 	if c.K8s.DiagDir != "diag-configs" {
 		t.Errorf("DiagDir = %q", c.K8s.DiagDir)
@@ -1149,5 +1149,218 @@ func TestLoadValidationError(t *testing.T) {
 	_, err := Load(path, K8s)
 	if err == nil || !strings.Contains(err.Error(), "these fields must not be empty:") {
 		t.Errorf("expected validation error, got: %v", err)
+	}
+}
+
+// --- secret references (*Env keys) -------------------------------------------
+
+// minimalK8s is the smallest valid k8s document, with body appended, so a secret
+// -reference test can assert on resolution rather than on unrelated mandatory
+// fields.
+func minimalK8s(body string) string {
+	return "redundancy: \"no\"\n" +
+		"image:\n  repo: solace/broker\n  tag: \"10.26.0\"\n" +
+		"k8s:\n  name: b\n  namespace: ns\n  storage:\n    msgNode: 10Gi\n" +
+		body
+}
+
+// TestLoadResolvesSecretRefs is the point of the *Env keys: an env file that
+// carries no secret at all still loads into a fully-populated config.
+func TestLoadResolvesSecretRefs(t *testing.T) {
+	t.Setenv("SOLACE_TEST_ADMIN", "from-env")
+	t.Setenv("SOLACE_TEST_APPUSER", "app-from-env")
+	path := writeTempYAML(t, minimalK8s(
+		"admin:\n  passEnv: SOLACE_TEST_ADMIN\n"+
+			"  additionalUsers:\n    - username: appuser\n      accessLevel: read-only\n      passwordEnv: SOLACE_TEST_APPUSER\n"))
+	c, err := Load(path, K8s)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Admin.Pass != "from-env" {
+		t.Errorf("admin.pass = %q, want the value of SOLACE_TEST_ADMIN", c.Admin.Pass)
+	}
+	if len(c.Admin.AdditionalUsers) != 1 || c.Admin.AdditionalUsers[0].Password != "app-from-env" {
+		t.Errorf("additionalUsers = %+v", c.Admin.AdditionalUsers)
+	}
+}
+
+func TestLoadSecretRefErrors(t *testing.T) {
+	t.Setenv("SOLACE_TEST_SET", "UNIQUE-ENV-VALUE")
+	t.Setenv("SOLACE_TEST_EMPTY", "")
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			"unset variable",
+			"admin:\n  passEnv: SOLACE_TEST_MISSING\n",
+			[]string{"admin.passEnv", "SOLACE_TEST_MISSING", "not set"},
+		},
+		{
+			// An exported-but-empty variable is the likelier operator mistake, and it
+			// would otherwise deploy a broker with a blank password.
+			"empty variable",
+			"admin:\n  passEnv: SOLACE_TEST_EMPTY\n",
+			[]string{"admin.passEnv", "set but empty"},
+		},
+		{
+			"both keys set",
+			"admin:\n  pass: UNIQUE-LITERAL-VALUE\n  passEnv: SOLACE_TEST_SET\n",
+			[]string{"admin.pass", "admin.passEnv", "both set"},
+		},
+		{
+			// The reference key takes a NAME; ${...} is the way that goes wrong.
+			"value where a name belongs",
+			"admin:\n  passEnv: ${SOLACE_TEST_SET}\n",
+			[]string{"admin.passEnv", "environment variable name"},
+		},
+		{
+			"per-user reference",
+			"admin:\n  pass: p\n  additionalUsers:\n    - username: appuser\n      accessLevel: none\n      passwordEnv: SOLACE_TEST_MISSING\n",
+			[]string{"admin.additionalUsers[0].passwordEnv", "SOLACE_TEST_MISSING"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeTempYAML(t, minimalK8s(tc.body)), K8s)
+			if err == nil {
+				t.Fatal("Load should fail rather than deploy a broker with the wrong secret")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+			// However it fails, the message names keys and variables -- never a value.
+			for _, leak := range []string{"UNIQUE-LITERAL-VALUE", "UNIQUE-ENV-VALUE"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("error echoed a secret value: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestSecretRefsLeaveLiteralsAlone guards the other direction: a literal password
+// that happens to look like a reference is still just a password, since only the
+// dedicated *Env key resolves anything.
+func TestSecretRefsLeaveLiteralsAlone(t *testing.T) {
+	t.Setenv("SOLACE_TEST_ADMIN", "from-env")
+	path := writeTempYAML(t, minimalK8s("admin:\n  pass: ${SOLACE_TEST_ADMIN}\n"))
+	c, err := Load(path, K8s)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Admin.Pass != "${SOLACE_TEST_ADMIN}" {
+		t.Errorf("admin.pass = %q; a literal must never be expanded", c.Admin.Pass)
+	}
+}
+
+// --- additional users --------------------------------------------------------
+
+func TestValidateAdditionalUsers(t *testing.T) {
+	valid := AdditionalUser{Username: "appuser", AccessLevel: "read-write", Password: "pw"}
+	cases := []struct {
+		name  string
+		users []AdditionalUser
+		want  string
+	}{
+		{"ok", []AdditionalUser{valid}, ""},
+		{"no username", []AdditionalUser{{AccessLevel: "none", Password: "pw"}}, "username must be set"},
+		{"bad username", []AdditionalUser{{Username: "app user", AccessLevel: "none", Password: "pw"}}, "is invalid"},
+		{"builtin admin", []AdditionalUser{{Username: "admin", AccessLevel: "none", Password: "pw"}}, "built-in user"},
+		{"builtin monitor", []AdditionalUser{{Username: "monitor", AccessLevel: "none", Password: "pw"}}, "built-in user"},
+		{"duplicate", []AdditionalUser{valid, valid}, "listed twice"},
+		{
+			// Distinct to the broker, but one host variable name on docker.
+			"separator-only difference",
+			[]AdditionalUser{
+				{Username: "svc-a", AccessLevel: "none", Password: "pw"},
+				{Username: "svc_a", AccessLevel: "none", Password: "pw"},
+			},
+			"collides with",
+		},
+		{"bad access level", []AdditionalUser{{Username: "appuser", AccessLevel: "root", Password: "pw"}}, "accessLevel must be"},
+		{"no access level", []AdditionalUser{{Username: "appuser", Password: "pw"}}, "accessLevel must be"},
+		{"mesh-manager is a level", []AdditionalUser{{Username: "appuser", AccessLevel: "mesh-manager", Password: "pw"}}, ""},
+		{"empty password", []AdditionalUser{{Username: "appuser", AccessLevel: "none"}}, "password must not be empty"},
+	}
+	// Both platforms validate the same list: the extra users reach the broker on
+	// every one of them now.
+	for _, p := range []Platform{K8s, Docker} {
+		for _, tc := range cases {
+			t.Run(string(p)+"/"+tc.name, func(t *testing.T) {
+				var c *Config
+				if p == K8s {
+					c = validK8sConfig()
+				} else {
+					c = validContainerConfig(p, "no")
+				}
+				c.Admin.AdditionalUsers = tc.users
+				err := c.Validate(p)
+				if tc.want == "" {
+					if err != nil {
+						t.Fatalf("valid users rejected: %v", err)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("error = %v, want it to mention %q", err, tc.want)
+				}
+			})
+		}
+	}
+}
+
+// TestValidateAdditionalUserPasswordCharsetIsK8sOnly pins the one platform-specific
+// rule: k8s creates the user with `create username "<u>" password "<p>"`, and the
+// broker CLI rejects a set of characters inside that quoted value. Containers write
+// the password to a mounted file instead, so the same env file must stay valid there
+// -- refusing it everywhere would be a restriction the container path does not have.
+func TestValidateAdditionalUserPasswordCharsetIsK8sOnly(t *testing.T) {
+	for _, bad := range []string{`p"w`, "p;w", "p|w", `p\w`, "p&w", "p*w", "p(w", "p)w", "p<w", "p>w", "p,w", "p'w", "p:w", "p`w"} {
+		user := AdditionalUser{Username: "appuser", AccessLevel: "read-only", Password: bad}
+
+		k := validK8sConfig()
+		k.Admin.AdditionalUsers = []AdditionalUser{user}
+		err := k.Validate(K8s)
+		if err == nil {
+			t.Errorf("k8s should refuse the password containing %q: the CLI cannot express it", bad[1:2])
+			continue
+		}
+		if !strings.Contains(err.Error(), "broker CLI rejects") {
+			t.Errorf("error for %q should explain why, got: %v", bad[1:2], err)
+		}
+		if strings.Contains(err.Error(), bad) {
+			t.Errorf("the error must not echo the password: %v", err)
+		}
+
+		d := validContainerConfig(Docker, "no")
+		d.Admin.AdditionalUsers = []AdditionalUser{user}
+		if err := d.Validate(Docker); err != nil {
+			t.Errorf("containers deliver the password as a file, so %q must be accepted: %v", bad[1:2], err)
+		}
+	}
+	// Punctuation the CLI does accept must pass on k8s too.
+	k := validK8sConfig()
+	k.Admin.AdditionalUsers = []AdditionalUser{
+		{Username: "appuser", AccessLevel: "admin", Password: "P@ss w0rd!#%^-_=+[]{}/?.~"},
+	}
+	if err := k.Validate(K8s); err != nil {
+		t.Errorf("an accepted-punctuation password must validate on k8s: %v", err)
+	}
+}
+
+// TestValidateAdditionalUserClashesWithAdminUser covers the container-only clash:
+// admin.user is configurable there, so a listed user matching it would produce two
+// secrets feeding one broker setting.
+func TestValidateAdditionalUserClashesWithAdminUser(t *testing.T) {
+	c := validContainerConfig(Docker, "no")
+	c.Admin.User = "operator"
+	c.Admin.AdditionalUsers = []AdditionalUser{{Username: "operator", AccessLevel: "none", Password: "pw"}}
+	err := c.Validate(Docker)
+	if err == nil || !strings.Contains(err.Error(), "built-in user") {
+		t.Errorf("error = %v, want the admin-user clash to be refused", err)
 	}
 }

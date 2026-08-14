@@ -51,31 +51,51 @@ func (c *Cluster) ns() string { return c.Cfg.K8s.Namespace }
 // plus any leading arguments that precede every call's own. Ported from the bash
 // KUBE variable, which the scripts expanded unquoted so it could carry a whole
 // profile (`kubectl --kubeconfig <file>`), not just a binary name.
-func (c *Cluster) cmd() config.Command { return c.Cfg.K8s.Runtime }
+//
+// It re-runs the execution guard (config.CheckCommand, via ClusterCommand) on every
+// call rather than trusting the value Validate already saw. That is the second of
+// the guard's two enforcement points: this package can be driven from a Config that
+// never went through config.Load, and a hostile command must be inert there too. The
+// check is a few string comparisons over a two-token slice, so running it per call
+// costs nothing measurable and removes the "did anyone validate this?" question from
+// every call site below.
+func (c *Cluster) cmd() (config.Command, error) { return c.Cfg.ClusterCommand() }
 
 // kubectl runs `kubectl args...`, streaming stdout/stderr.
 func (c *Cluster) kubectl(ctx context.Context, args ...string) error {
-	k := c.cmd()
+	k, err := c.cmd()
+	if err != nil {
+		return err
+	}
 	return c.R.Run(ctx, k.Name(), k.Args(args...)...)
 }
 
 // apply pipes a rendered manifest to `kubectl apply -f -` on stdin (never a temp
 // file, so secret-bearing manifests stay off disk -- §3).
 func (c *Cluster) apply(ctx context.Context, manifest []byte) error {
-	k := c.cmd()
+	k, err := c.cmd()
+	if err != nil {
+		return err
+	}
 	return c.R.RunInput(ctx, manifest, k.Name(), k.Args("apply", "-f", "-")...)
 }
 
 // deleteStdin pipes a rendered manifest to `kubectl delete -f - --ignore-not-found`,
 // so teardown mirrors apply through one code path and is idempotent.
 func (c *Cluster) deleteStdin(ctx context.Context, manifest []byte) error {
-	k := c.cmd()
+	k, err := c.cmd()
+	if err != nil {
+		return err
+	}
 	return c.R.RunInput(ctx, manifest, k.Name(), k.Args("delete", "-f", "-", "--ignore-not-found")...)
 }
 
 // output runs `kubectl args...` and returns captured stdout.
 func (c *Cluster) output(ctx context.Context, args ...string) ([]byte, error) {
-	k := c.cmd()
+	k, err := c.cmd()
+	if err != nil {
+		return nil, err
+	}
 	return c.R.Output(ctx, k.Name(), k.Args(args...)...)
 }
 

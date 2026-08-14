@@ -25,9 +25,10 @@ services:
       system_scaling_maxqueuemessagecount: "100"
       messagespool_maxspoolusage: "100000"
       username_admin_globalaccesslevel: "admin"
-      username_admin_passwordfilepath: "/run/secrets/solace-admin-password"
+      username_admin_passwordfilepath: "/run/secrets/username_admin_password"
     secrets:
-      - solace-admin-password
+      - source: solace-admin-password
+        target: username_admin_password
 secrets:
   solace-admin-password:
-    file: ./solace-secrets/solace-admin-password
+    environment: SOLACE_ADMIN_PASSWORD

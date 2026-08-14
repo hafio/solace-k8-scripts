@@ -107,7 +107,10 @@ func (c *Cluster) Logs(ctx context.Context, role config.Role, passthrough []stri
 // stdio wired through, for the interactive sessions (Solace CLI, shell).
 func (c *Cluster) interactiveExec(ctx context.Context, role config.Role, argv ...string) error {
 	args := append([]string{"exec", "-it", "-n", c.ns(), podName(c.Cfg, role), "--"}, argv...)
-	k := c.cmd()
+	k, err := c.cmd()
+	if err != nil {
+		return err
+	}
 	return c.R.RunInteractive(ctx, k.Name(), k.Args(args...)...)
 }
 

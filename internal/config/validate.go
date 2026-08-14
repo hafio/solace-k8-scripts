@@ -17,15 +17,13 @@ func (c *Config) Validate(p Platform) error {
 		return fmt.Errorf("redundancy must be 'yes' or 'no' (got: %q)", c.Redundancy)
 	}
 
-	// The platform CLI is user-supplied and reaches os/exec, so it is checked on
-	// every platform before anything can shell out.
-	if err := validateCommand("k8s.runtime", c.K8s.Runtime); err != nil {
+	// The platform CLI is user-supplied and reaches os/exec, so it goes through the
+	// full execution guard (execguard.go) on every platform before anything can
+	// run. This is the first of the two enforcement points; every executor re-runs
+	// the same CheckCommand immediately before it builds argv, so a hostile env
+	// file is inert even on a path that never reached Validate.
+	if err := c.validateExecCommands(p); err != nil {
 		return err
-	}
-	if p.IsContainer() {
-		if err := validateCommand(platformKey(p)+".runtime", c.ContainerRuntime(p)); err != nil {
-			return err
-		}
 	}
 
 	switch p {
@@ -38,16 +36,20 @@ func (c *Config) Validate(p Platform) error {
 	}
 }
 
-// validateCommand checks a Command's tokens before it can reach os/exec. exec
-// never goes through a shell, so a metacharacter here is an ordinary filename
-// character rather than an injection; what this catches is a token that could
-// only ever fail obscurely at exec time -- an empty argument, or a control
-// character carried in from a converted bash file (§4a).
+// validateProbeCommand checks the tokens of a command this tool does NOT execute:
+// the container health-check probe, which is rendered into the compose/quadlet
+// artifact and run by the container engine INSIDE the broker container. It never
+// becomes argv on the operator's machine, so the execution guard's allowlist and
+// subcommand rules would be meaningless here -- a probe is legitimately
+// `sh -c 'curl ... || exit 1'`, and the engine, not this process, decides what it
+// means. What still applies is the exec-boundary check the field always had: an
+// empty argument, or a control character carried in from a converted bash file,
+// can only ever fail obscurely (§4a).
 //
 // An empty Command is not an error: ApplyDefaults runs before Validate on every
 // path and fills the platform default, so "empty" means "unset" exactly as it
 // does for every setDefault field in this schema.
-func validateCommand(field string, cmd Command) error {
+func validateProbeCommand(field string, cmd Command) error {
 	for i, tok := range cmd {
 		if tok == "" {
 			return fmt.Errorf("%s[%d] is an empty argument; remove it or quote the intended value", field, i)
@@ -147,7 +149,108 @@ func (c *Config) validateK8s() error {
 	}); err != nil {
 		return err
 	}
+	if err := c.validateAdditionalUsers(K8s); err != nil {
+		return err
+	}
 	return validatePlacementAffinity(pl)
+}
+
+// accessLevels are the broker's global access levels, in increasing order of
+// privilege. The value reaches the broker as a username_<user>_globalaccesslevel
+// setting (containers) or a `global-access-level` CLI attribute (k8s), so an invalid
+// one is a user the broker declines to create -- checked here where the field can be
+// named.
+var accessLevels = map[string]bool{
+	"none": true, "read-only": true, "mesh-manager": true, "read-write": true, "admin": true,
+}
+
+// accessLevelList is the enum for error messages, in the same order.
+const accessLevelList = "'none', 'read-only', 'mesh-manager', 'read-write' or 'admin'"
+
+// cliForbiddenPassword are the characters the broker's own CLI rejects in a
+// `create username ... password ...` value. They are refused here rather than at
+// config time on the cluster, so an env file that cannot be applied fails at load.
+// Only k8s delivers a password through the CLI: on containers it is written to a
+// mounted file, which has no such restriction, so this is checked per platform.
+const cliForbiddenPassword = ":()\";'<>,`\\*&|"
+
+// foldToEnvVar upper-cases a username and folds every character an environment
+// variable name cannot carry to '_' -- the same mapping render's
+// ContainerSecret.EnvVar applies to the whole secret name when docker sources a
+// compose secret from the host environment. It exists here only to detect the
+// collision that mapping can create; the rendering itself stays in render, and
+// config must not import it (render depends on config). A small package-local copy
+// in the spirit of identRE, which likewise mirrors a regexp two other packages own.
+func foldToEnvVar(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
+}
+
+// validateAdditionalUsers checks the extra CLI users, which every platform carries
+// but delivers differently: containers create them at boot from a mounted secret
+// file plus an access-level setting, while k8s creates them post-deployment through
+// the broker CLI (`config additional-users`). Access level is required rather than
+// defaulted -- silently choosing someone's permissions is not a default worth
+// having. p selects the platform-specific rules; only the k8s path constrains the
+// password, since only it puts the value on a CLI line.
+func (c *Config) validateAdditionalUsers(p Platform) error {
+	seen := make(map[string]bool, len(c.Admin.AdditionalUsers))
+	folded := make(map[string]string, len(c.Admin.AdditionalUsers))
+	for i, u := range c.Admin.AdditionalUsers {
+		field := fmt.Sprintf("admin.additionalUsers[%d]", i)
+		if strings.TrimSpace(u.Username) == "" {
+			return fmt.Errorf("%s.username must be set", field)
+		}
+		if !identRE.MatchString(u.Username) {
+			return fmt.Errorf("%s.username %q is invalid: only letters, digits, '.', '_' and '-' are allowed "+
+				"(it becomes the secret name username_%s_password)", field, u.Username, u.Username)
+		}
+		if u.Username == "admin" || u.Username == "monitor" || u.Username == c.Admin.User {
+			return fmt.Errorf("%s.username %q is a built-in user: admin has admin.pass and monitor has "+
+				"admin.monitorPass -- additionalUsers is for users beyond those", field, u.Username)
+		}
+		if seen[u.Username] {
+			return fmt.Errorf("%s.username %q is listed twice; each user appears once", field, u.Username)
+		}
+		seen[u.Username] = true
+		// Two users differing only in separator style are distinct to the broker but
+		// fold to ONE docker host variable name (render's ContainerSecret.EnvVar maps
+		// every non-alphanumeric to '_'), which would feed one user's password to
+		// both. Caught here, where both offending fields can be named, rather than
+		// silently at deploy time.
+		key := foldToEnvVar(u.Username)
+		if other := folded[key]; other != "" {
+			return fmt.Errorf("%s.username %q collides with %q: they differ only in '.', '_' or '-', "+
+				"which become the same host environment variable (...%s...) for docker's compose secrets -- "+
+				"rename one", field, u.Username, other, key)
+		}
+		folded[key] = u.Username
+		if !accessLevels[u.AccessLevel] {
+			return fmt.Errorf("%s.accessLevel must be %s (got: %q)", field, accessLevelList, u.AccessLevel)
+		}
+		if u.Password == "" {
+			return fmt.Errorf("%s.password must not be empty; set it, or point %s.passwordEnv at an "+
+				"environment variable holding it", field, field)
+		}
+		// k8s creates the user with `create username "<u>" password "<p>"`, and the
+		// broker CLI rejects these characters in the value. The message names the
+		// offending character but never the password (§3).
+		if p == K8s {
+			if i := strings.IndexAny(u.Password, cliForbiddenPassword); i >= 0 {
+				return fmt.Errorf("%s.password contains %q, which the broker CLI rejects in a password; "+
+					"on Kubernetes the user is created over the CLI, so none of %s may appear "+
+					"(the value itself is not shown)", field, string(u.Password[i]), cliForbiddenPassword)
+			}
+		}
+	}
+	return nil
 }
 
 // nodeMatchOperators are the node-label match operators Kubernetes accepts. The
@@ -245,12 +348,16 @@ func (c *Config) validateContainer(p Platform) error {
 		return fmt.Errorf("%s.container.runUser %q is invalid: expected uid[:gid] using only letters, digits, '.', '_' and '-'",
 			platformKey(p), u)
 	}
+	if err := c.validateAdditionalUsers(p); err != nil {
+		return err
+	}
 
 	if hc := cb.HealthCheck; hc.Enabled {
 		if len(hc.Cmd) > 0 {
 			// An explicit probe is the operator's own; it only gets the exec-boundary
-			// check, not the version gate.
-			if err := validateCommand(platformKey(p)+".container.healthCheck.cmd", Command(hc.Cmd)); err != nil {
+			// check, not the version gate -- and not the execution guard, since it
+			// runs inside the container rather than here (validateProbeCommand).
+			if err := validateProbeCommand(platformKey(p)+".container.healthCheck.cmd", Command(hc.Cmd)); err != nil {
 				return err
 			}
 		} else if err := c.checkHealthCheckVersion(p); err != nil {
@@ -285,9 +392,6 @@ func (c *Config) validateContainer(p Platform) error {
 				"uses the standalone 'docker-compose' binary")
 		default:
 			return fmt.Errorf("docker.mode must be 'compose' (got: %q)", c.Docker.Mode)
-		}
-		if err := validateCommand("docker.compose", c.Docker.Compose); err != nil {
-			return err
 		}
 	}
 	return nil

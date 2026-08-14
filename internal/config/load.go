@@ -14,7 +14,13 @@ import (
 // Load reads the YAML env file at path, applies platform defaults, and validates
 // it. Defaults and validation are platform-scoped, mirroring the two separate
 // bash bootstraps (root 000-env.sh for k8s, docker-podman/000-env.sh for containers).
-func Load(path string, p Platform) (*Config, error) {
+//
+// allowCommands carries the operator's --allow-command approvals. It is variadic
+// so every caller that has none stays unchanged, and it is applied BEFORE Validate
+// so the execution guard sees the same allowlist the executors will (execguard.go).
+// It arrives as a function argument rather than a schema field on purpose: nothing
+// in the file being read can put a value here.
+func Load(path string, p Platform, allowCommands ...string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read env file %q: %w", path, err)
@@ -24,6 +30,14 @@ func Load(path string, p Platform) (*Config, error) {
 	dec.KnownFields(true) // fail loud on typo'd keys
 	if err := dec.Decode(&c); err != nil {
 		return nil, parseError(path, raw, err)
+	}
+	// Before defaults and validation: a secret referenced through the environment
+	// must look exactly like a literal one to everything downstream.
+	if err := c.resolveSecretRefs(); err != nil {
+		return nil, err
+	}
+	if err := c.AllowCommands(allowCommands); err != nil {
+		return nil, err
 	}
 	c.ApplyDefaults(p)
 	if err := c.Validate(p); err != nil {
@@ -125,7 +139,7 @@ func (c *Config) ApplyDefaults(p Platform) {
 
 func (c *Config) applyK8sDefaults() {
 	setDefault(&c.K8s.UpdateStrategy, "automatedRolling")
-	setDefault(&c.Admin.UserSecret, "solace-admin-secret")
+	setDefault(&c.K8s.AdminSecret, "solace-admin-secret")
 	setDefault(&c.K8s.DiagDir, "diag-configs")
 	setDefault(&c.K8s.CLIScriptsFolder, "cli")
 	setDefault(&c.K8s.Storage.MonNode, "5Gi")
@@ -199,11 +213,7 @@ func (c *Config) applyContainerDefaults(p Platform) {
 		// The compose plugin is a subcommand of the runtime, so its default is
 		// derived from the (possibly overridden) runtime rather than hardcoded --
 		// a host with only the standalone v1 binary sets docker.compose instead.
-		if len(c.Docker.Compose) == 0 {
-			compose := make(Command, 0, len(c.Docker.Runtime)+1)
-			compose = append(compose, c.Docker.Runtime...)
-			c.Docker.Compose = append(compose, "compose")
-		}
+		c.Docker.Compose = c.composeOrDerived()
 	}
 	if p == Podman {
 		setDefaultCmd(&c.Podman.Runtime, "podman")

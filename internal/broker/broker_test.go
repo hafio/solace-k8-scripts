@@ -95,6 +95,22 @@ func (f *fakeTransport) uploadBody(t *testing.T, dest string) string {
 	return ""
 }
 
+// removed reports whether an uploaded script at dest was deleted afterwards.
+// removeCLI issues `rm -f <paths...>` through Run, so removals land in runs, not
+// outputs. It matters for any script whose body carries a secret.
+func (f *fakeTransport) removed(dest string) bool {
+	for _, r := range f.runs {
+		if len(r.argv) >= 3 && r.argv[0] == "rm" && r.argv[1] == "-f" {
+			for _, p := range r.argv[2:] {
+				if p == dest {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (f *fakeTransport) hasUpload(dest string) bool {
 	for _, u := range f.uploads {
 		if u.dest == dest {
@@ -447,6 +463,119 @@ func TestProductKeysRejectsMultilineKey(t *testing.T) {
 	o, _ := newTestOps(t, &config.Config{}, ft)
 	if err := o.ProductKeys(context.Background(), []string{"AbC+dE/f12=="}, config.Primary); err != nil {
 		t.Errorf("an opaque vendor key must be accepted: %v", err)
+	}
+}
+
+// --- additional CLI users (k8s only) ----------------------------------------
+
+func appUsers() []config.AdditionalUser {
+	return []config.AdditionalUser{{Username: "appuser", AccessLevel: "read-write", Password: "app-pass"}}
+}
+
+func TestAdditionalUsers(t *testing.T) {
+	ft := &fakeTransport{responder: func(_ config.Role, argv []string, _ []byte) ([]byte, error) {
+		if matchCLI(argv, "additional-users") {
+			return []byte("Username created.\n"), nil
+		}
+		return nil, nil
+	}}
+	o, out := newTestOps(t, &config.Config{}, ft)
+	if err := o.AdditionalUsers(context.Background(), config.Primary, appUsers()); err != nil {
+		t.Fatalf("AdditionalUsers error: %v", err)
+	}
+	body := ft.uploadBody(t, cliScriptPath("additional-users"))
+	if body != additionalUsersScript(appUsers()) {
+		t.Errorf("additional-users body = %q", body)
+	}
+	// The password rides the upload body (stdin), and must not appear anywhere the
+	// operator can see: not in the shown output, and not in an argv.
+	if strings.Contains(out.String(), "app-pass") {
+		t.Errorf("the CLI transcript must never be shown -- it repeats the password:\n%s", out.String())
+	}
+	for _, c := range ft.outputs {
+		if strings.Contains(strings.Join(c.argv, " "), "app-pass") {
+			t.Errorf("password reached an argv: %v", c.argv)
+		}
+	}
+	// The uploaded script carries every password, so it must be deleted afterwards.
+	if !ft.removed(cliScriptPath("additional-users")) {
+		t.Errorf("the uploaded script must be removed; it contains the passwords: %v", ft.runs)
+	}
+}
+
+// TestAdditionalUsersReportsExistingUser pins the deliberate non-idempotency:
+// `create username` fails when the user exists, and that is reported rather than
+// reconciled, because silently re-setting a password an operator rotated on the
+// broker is worse than refusing. The message must not carry the withheld transcript.
+func TestAdditionalUsersReportsExistingUser(t *testing.T) {
+	ft := &fakeTransport{responder: func(_ config.Role, _ []string, _ []byte) ([]byte, error) {
+		return []byte("Error: Username already exists\n"), nil
+	}}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	err := o.AdditionalUsers(context.Background(), config.Primary, appUsers())
+	if err == nil {
+		t.Fatal("AdditionalUsers should fail loud when the broker reports an error")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("the error should name the likeliest cause, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "app-pass") {
+		t.Errorf("the error must not carry the transcript: %v", err)
+	}
+	// Even on failure the script must be gone.
+	if !ft.removed(cliScriptPath("additional-users")) {
+		t.Errorf("a failed run must still remove the uploaded script: %v", ft.runs)
+	}
+}
+
+func TestAdditionalUsersEmpty(t *testing.T) {
+	o, _ := newTestOps(t, &config.Config{}, &fakeTransport{})
+	if err := o.AdditionalUsers(context.Background(), config.Primary, nil); err == nil {
+		t.Error("AdditionalUsers should error with no users")
+	}
+}
+
+// TestAdditionalUsersRejectsBadValues closes the injection path: every value lands
+// on a line of a script running in configure mode, so a newline would append
+// commands, and the characters the broker CLI rejects inside a quoted password would
+// break out of the quoting. Nothing may be uploaded before the check, and no error
+// may echo a password.
+func TestAdditionalUsersRejectsBadValues(t *testing.T) {
+	cases := []struct {
+		name string
+		user config.AdditionalUser
+	}{
+		{"username with a space", config.AdditionalUser{Username: "app user", AccessLevel: "admin", Password: "p"}},
+		{"multiline access level", config.AdditionalUser{Username: "appuser", AccessLevel: "admin\nshutdown", Password: "p"}},
+		{"empty password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin"}},
+		{"newline in password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin", Password: "UNIQUE\nshow"}},
+		{"quote in password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin", Password: `UNIQUE"x`}},
+		{"semicolon in password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin", Password: "UNIQUE;x"}},
+		{"backslash in password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin", Password: `UNIQUE\x`}},
+		{"pipe in password", config.AdditionalUser{Username: "appuser", AccessLevel: "admin", Password: "UNIQUE|x"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ft := &fakeTransport{}
+			o, _ := newTestOps(t, &config.Config{}, ft)
+			err := o.AdditionalUsers(context.Background(), config.Primary, []config.AdditionalUser{tc.user})
+			if err == nil {
+				t.Fatalf("AdditionalUsers should reject %s", tc.name)
+			}
+			if strings.Contains(err.Error(), "UNIQUE") {
+				t.Errorf("the error must name the user and the character, never the password: %v", err)
+			}
+			if len(ft.uploads) != 0 || len(ft.outputs) != 0 {
+				t.Errorf("validation must happen before anything runs, got uploads=%v runs=%v", ft.uploads, ft.outputs)
+			}
+		})
+	}
+	// A password with punctuation the CLI does accept must still pass.
+	ft := &fakeTransport{}
+	o, _ := newTestOps(t, &config.Config{}, ft)
+	ok := config.AdditionalUser{Username: "appuser", AccessLevel: "mesh-manager", Password: "P@ss w0rd!#%^-_=+[]{}"}
+	if err := o.AdditionalUsers(context.Background(), config.Primary, []config.AdditionalUser{ok}); err != nil {
+		t.Errorf("a password using accepted punctuation must work: %v", err)
 	}
 }
 

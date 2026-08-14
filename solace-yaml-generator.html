@@ -208,8 +208,8 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
   <div class="sec" id="s-creds"><h3>Credentials</h3>
     <div class="f"><label>Admin Password</label><input id="i-admpass" type="password" value="adminpassword123" oninput="gen()"><div class="h">Used to create the admin credentials secret.</div></div>
     <div class="f"><label>Monitor Password</label><input id="i-monpass" type="password" oninput="gen()"><div class="h">Optional. Adds <code>username_monitor_password</code> to the same secret.</div></div>
-    <div class="f"><label>Admin Secret Name</label><input id="i-admsecret" value="solace-admin-secret" oninput="gen()"><div class="h">Holds both the admin and monitor credentials.</div></div>
-    <div class="f"><label>Additional CLI Users</label><textarea id="i-userpass" rows="2" oninput="gen()" placeholder="appuser=password (one per line)"></textarea><div class="h">One <code>user=password</code> per line. The user may contain only letters, digits, <code>.</code>, <code>_</code> and <code>-</code>; other entries are skipped.</div></div>
+    <div class="f"><label>Admin Secret Name</label><input id="i-admsecret" value="solace-admin-secret" oninput="gen()"><div class="h">Holds the admin and monitor credentials, plus any additional CLI user passwords.</div></div>
+    <div class="f"><label>Additional CLI Users</label><textarea id="i-userpass" rows="2" oninput="gen()" placeholder="appuser=password=read-only (one per line)"></textarea><div class="h">One <code>user=password[=accessLevel]</code> per line, where the level is <code>admin</code>, <code>read-write</code>, <code>read-only</code> or <code>none</code> (default <code>none</code>). The user may contain only letters, digits, <code>.</code>, <code>_</code> and <code>-</code> and cannot be <code>admin</code> or <code>monitor</code>; other entries are skipped. On Kubernetes only the password is delivered -- set the level with <code>config exec-cli</code>.</div></div>
   </div>
 
   <!-- 8. TLS / SSL -->
@@ -707,15 +707,21 @@ spec:
 }
 
 // ═══════ SECRETS YAML ═══════
-// adminUsers parses the extra `user=password` lines, dropping any whose user
-// name would not survive the CLI's own check on a secret data key (§3: the user
-// becomes part of the key `username_<user>_password`).
+// adminUsers parses the extra `user=password[=accessLevel]` lines, dropping any
+// whose user name would not survive the CLI's own check on a secret data key
+// (§3: the user becomes part of the key `username_<user>_password`) or whose
+// access level is not one the broker accepts. The level defaults to the least
+// privileged one, matching what `solace convert` picks: handing out rights the
+// input never asked for is the dangerous direction.
+const accessLevels=['admin','read-write','read-only','none'];
 function adminUsers(){
   return L('i-userpass').map(l=>{
-    const i=l.indexOf('=');
-    if(i<1)return null;
-    const u=l.slice(0,i).trim(),p=l.slice(i+1).trim();
-    return /^[A-Za-z0-9._-]+$/.test(u)?{u,p}:null;
+    const parts=l.split('=');
+    if(parts.length<2)return null;
+    const u=parts[0].trim(),p=parts[1].trim(),lvl=(parts[2]||'none').trim();
+    if(!/^[A-Za-z0-9._-]+$/.test(u)||u==='admin'||u==='monitor')return null;
+    if(!accessLevels.includes(lvl))return null;
+    return {u,p,lvl};
   }).filter(Boolean);
 }
 
@@ -924,13 +930,17 @@ function genEnv(){
     +(psOn?kv('pullSecret',V('i-pullsecret'),'  ')+kv('user',V('i-imguser'),'  ')+kv('pass',V('i-imgpass'),'  '):'');
 
   const users=adminUsers();
+  // additionalUsers is a list of mappings, so it is built here rather than through
+  // klist (which emits scalars). Every field is required by the schema.
+  let usersBlock='';
+  users.forEach(x=>{usersBlock+=`    - username: ${x.u}\n      accessLevel: ${x.lvl}\n      password: ${yq(x.p)}\n`;});
   y+='\nadmin:\n'+kv('pass',V('i-admpass'),'  ')+kv('monitorPass',V('i-monpass'),'  ')
-    +kv('userSecret',V('i-admsecret'),'  ')
-    +klist('userPasswords',users.map(x=>x.u+'='+x.p),'  ');
+    +(usersBlock?'  additionalUsers:\n'+usersBlock:'');
   // Say so rather than dropping a rejected entry in silence -- the CLI fails
   // loud on the same input, so a quietly missing user would be a nasty surprise.
   const skipped=L('i-userpass').length-users.length;
-  if(skipped)y+=`  # ${skipped} user entr${skipped===1?'y':'ies'} skipped: the name before '=' must match [A-Za-z0-9._-]+\n`;
+  if(skipped)y+=`  # ${skipped} user entr${skipped===1?'y':'ies'} skipped: write user=password[=accessLevel], where the\n`
+    +`  # name matches [A-Za-z0-9._-]+ (not admin/monitor) and the level is one of ${accessLevels.join('|')}\n`;
 
   const cas=L('i-tlscas'),tlsSec=tlsOn?V('i-tlssecret'):'';
   const tlsBody=kv('cert',V('i-tlscert'),'  ')+kv('certKey',V('i-tlskey'),'  ')+klist('cas',cas,'  ')+kv('serverSecret',tlsSec,'  ');
@@ -954,6 +964,7 @@ function genEnv(){
 
   // ── k8s ──
   y+='\nk8s:\n'+kv('runtime',V('i-kubectl'),'  ')+kv('name',V('i-bkname'),'  ')+kv('namespace',V('i-bkns'),'  ')
+    +kv('adminSecret',V('i-admsecret'),'  ')
     +kv('updateStrategy',V('i-updatestrategy'),'  ')+kv('serviceAccount',V('i-svcaccount'),'  ')
     +kv('cliScriptsFolder',V('i-clifolder'),'  ')
     +kv('diagDir',V('i-diagdir'),'  ');

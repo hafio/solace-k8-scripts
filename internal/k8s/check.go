@@ -79,7 +79,7 @@ func (c *Cluster) CheckEnv() {
 		orValue(cfg.K8s.Storage.Class, "(cluster default)"), cfg.K8s.Storage.MsgNode, orNone(cfg.K8s.Storage.MonNode))
 
 	fmt.Fprintf(w, "  admin          : user=admin secret=%s password=%s monitorPassword=%s extraUsers=%d\n",
-		orNone(cfg.Admin.UserSecret), setOrMissing(cfg.Admin.Pass), setOrNone(cfg.Admin.MonitorPass != ""), len(cfg.Admin.UserPasswords))
+		orNone(cfg.K8s.AdminSecret), setOrMissing(cfg.Admin.Pass), setOrNone(cfg.Admin.MonitorPass != ""), len(cfg.Admin.AdditionalUsers))
 
 	if cfg.TLS.ServerSecret != "" {
 		fmt.Fprintf(w, "  tls            : secret=%s cert=%s key=%s cas=%d\n",

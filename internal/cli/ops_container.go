@@ -38,7 +38,7 @@ func ctrManager(a *App) *container.Manager {
 	m.In = os.Stdin
 	m.EnvPath = a.envPath
 	m.Restart = a.restart
-	m.Confirm = confirmRestart
+	m.Confirm = func(question string) bool { return confirmRestart(a, question) }
 	return m
 }
 
@@ -201,9 +201,10 @@ func opCtrGen(a *App, role config.Role) error {
 
 // emitCtrArtifact prints the artifact the gen flag asked for, changing nothing.
 // The flag picks the artifact, not the command: --gen-only renders the deploy
-// artifact (podman quadlet / docker compose file), --gen-secrets-only the
-// commands that create this host's secrets, --gen-env-only the broker settings as
-// an env file. Ports the gen_*() + --only-gen contract of the bash deploy scripts.
+// artifact (podman quadlet / docker compose file), --gen-secrets-only the shell
+// that supplies this host's secrets (podman: create them in its store; docker:
+// export the variables compose reads), --gen-env-only the broker settings as an
+// env file. Ports the gen_*() + --only-gen contract of the bash deploy scripts.
 func emitCtrArtifact(a *App, role config.Role) error {
 	id := a.Cfg.ResolveNode(role)
 	switch {

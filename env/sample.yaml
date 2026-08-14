@@ -5,11 +5,18 @@
 # This is a TEMPLATE with placeholder secrets. Replace admin.pass, the image
 # credentials, and nodes.psk before real use, and never commit real secrets.
 #
-# Secrets never reach a deployment artifact: on containers admin.pass and
-# nodes.psk are externalized (podman's secret store; file-backed compose secrets
-# under solace-secrets/) and referenced by name, and on k8s they live in Secret
-# manifests applied on stdin. So `--gen-only` output is safe to share, while
-# `--gen-secrets-only` output is as sensitive as this file.
+# Every secret field has a sibling *Env key holding the NAME of an environment
+# variable to read the value from instead -- `pass: CHANGE-ME` or
+# `passEnv: SOLACE_ADMIN_PASS`, never both. With the *Env form this whole file
+# carries no secret and is safe to commit; the variables must be exported before
+# any command runs, or the load fails loud naming the key and the variable.
+#
+# Secrets never reach a deployment artifact, and every platform delivers them to
+# the broker as files: on containers each one is externalized (podman's secret
+# store; docker compose secrets sourced from the environment `deploy` passes it)
+# and mounted at /run/secrets/<setting>, and on k8s they live in Secret manifests
+# applied on stdin and mounted by the operator. So `--gen-only` output is safe to
+# share, while `--gen-secrets-only` output is as sensitive as this file.
 #
 # EVERY key the schema accepts appears below. A commented-out key is optional --
 # the value shown is the default that applies when it is omitted. Keys marked
@@ -34,16 +41,28 @@ image:
   pullSecret: solace-image-pull     # k8s: name of the image-pull secret
   user: repo-user                   # registry login: k8s builds the pull secret,
   pass: CHANGE-ME-registry          # docker/podman run `<runtime> login`. secret
+  # passEnv: SOLACE_REGISTRY_PASS   # ...or name the variable holding it instead
   # pullPolicy: IfNotPresent        # k8s: Always | IfNotPresent | Never. Always for
                                     # a moving tag, Never for an air-gapped cluster
 
 admin:
   user: admin                       # container admin username (k8s admin is "admin")
   pass: CHANGE-ME-admin             # secret, mandatory on every platform
+  # passEnv: SOLACE_ADMIN_PASS      # ...or name the variable holding it instead
   monitorPass: CHANGE-ME-monitor    # k8s monitor user secret
-  userSecret: solace-admin-secret   # k8s secret name holding admin/monitor creds
-  # userPasswords:                  # k8s: extra CLI users, "user=password" (secrets)
-  #   - appuser=CHANGE-ME-appuser
+  # monitorPassEnv: SOLACE_MON_PASS # ...or name the variable holding it instead
+  # additionalUsers:                # extra CLI (management) users beyond admin/monitor.
+  #   - username: appuser           # Every field is required; password takes the same
+  #     accessLevel: read-only      # literal-or-passwordEnv choice as above.
+  #     password: CHANGE-ME-appuser # accessLevel: none | read-only | mesh-manager |
+  #   - username: rouser            #   read-write | admin
+  #     accessLevel: mesh-manager   # Containers create these at boot. On k8s they are
+  #     passwordEnv: SOLACE_ROPASS  # created by `config additional-users` over the
+                                    # broker CLI (the operator ignores extra keys in
+                                    # the credentials Secret), which is NOT re-runnable
+                                    # and rejects : ( ) " ; ' < > , ` \ * & | in a
+                                    # password. Those characters stay fine on
+                                    # docker/podman, which mount the value as a file.
 
 tls:
   cert: certs/tls.crt               # server certificate (enables broker TLS listeners)
@@ -53,6 +72,7 @@ tls:
                                     # password and reaches the broker as
                                     # tls_servercertificate_passphrasefilepath. Not
                                     # wired on k8s: the operator mounts the TLS secret.
+  # certPassphraseEnv: SOLACE_TLS_PASS   # ...or name the variable holding it instead
   serverSecret: solace-tls-secret   # k8s: TLS secret name (enables the CR tls block)
   # cas:                            # trusted domain CA files (config domain-certs)
   #   - certs/ca.crt
@@ -80,14 +100,24 @@ tls:
 #   psk: ""                         # secret; generated when left blank
 
 k8s:
-  # runtime: kubectl                # the cluster CLI (legacy KUBE). A scalar is
-                                    # split on whitespace, so it can carry a whole
-                                    # profile: `oc`, `microk8s kubectl`, or
-                                    # `kubectl --kubeconfig /path/.kubeconfig-dev`.
-                                    # Use a list when a token contains a space:
-                                    #   runtime: ["C:\\Program Files\\bin\\kubectl.exe"]
+  # runtime: kubectl                # the cluster CLI (legacy KUBE). A scalar is split
+                                    # on whitespace, so it can carry a whole profile:
+                                    # `oc` or `kubectl --kubeconfig /path/.kubeconfig-dev`.
+                                    # THIS FIELD RUNS A BINARY ON YOUR MACHINE, so it
+                                    # is restricted: a bare name (no / or \) from
+                                    # {kubectl, oc}, then flags only -- no bare word,
+                                    # which would smuggle a subcommand ahead of the one
+                                    # the tool appends. A wrapper such as
+                                    # `microk8s kubectl` needs the operator to approve
+                                    # it per run: --allow-command microk8s. Windows
+                                    # paths in a flag value take forward slashes
+                                    # (C:/Users/you/.kube/config). See README,
+                                    # "The command fields are executable content".
   name: dev-broker                  # mandatory
   namespace: solace                 # mandatory
+  adminSecret: solace-admin-secret  # Secret holding the admin/monitor credentials.
+                                    # additionalUsers are NOT in it: the operator reads
+                                    # only those two keys (see admin.additionalUsers)
   updateStrategy: automatedRolling  # automatedRolling | manualPodRestart
   serviceAccount: solace-sa         # optional
   # cliScriptsFolder: cli           # local folder holding .cli scripts (config exec-cli)
@@ -160,21 +190,30 @@ k8s:
   #   files: {}                     # CA-NAME: cert filename
 
 docker:
-  # runtime: docker                 # command to exec: a path, a drop-in like nerdctl,
-                                    # or a wrapper -- a scalar is split on whitespace
-                                    # (`sudo -n docker`). Use a list for a token with
-                                    # a space: ["C:\\Program Files\\Docker\\docker.exe"]
+  # runtime: docker                 # command to exec: a bare binary name from
+                                    # {docker, docker-compose, nerdctl}, then flags
+                                    # only. Same rules as k8s.runtime above -- this
+                                    # field runs a binary on your machine. A wrapper
+                                    # such as `lima nerdctl` needs the operator to
+                                    # approve it per run: --allow-command lima.
+                                    # sudo/doas/su/pkexec are NEVER approvable here;
+                                    # run `sudo solace docker deploy` instead, so the
+                                    # privilege belongs to one invocation you chose.
   mode: compose                     # compose (the only value; run mode was removed)
   # compose: docker compose         # the compose invocation. Omitted -> the runtime
                                     # plus `compose` (the plugin form). Set it to
                                     # `docker-compose` on a host carrying only the
-                                    # standalone v1 binary; same scalar/list forms as
-                                    # runtime. Every argument is appended after it.
-  # composeFile: docker-compose.yml # path of the generated compose file. The secrets
-                                    # it references live in solace-secrets/ beside it.
+                                    # standalone v1 binary. Same rules as runtime,
+                                    # plus one permitted trailing `compose`; every
+                                    # argument is appended after it.
+  # composeFile: docker-compose.yml # path of the generated compose file. It names the
+                                    # secrets it needs; `deploy` supplies their values
+                                    # through the compose process environment, so no
+                                    # secret is written beside it.
   container:
     dataDir: /opt/solace/data       # host bind mount, mandatory
-  #   name: solace                  # container name
+  #   name: solace                  # container name; also prefixes this host's secret
+                                    # names, so two brokers on one host cannot clash
   #   runUser: "0:0"                # uid:gid the container runs as
   #   shmSize: 1g
   #   ulimits:
@@ -207,7 +246,8 @@ docker:
   #     - 8080:8080                 # same 17 ports k8s defaults to are published
 
 podman:
-  # runtime: podman                 # command to exec; same forms as docker.runtime
+  # runtime: podman                 # command to exec; same rules as docker.runtime,
+                                    # allowing only the bare name `podman`
   rootless: false                   # true = rootless: user systemd + `podman unshare` chown
   # quadletDir: /etc/containers/systemd   # rootless: $XDG_CONFIG_HOME/containers/systemd
   container:
@@ -237,3 +277,7 @@ nodes:                              # redundancy group -- identical on all hosts
     name: solace-monitor            # mandatory on containers in HA
     ip: 10.0.0.13
   psk: Q0hBTkdFLU1FLXByZXNoYXJlZC1rZXktYmFzZTY0     # secret; host-prep generates one
+  # pskEnv: SOLACE_REDUNDANCY_PSK   # ...or name the variable holding it instead. With
+                                    # this form host-prep generates nothing: create the
+                                    # key yourself (openssl rand -base64 60) and export
+                                    # the SAME value on all three hosts.

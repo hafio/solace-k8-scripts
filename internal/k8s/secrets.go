@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -47,21 +46,21 @@ func (s secretManifest) render() []byte {
 	return []byte(b.String())
 }
 
-// secretKeyUserRE constrains the user portion of an admin.userPasswords entry: it
-// lands in a Secret data key (username_<user>_password), a structured position, so a
-// space or colon would corrupt the YAML. §4 escape-what-lands-in-structured-output.
-var secretKeyUserRE = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
 // AdminSecret builds the Opaque secret holding broker credentials, porting the
-// user-secret of 012:26-32: username_admin_password (mandatory), an optional
-// username_monitor_password, and one username_<user>_password per admin.userPasswords
-// "user=password" entry. Fails loud on an empty admin password or a malformed entry.
+// user-secret of 012:26-32: username_admin_password (mandatory) and an optional
+// username_monitor_password. Fails loud on an empty admin password.
+//
+// admin.additionalUsers are deliberately NOT here. The operator reads only the two
+// keys above out of this Secret; extra username_<user>_password keys are ignored, so
+// including them wrote passwords into a Secret nothing ever read (verified against a
+// live cluster). The k8s route for those users is `config additional-users`, which
+// creates them over the broker CLI -- see broker.AdditionalUsers.
 func AdminSecret(cfg *config.Config) ([]byte, error) {
 	if cfg.Admin.Pass == "" {
 		return nil, fmt.Errorf("admin.pass must be set to build the admin secret")
 	}
-	if cfg.Admin.UserSecret == "" {
-		return nil, fmt.Errorf("admin.userSecret (the secret name) must be set")
+	if cfg.K8s.AdminSecret == "" {
+		return nil, fmt.Errorf("k8s.adminSecret (the secret name) must be set")
 	}
 	data := map[string][]byte{
 		"username_admin_password": []byte(cfg.Admin.Pass),
@@ -69,18 +68,8 @@ func AdminSecret(cfg *config.Config) ([]byte, error) {
 	if cfg.Admin.MonitorPass != "" {
 		data["username_monitor_password"] = []byte(cfg.Admin.MonitorPass)
 	}
-	for _, up := range cfg.Admin.UserPasswords {
-		user, pass, ok := strings.Cut(up, "=")
-		if !ok || user == "" {
-			return nil, fmt.Errorf("invalid admin.userPasswords entry %q: expected user=password", up)
-		}
-		if !secretKeyUserRE.MatchString(user) {
-			return nil, fmt.Errorf("invalid admin.userPasswords user %q: only letters, digits, '.', '_' and '-' are allowed", user)
-		}
-		data["username_"+user+"_password"] = []byte(pass)
-	}
 	return secretManifest{
-		name:      cfg.Admin.UserSecret,
+		name:      cfg.K8s.AdminSecret,
 		namespace: cfg.K8s.Namespace,
 		typ:       "Opaque",
 		data:      data,

@@ -19,6 +19,11 @@ const brokerYAMLFile = ".broker.yaml"
 // carries only secret *names*, never secret values, so applying on stdin -- rather
 // than the bash apply-from-file -- changes nothing about what lands on disk.
 func (c *Cluster) DeployBroker(ctx context.Context, keepYAML bool) error {
+	// Before the keepYAML write and before the apply: a deploy that cannot create
+	// the CR must not leave a manifest on disk suggesting it got further than it did.
+	if err := c.Preflight(ctx, "create", brokerResource); err != nil {
+		return err
+	}
 	manifest := render.BrokerCR(c.Cfg)
 	if keepYAML {
 		if err := os.WriteFile(brokerYAMLFile, manifest, 0o644); err != nil {
@@ -40,6 +45,9 @@ func (c *Cluster) DeployBroker(ctx context.Context, keepYAML bool) error {
 // safer inverse of legacy 120's purge-by-default. The confirm/flag logic lives in
 // the CLI layer; here purge is just the decision already made.
 func (c *Cluster) DeleteBroker(ctx context.Context, purge bool) error {
+	if err := c.Preflight(ctx, "delete", brokerResource); err != nil {
+		return err
+	}
 	c.logf("deleting broker %s in %s", c.Cfg.K8s.Name, c.ns())
 	if err := c.deleteStdin(ctx, render.BrokerCR(c.Cfg)); err != nil {
 		return err

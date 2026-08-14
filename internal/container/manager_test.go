@@ -135,7 +135,7 @@ func TestManagerCheckDryRun(t *testing.T) {
 		for _, want := range []string{
 			"Solace broker deployment (" + tc.title + ")",
 			tc.mode,
-			"+ " + m.runtime().String() + " version",
+			"+ " + cfg.ContainerRuntime(tc.p).String() + " version",
 			"skipped (--dry-run)",
 		} {
 			if !strings.Contains(out, want) {
@@ -243,7 +243,9 @@ func TestManagerDeployDockerComposeWritesFile(t *testing.T) {
 	if !fileExists(cfg.Docker.ComposeFile) {
 		t.Error("Deploy should write the compose file")
 	}
-	if !hasCall(rr, "docker", []string{"compose", "-f", cfg.Docker.ComposeFile, "up", "-d"}) {
+	// --force-recreate is part of the create path: a stopped container would
+	// otherwise be started with the credentials it was created with.
+	if !hasCall(rr, "docker", []string{"compose", "-f", cfg.Docker.ComposeFile, "up", "-d", "--force-recreate"}) {
 		t.Errorf("Deploy should compose up:\n%+v", rr.calls)
 	}
 }
@@ -260,7 +262,7 @@ func TestManagerDockerComposeCommandOverride(t *testing.T) {
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	if !hasCall(rr, "docker-compose", []string{"-f", cfg.Docker.ComposeFile, "up", "-d"}) {
+	if !hasCall(rr, "docker-compose", []string{"-f", cfg.Docker.ComposeFile, "up", "-d", "--force-recreate"}) {
 		t.Errorf("Deploy should use the configured compose command:\n%+v", rr.calls)
 	}
 }
@@ -465,12 +467,12 @@ func TestManagerRedeployUnchangedIsNoOp(t *testing.T) {
 			t.Fatal(err)
 		}
 		m, rr, buf := newCapMgr(cfg, config.Docker)
-		rr.out = []byte("abc123\n") // ps --quiet -> the container is running
+		rr.out = []byte("solace\n") // ps lists this container by name -> running
 		if err := m.Deploy(context.Background(), config.Primary); err != nil {
 			t.Fatalf("Deploy: %v", err)
 		}
 		for _, c := range rr.calls {
-			if len(c.args) > 0 && c.args[len(c.args)-1] == "-d" {
+			if containsStr(c.args, "up") {
 				t.Errorf("an unchanged compose file must not recreate the container:\n%+v", rr.calls)
 			}
 		}
@@ -564,12 +566,12 @@ func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
 	t.Run("docker declines without consent", func(t *testing.T) {
 		cfg, _ := setup(t, config.Docker)
 		m, rr, buf := newCapMgr(cfg, config.Docker)
-		rr.out = []byte("abc123\n")
+		rr.out = []byte("solace\n")
 		if err := m.Deploy(context.Background(), config.Primary); err != nil {
 			t.Fatalf("Deploy: %v", err)
 		}
 		for _, c := range rr.calls {
-			if len(c.args) > 0 && c.args[len(c.args)-1] == "-d" {
+			if containsStr(c.args, "up") {
 				t.Errorf("no consent means no recreate:\n%+v", rr.calls)
 			}
 		}
@@ -581,7 +583,7 @@ func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
 		cfg, _ := setup(t, config.Docker)
 		m, rr, _ := newCapMgr(cfg, config.Docker)
 		m.Restart = true
-		rr.out = []byte("abc123\n")
+		rr.out = []byte("solace\n")
 		if err := m.Deploy(context.Background(), config.Primary); err != nil {
 			t.Fatalf("Deploy: %v", err)
 		}
@@ -593,28 +595,48 @@ func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
 
 // --- secret externalization -------------------------------------------------
 
-func TestManagerDeployDockerWritesSecretFiles(t *testing.T) {
+// TestManagerDeployDockerPassesSecretsAsEnv is the docker half of the secret
+// model: nothing is written to this host, the values reach compose only through
+// the child process environment, and the artifact carries variable names.
+func TestManagerDeployDockerPassesSecretsAsEnv(t *testing.T) {
 	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "yes")
 	cfg.Nodes.PSK = "test-psk"
 	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
-	m, _, _ := newCapMgr(cfg, config.Docker)
+	m, rr, _ := newCapMgr(cfg, config.Docker)
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	for name, want := range map[string]string{
-		"solace-admin-password": "secret-pass",
-		"solace-redundancy-psk": "test-psk",
-	} {
-		path := filepath.Join(dir, "solace-secrets", name)
-		got, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read secret file %s: %v", path, err)
+	if fileExists(filepath.Join(dir, "solace-secrets")) {
+		t.Error("no secret file may be written any more; the values ride the compose process environment")
+	}
+	var up *capCall
+	for i := range rr.calls {
+		c := &rr.calls[i]
+		if containsStr(c.args, "up") {
+			up = c
 		}
-		if string(got) != want {
-			t.Errorf("secret %s = %q, want %q", name, got, want)
+	}
+	if up == nil {
+		t.Fatalf("Deploy should run `compose up -d`:\n%+v", rr.calls)
+	}
+	if up.method != "RunEnv" {
+		t.Errorf("compose must run through RunEnv so the values never reach an argv, got %s", up.method)
+	}
+	for _, want := range []string{"SOLACE_ADMIN_PASSWORD=secret-pass", "SOLACE_REDUNDANCY_PSK=test-psk"} {
+		if !containsStr(up.env, want) {
+			t.Errorf("compose environment should carry %q, got %v", want, maskedKeys(up.env))
 		}
-		assertMode(t, path, 0o600)
+	}
+	// The values may reach the environment and nothing else (§3).
+	for _, c := range rr.calls {
+		for _, a := range c.args {
+			for _, leak := range []string{"secret-pass", "test-psk"} {
+				if strings.Contains(a, leak) {
+					t.Errorf("secret value reached an argv: %s %v", c.name, c.args)
+				}
+			}
+		}
 	}
 	body, err := os.ReadFile(cfg.Docker.ComposeFile)
 	if err != nil {
@@ -626,10 +648,31 @@ func TestManagerDeployDockerWritesSecretFiles(t *testing.T) {
 			t.Errorf("compose file must reference secrets, not carry %q:\n%s", leak, body)
 		}
 	}
-	if !strings.Contains(string(body), "solace-admin-password") {
-		t.Errorf("compose file should reference the admin-password secret:\n%s", body)
+	for _, want := range []string{
+		"source: solace-admin-password",
+		"target: username_admin_password",
+		"environment: SOLACE_ADMIN_PASSWORD",
+		"username_admin_passwordfilepath: \"/run/secrets/username_admin_password\"",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("compose file should contain %q:\n%s", want, body)
+		}
 	}
 }
+
+// containsStr reports whether list holds want exactly.
+func containsStr(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// maskedKeys renders an environment list for a failure message without its
+// values -- a test diagnostic must not print a secret either.
+func maskedKeys(env []string) string { return engine.MaskEnv(env) }
 
 func TestManagerDeployPodmanCreatesSecrets(t *testing.T) {
 	cfg := ctrCfg(config.Podman, "yes")
@@ -640,7 +683,9 @@ func TestManagerDeployPodmanCreatesSecrets(t *testing.T) {
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	for _, name := range []string{"solace-admin-password", "solace-redundancy-psk"} {
+	// Names carry the container name, so two brokers on one host cannot overwrite
+	// each other's entries in the shared podman store.
+	for _, name := range []string{"sol-pod-admin-password", "sol-pod-redundancy-psk"} {
 		if !hasCall(rr, "podman", []string{"secret", "create", "--replace", name, "-"}) {
 			t.Errorf("Deploy should create podman secret %s:\n%+v", name, rr.calls)
 		}
@@ -672,7 +717,10 @@ func TestManagerDeployRejectsEmptySecret(t *testing.T) {
 	}
 }
 
-func TestManagerDeployDryRunCreatesNoSecretFiles(t *testing.T) {
+// TestManagerDeployDockerDryRunMasksSecretEnv covers the dry-run contract for the
+// one path that carries values: the echo names the variables compose would be
+// given and prints none of their values.
+func TestManagerDeployDockerDryRunMasksSecretEnv(t *testing.T) {
 	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "yes")
 	cfg.Nodes.PSK = "" // empty is fine here: prep host has not generated it yet
@@ -682,10 +730,14 @@ func TestManagerDeployDryRunCreatesNoSecretFiles(t *testing.T) {
 		t.Fatalf("dry-run Deploy must stay previewable before prep host: %v", err)
 	}
 	if fileExists(filepath.Join(dir, "solace-secrets")) {
-		t.Error("dry-run must not create the secrets dir")
+		t.Error("dry-run must not create anything, least of all a secrets dir")
 	}
-	if !strings.Contains(buf.String(), "would write 2 secret file(s)") {
-		t.Errorf("dry-run should report what it would write:\n%s", buf.String())
+	out := buf.String()
+	if !strings.Contains(out, "SOLACE_ADMIN_PASSWORD=***") {
+		t.Errorf("dry-run should name the secret variables with masked values:\n%s", out)
+	}
+	if strings.Contains(out, "secret-pass") {
+		t.Errorf("dry-run echo leaked the admin password:\n%s", out)
 	}
 }
 
@@ -698,7 +750,7 @@ func TestManagerDeployPodmanDryRunHidesSecretBytes(t *testing.T) {
 		t.Fatalf("Deploy: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "secret create --replace solace-admin-password -") {
+	if !strings.Contains(out, "secret create --replace sol-pod-admin-password -") {
 		t.Errorf("dry-run should echo the secret-create command:\n%s", out)
 	}
 	if !strings.Contains(out, "bytes on stdin") {
@@ -859,7 +911,7 @@ func TestManagerStatusPodman(t *testing.T) {
 	if !hasCall(rr, "systemctl", []string{"status", "sol-pod.service", "--no-pager"}) {
 		t.Errorf("podman Status should show the unit:\n%+v", rr.calls)
 	}
-	if !hasCall(rr, "podman", []string{"ps", "--all", "--filter", "name=sol-pod"}) {
+	if !hasCall(rr, "podman", []string{"ps", "--all", "--filter", "name=^sol-pod$"}) {
 		t.Errorf("podman Status should ps the container:\n%+v", rr.calls)
 	}
 }
@@ -872,7 +924,7 @@ func TestManagerStatusDockerCompose(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		"+ docker compose -f docker-compose.yml ps",
-		"+ docker ps --all --filter name=solace",
+		"+ docker ps --all --filter 'name=^solace$'",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("docker Status missing %q:\n%s", want, out)
@@ -1119,8 +1171,7 @@ func TestManagerDeployPodmanEUIDGuardFails(t *testing.T) {
 func TestManagerDeployDockerComposeWriteError(t *testing.T) {
 	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
-	// A directory in the compose file's place makes WriteFile fail, while keeping
-	// the secrets dir (a sibling) inside the test's own temp dir.
+	// A directory in the compose file's place makes WriteFile fail.
 	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
 	if err := os.Mkdir(cfg.Docker.ComposeFile, 0o755); err != nil {
 		t.Fatal(err)
@@ -1157,17 +1208,148 @@ func TestManagerDeployPodmanSecretCreateError(t *testing.T) {
 	}
 }
 
-func TestManagerDeployDockerSecretWriteError(t *testing.T) {
+// TestManagerRedeployUnchangedRestartsForRotation covers the one way a rotated
+// secret can reach a running broker: the artifact is unchanged (the value lives in
+// the config and the environment, so there is nothing to diff), and --restart
+// forces the recreate that `compose up -d` would otherwise skip.
+func TestManagerRedeployUnchangedRestartsForRotation(t *testing.T) {
 	dir := t.TempDir()
 	cfg := ctrCfg(config.Docker, "no")
 	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
-	// A file where the secrets directory belongs makes MkdirAll fail.
-	if err := os.WriteFile(filepath.Join(dir, "solace-secrets"), []byte("x"), 0o600); err != nil {
+	if err := os.WriteFile(cfg.Docker.ComposeFile,
+		render.Compose(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m, _, _ := newCapMgr(cfg, config.Docker)
-	if err := m.Deploy(context.Background(), config.Primary); err == nil {
-		t.Fatal("Deploy should fail when the secrets dir cannot be created")
+	m, rr, buf := newCapMgr(cfg, config.Docker)
+	m.Restart = true
+	rr.out = []byte("solace\n") // ps lists this container by name -> running
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	want := []string{"compose", "-f", cfg.Docker.ComposeFile, "up", "-d", "--force-recreate"}
+	if !hasCall(rr, "docker", want) {
+		t.Errorf("--restart on an unchanged compose file should force a recreate:\n%+v", rr.calls)
+	}
+	if !strings.Contains(buf.String(), "rotated secret") {
+		t.Errorf("Deploy should say why it recreated the container:\n%s", buf.String())
+	}
+}
+
+// TestManagerRedeployPodmanUnchangedRestartsForRotation is the podman half: the
+// store secrets were just replaced, but a running container still holds the old
+// values and the unit is byte-identical, so --restart is what applies them.
+func TestManagerRedeployPodmanUnchangedRestartsForRotation(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Podman, "no")
+	cfg.Podman.QuadletDir = dir
+	if err := os.WriteFile(filepath.Join(dir, "sol-pod.container"),
+		render.Quadlet(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, rr, buf := newCapMgr(cfg, config.Podman)
+	m.Geteuid = func() int { return -1 }
+	m.Restart = true
+	rr.out = []byte("active\n")
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if !hasCall(rr, "systemctl", withUser(cfg, "restart", "sol-pod.service")) {
+		t.Errorf("--restart on an unchanged unit should restart the service:\n%+v", rr.calls)
+	}
+	if !strings.Contains(buf.String(), "rotated secret") {
+		t.Errorf("Deploy should say why it restarted:\n%s", buf.String())
+	}
+}
+
+// TestContainerRunningMatchesNameExactly guards the branch selector: `ps --filter
+// name=` is an unanchored regex on both engines, so a sibling deployment on the same
+// host would otherwise be mistaken for this one. Getting it wrong in either
+// direction is expensive -- a false positive skips the deploy, a false negative
+// force-recreates a live broker without asking.
+func TestContainerRunningMatchesNameExactly(t *testing.T) {
+	cases := []struct {
+		name    string
+		listing string
+		want    bool
+	}{
+		{"exact match", "solace\n", true},
+		{"among others", "other\nsolace\nsolace-edge\n", true},
+		{"sibling only", "solace-edge\n", false},
+		{"prefix only", "sol\n", false},
+		{"nothing running", "", false},
+		{"padded listing", "  solace  \n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := ctrCfg(config.Docker, "no") // container.name is "solace"
+			m, rr, _ := newCapMgr(cfg, config.Docker)
+			rr.out = []byte(tc.listing)
+			if got := m.containerRunning(context.Background()); got != tc.want {
+				t.Errorf("containerRunning(%q) = %v, want %v", tc.listing, got, tc.want)
+			}
+		})
+	}
+
+	// A probe that cannot run reads as "not running": the deploy then creates or
+	// recreates, and if the engine is really unreachable the compose call that
+	// follows fails loudly anyway -- so this never silently skips a deploy.
+	t.Run("probe fails", func(t *testing.T) {
+		m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+		rr.out = []byte("solace\n")
+		rr.outErr = fmt.Errorf("engine unreachable")
+		if m.containerRunning(context.Background()) {
+			t.Error("a failed probe must not report the container as running")
+		}
+	})
+}
+
+// TestManagerRedeployStoppedContainerRecreates covers the arm no consent prompt
+// guards: the compose file is unchanged and the container exists but is stopped.
+// A plain `up -d` would START it, and a compose secret's value is baked in at
+// creation -- so the broker would come back on the credentials it was created with
+// and nothing would say so. Recreating is safe here (no traffic to drop) and is
+// what makes a deploy's result honest.
+func TestManagerRedeployStoppedContainerRecreates(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(cfg.Docker.ComposeFile,
+		render.Compose(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, rr, _ := newCapMgr(cfg, config.Docker)
+	rr.out = []byte("") // ps lists nothing running
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	want := []string{"compose", "-f", cfg.Docker.ComposeFile, "up", "-d", "--force-recreate"}
+	if !hasCall(rr, "docker", want) {
+		t.Errorf("a stopped container must be recreated, not started, so a rotated secret applies:\n%+v", rr.calls)
+	}
+}
+
+// TestManagerRedeployUnchangedHintsRotation is the same state without --restart:
+// nothing happens, and the operator is told how to apply a rotation.
+func TestManagerRedeployUnchangedHintsRotation(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(cfg.Docker.ComposeFile,
+		render.Compose(cfg, cfg.ResolveNode(config.Primary)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, rr, buf := newCapMgr(cfg, config.Docker)
+	rr.out = []byte("solace\n")
+	if err := m.Deploy(context.Background(), config.Primary); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	for _, c := range rr.calls {
+		if containsStr(c.args, "--force-recreate") {
+			t.Errorf("without --restart nothing may be recreated:\n%+v", rr.calls)
+		}
+	}
+	if !strings.Contains(buf.String(), "re-run with --restart") {
+		t.Errorf("Deploy should name the way to apply a rotated secret:\n%s", buf.String())
 	}
 }
 
@@ -1266,7 +1448,7 @@ func TestManagerStatusDockerNoComposeFile(t *testing.T) {
 	if err := m.Status(context.Background()); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if !hasCall(rr, "docker", []string{"ps", "--all", "--filter", "name=solace"}) {
+	if !hasCall(rr, "docker", []string{"ps", "--all", "--filter", "name=^solace$"}) {
 		t.Errorf("Status should ps the container:\n%+v", rr.calls)
 	}
 	for _, c := range rr.calls {
@@ -1285,7 +1467,7 @@ func TestManagerStatusPodmanUnitInactiveTolerated(t *testing.T) {
 	if !strings.Contains(buf.String(), "non-zero") {
 		t.Errorf("Status should warn when the unit is not active:\n%s", buf.String())
 	}
-	if !hasCall(rr, "podman", []string{"ps", "--all", "--filter", "name=sol-pod"}) {
+	if !hasCall(rr, "podman", []string{"ps", "--all", "--filter", "name=^sol-pod$"}) {
 		t.Errorf("Status should still ps the container:\n%+v", rr.calls)
 	}
 }
@@ -1305,7 +1487,7 @@ func TestManagerStatusDockerComposePsTolerated(t *testing.T) {
 	if !strings.Contains(buf.String(), "compose ps failed") {
 		t.Errorf("Status should warn on a compose ps failure:\n%s", buf.String())
 	}
-	if !hasCall(rr, "docker", []string{"ps", "--all", "--filter", "name=solace"}) {
+	if !hasCall(rr, "docker", []string{"ps", "--all", "--filter", "name=^solace$"}) {
 		t.Errorf("Status should still ps the container:\n%+v", rr.calls)
 	}
 }

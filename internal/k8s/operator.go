@@ -89,6 +89,12 @@ func watchNamespace(cfg *config.Config) string {
 // image-pull secret (regcred) into that namespace first when pull creds are configured
 // (010:29), then applies the rendered bundle on stdin (010:2063).
 func (c *Cluster) OperatorApply(ctx context.Context) error {
+	// The bundle is cluster-scoped (CRDs, ClusterRoles), so the permission that
+	// matters is the one an under-privileged context most often lacks -- and
+	// discovering that halfway through a multi-document apply is the worst case.
+	if err := c.Preflight(ctx, "create", "customresourcedefinitions"); err != nil {
+		return err
+	}
 	opNS := c.operatorNS(ctx)
 	if c.Cfg.Image.PullSecret != "" {
 		c.logf("applying operator image-pull secret regcred in %s", opNS)
@@ -115,6 +121,9 @@ func (c *Cluster) OperatorApply(ctx context.Context) error {
 // --ignore-not-found (110:2057) -- one mirrored path with OperatorApply, replacing the
 // separately-maintained delete manifest the legacy 110 shipped.
 func (c *Cluster) OperatorDelete(ctx context.Context) error {
+	if err := c.Preflight(ctx, "delete", "customresourcedefinitions"); err != nil {
+		return err
+	}
 	opNS := c.operatorNS(ctx)
 	c.logf("deleting operator from namespace %s", opNS)
 	manifest, err := RenderOperator(c.Cfg, opNS)

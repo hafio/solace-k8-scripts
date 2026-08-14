@@ -31,6 +31,32 @@ func TestStatus(t *testing.T) {
 	}
 }
 
+// TestStatusFailureStopsEarly proves a failing intermediate `get` aborts Status
+// before the remaining queries, matching ShowAll's identical guard (already covered
+// by TestShowAllWrapsGetError); TestStatus itself only exercises the all-succeed
+// sequence.
+func TestStatusFailureStopsEarly(t *testing.T) {
+	cases := []struct {
+		name      string
+		rr        *recRunner
+		wantCalls int
+	}{
+		{"pods get fails", &recRunner{runErr: errFake}, 1},
+		{"svc get fails", &recRunner{runErrQueue: []error{nil, errFake}}, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCluster(tc.rr)
+			if err := c.Status(context.Background()); err == nil {
+				t.Error("Status should fail loud when an intermediate get fails")
+			}
+			if len(tc.rr.calls) != tc.wantCalls {
+				t.Errorf("Status made %d calls, want %d", len(tc.rr.calls), tc.wantCalls)
+			}
+		})
+	}
+}
+
 func TestShowAll(t *testing.T) {
 	pods := "NAMESPACE                    NAME                                   READY   STATUS\n" +
 		"solace                       dev-broker-pubsubplus-p-0              1/1     Running\n" +
@@ -270,6 +296,22 @@ func TestRestartPod(t *testing.T) {
 	}
 }
 
+// TestRestartPodDeleteFails proves the pod-delete failing outright (RBAC denied,
+// etc.) surfaces its own distinct, actionable message and never reaches the
+// rollout-status wait -- only the rollout-wait failure was tested before, via
+// RestartRolling's runErrQueue.
+func TestRestartPodDeleteFails(t *testing.T) {
+	rr := &recRunner{runErr: errFake}
+	c := newCluster(rr)
+	err := c.RestartPod(context.Background(), config.Backup)
+	if err == nil || !strings.Contains(err.Error(), "deleting pod") {
+		t.Fatalf("RestartPod error = %v, want it to wrap \"deleting pod\"", err)
+	}
+	if len(rr.calls) != 1 {
+		t.Errorf("RestartPod should stop before the rollout wait; got %d calls", len(rr.calls))
+	}
+}
+
 func TestRestartRolling(t *testing.T) {
 	t.Run("HA bounces all three in order", func(t *testing.T) {
 		rr := &recRunner{}
@@ -354,6 +396,20 @@ func TestReplicasStart(t *testing.T) {
 			t.Errorf("ReplicasStart should stop at the first stuck role; got %d calls", len(rr.calls))
 		}
 	})
+	t.Run("fails loud when the scale itself fails", func(t *testing.T) {
+		// The existing failure test only exercises the rollout-wait failing after a
+		// successful scale; the scale command's own failure is a distinct, equally
+		// real condition with its own message.
+		rr := &recRunner{runErr: errFake}
+		c := newCluster(rr) // haCfg
+		err := c.ReplicasStart(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "scaling") || !strings.Contains(err.Error(), "up") {
+			t.Fatalf("ReplicasStart error = %v, want it to wrap \"scaling ... up\"", err)
+		}
+		if len(rr.calls) != 1 {
+			t.Errorf("ReplicasStart should stop before the rollout wait; got %d calls", len(rr.calls))
+		}
+	})
 }
 
 func TestReplicasStop(t *testing.T) {
@@ -379,6 +435,19 @@ func TestReplicasStop(t *testing.T) {
 		}
 		if len(rr.calls) != 1 {
 			t.Fatalf("ReplicasStop(standalone) made %d calls, want 1", len(rr.calls))
+		}
+	})
+	t.Run("fails loud when the scale-down itself fails", func(t *testing.T) {
+		// ReplicasStop had no failure test at all before this: the scale command
+		// failing outright is its own real condition with its own message.
+		rr := &recRunner{runErr: errFake}
+		c := newCluster(rr)
+		err := c.ReplicasStop(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "scaling") || !strings.Contains(err.Error(), "down") {
+			t.Fatalf("ReplicasStop error = %v, want it to wrap \"scaling ... down\"", err)
+		}
+		if len(rr.calls) != 1 {
+			t.Errorf("ReplicasStop should stop at the first failing role; got %d calls", len(rr.calls))
 		}
 	})
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"solace/internal/config"
@@ -90,42 +91,63 @@ func (m *Manager) out() io.Writer {
 // and DNS/euid probes are previewed rather than performed.
 func (m *Manager) isDryRun() bool { _, ok := m.R.(engine.Echo); return ok }
 
-// runtime is the configured runtime command (docker.runtime / podman.runtime):
-// argv[0] plus any leading arguments that precede every call's own.
-func (m *Manager) runtime() config.Command { return m.Cfg.ContainerRuntime(m.P) }
-func (m *Manager) name() string            { return m.Cfg.ContainerBlock(m.P).Name }
+// runtime is the guarded runtime command (docker.runtime / podman.runtime): argv[0]
+// plus any leading arguments that precede every call's own. It re-runs
+// config.CheckCommand on every call -- the Manager is built straight from a
+// *config.Config, so it is the executor half of the guard's two enforcement points
+// and must not assume Validate ever ran (execguard.go).
+func (m *Manager) runtime() (config.Command, error) { return m.Cfg.RuntimeCommand(m.P) }
+func (m *Manager) name() string                     { return m.Cfg.ContainerBlock(m.P).Name }
 
 // run executes a runtime subcommand (`<runtime> args...`) through the Runner.
 func (m *Manager) run(ctx context.Context, args ...string) error {
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return err
+	}
 	return m.R.Run(ctx, r.Name(), r.Args(args...)...)
 }
 
 // output captures a runtime subcommand's stdout through the Runner.
 func (m *Manager) output(ctx context.Context, args ...string) ([]byte, error) {
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return nil, err
+	}
 	return m.R.Output(ctx, r.Name(), r.Args(args...)...)
 }
 
-// composeCmd is the compose invocation (docker only): whatever docker.compose
-// names -- a host with only the standalone v1 binary sets it to `docker-compose`
-// -- defaulting to the runtime's own `compose` subcommand. ApplyDefaults fills it
-// too, so the fallback here only matters for a hand-built config (the same
-// arrangement composeFile uses).
-func (m *Manager) composeCmd() config.Command {
-	if len(m.Cfg.Docker.Compose) > 0 {
-		return m.Cfg.Docker.Compose
+// composeCmd is the guarded compose invocation (docker only): whatever
+// docker.compose names -- a host with only the standalone v1 binary sets it to
+// `docker-compose` -- defaulting to the runtime's own `compose` subcommand. Both the
+// derivation and the check live in config.ComposeCommand, so what runs here is
+// exactly what Validate approved.
+func (m *Manager) composeCmd() (config.Command, error) { return m.Cfg.ComposeCommand() }
+
+// compose runs a compose subcommand (`<compose> args...`) through the Runner with
+// this deployment's secret values in the child's environment, which is where the
+// rendered compose file reads them from. Every compose call gets them, not just
+// `up`: compose interpolates the whole model on `down` and `ps` too, and the
+// values are always available from the config, so there is no case where leaving
+// them out would be right.
+func (m *Manager) compose(ctx context.Context, args ...string) error {
+	c, err := m.composeCmd()
+	if err != nil {
+		return err
 	}
-	rt := m.runtime()
-	compose := make(config.Command, 0, len(rt)+1)
-	compose = append(compose, rt...)
-	return append(compose, "compose")
+	return m.R.RunEnv(ctx, m.composeSecretEnv(), c.Name(), c.Args(args...)...)
 }
 
-// compose runs a compose subcommand (`<compose> args...`) through the Runner.
-func (m *Manager) compose(ctx context.Context, args ...string) error {
-	c := m.composeCmd()
-	return m.R.Run(ctx, c.Name(), c.Args(args...)...)
+// composeSecretEnv is the "VAR=value" list backing the compose file's
+// environment-sourced secrets. It is the only place a secret value enters a child
+// process, and it never reaches an argv.
+func (m *Manager) composeSecretEnv() []string {
+	secrets := render.ContainerSecrets(m.Cfg, m.P)
+	env := make([]string, 0, len(secrets))
+	for _, s := range secrets {
+		env = append(env, s.EnvVar()+"="+s.Value)
+	}
+	return env
 }
 
 // --- Check ------------------------------------------------------------------
@@ -176,9 +198,12 @@ func (m *Manager) CheckEnv() {
 	if m.P == config.Podman {
 		fmt.Fprintf(w, "  podman         : rootless=%t quadletDir=%s\n", cfg.Podman.Rootless, cfg.Podman.QuadletDir)
 	} else {
-		fmt.Fprintf(w, "  docker         : compose=%s composeFile=%s\n", m.composeCmd(), m.composeFile())
+		// The configured value, like the runtime line above -- CheckEnv reports what
+		// the env file says, and Reachable (next in Check) is what fails loud if the
+		// execution guard rejects it.
+		fmt.Fprintf(w, "  docker         : compose=%s composeFile=%s\n", cfg.Docker.Compose, m.composeFile())
 	}
-	fmt.Fprintf(w, "  secrets        : %s\n", secretSummary(m.P, render.ContainerSecrets(cfg)))
+	fmt.Fprintf(w, "  secrets        : %s\n", secretSummary(m.P, render.ContainerSecrets(cfg, m.P)))
 	if cfg.RedundancyEnabled() {
 		n := cfg.Nodes
 		fmt.Fprintf(w, "  primary        : %s (%s)\n", n.Primary.Name, orNone(n.Primary.IP))
@@ -195,11 +220,20 @@ func (m *Manager) CheckEnv() {
 // configured compose command, since every deploy goes through it and the plugin
 // is a separate install from the engine. Under --dry-run it only echoes.
 func (m *Manager) Reachable(ctx context.Context) error {
-	if _, err := m.output(ctx, "version"); err != nil {
-		return fmt.Errorf("cannot reach the %s runtime %q (is it installed and running?): %w", platformTitle(m.P), m.runtime(), err)
+	// Resolve through the guard first so a refused command reports why it is
+	// refused, rather than being reported as an unreachable runtime.
+	rt, err := m.runtime()
+	if err != nil {
+		return err
+	}
+	if _, err := m.R.Output(ctx, rt.Name(), rt.Args("version")...); err != nil {
+		return fmt.Errorf("cannot reach the %s runtime %q (is it installed and running?): %w", platformTitle(m.P), rt, err)
 	}
 	if m.P == config.Docker {
-		c := m.composeCmd()
+		c, err := m.composeCmd()
+		if err != nil {
+			return err
+		}
 		if _, err := m.R.Output(ctx, c.Name(), c.Args("version")...); err != nil {
 			return fmt.Errorf("cannot run the compose command %q (install the docker compose plugin, "+
 				"or set docker.compose to this host's standalone 'docker-compose' binary): %w", c, err)
@@ -254,6 +288,11 @@ func (m *Manager) checkDNS(ctx context.Context) error {
 // redundancy PSK exists -- generating one and writing it back into the env file
 // when absent. It ports bash/docker-podman/002-host-prep.sh.
 func (m *Manager) PrepHost(ctx context.Context) error {
+	// Before mkdir/chown and before a generated PSK is written back into the env
+	// file: prep changes host state, so it takes the same probe deploy does.
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
 	if m.P == config.Podman && m.Cfg.Podman.Rootless && m.Geteuid() == 0 {
 		m.logf("[WARN] podman.rootless=true but running as root; run prep as the target rootless user so subuid/subgid mapping matches the deploy.")
 	}
@@ -301,7 +340,10 @@ func (m *Manager) registryLogin(ctx context.Context) error {
 		args = append(args, registry)
 	}
 	m.logf("Logging in to registry %s as %s", orNone(registry), user)
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return err
+	}
 	if err := m.R.RunInput(ctx, []byte(pass), r.Name(), r.Args(args...)...); err != nil {
 		return fmt.Errorf("%s login to registry %s failed: %w", platformTitle(m.P), orNone(registry), err)
 	}
@@ -366,6 +408,12 @@ func (m *Manager) writePSK(psk string) error {
 // settings are externalized first, since the rendered artifact only references
 // them by name.
 func (m *Manager) Deploy(ctx context.Context, role config.Role) error {
+	// Ahead of every write and every mutating call: prepareSecrets loads values
+	// into podman's store and writeArtifact drops a unit/compose file on disk, so
+	// an engine that cannot be reached must stop the deploy before either.
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
 	id := m.Cfg.ResolveNode(role)
 	if m.P == config.Podman {
 		if err := m.checkPodmanEUID(); err != nil {
@@ -383,12 +431,12 @@ func (m *Manager) Deploy(ctx context.Context, role config.Role) error {
 
 // prepareSecrets externalizes the broker's secret settings so the deploy artifact
 // can reference them instead of carrying them: podman loads each into its own
-// secret store, docker writes the 0600 files backing its compose secrets. An
-// empty value fails loud here rather than deploying a broker with no password --
-// except under --dry-run, which must stay previewable before `prep host` has
-// generated the HA pre-shared key.
+// secret store, while docker needs nothing prepared -- its compose secrets read
+// this deployment's values from the environment `compose` is given (see compose),
+// so no secret is ever written to this host's disk. An empty value fails loud here
+// rather than deploying a broker with no password -- except under --dry-run, which
+// must stay previewable before `prep host` has generated the HA pre-shared key.
 func (m *Manager) prepareSecrets(ctx context.Context) error {
-	secrets := render.ContainerSecrets(m.Cfg)
 	// Skipped under --dry-run so a preview stays possible before `prep host` has
 	// generated the PSK; `--gen-secrets-only` runs the same check, since the script
 	// it prints is meant to be executed.
@@ -398,16 +446,19 @@ func (m *Manager) prepareSecrets(ctx context.Context) error {
 		}
 	}
 	if m.P == config.Podman {
-		return m.createPodmanSecrets(ctx, secrets)
+		return m.createPodmanSecrets(ctx, render.ContainerSecrets(m.Cfg, m.P))
 	}
-	return m.writeDockerSecrets(secrets)
+	return nil
 }
 
 // createPodmanSecrets loads each secret into podman's secret store, feeding the
 // value on stdin so it never reaches an argv or the --dry-run echo (§3).
 // --replace makes a redeploy with a rotated value idempotent.
 func (m *Manager) createPodmanSecrets(ctx context.Context, secrets []render.ContainerSecret) error {
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return err
+	}
 	for _, s := range secrets {
 		if err := m.R.RunInput(ctx, []byte(s.Value), r.Name(),
 			r.Args("secret", "create", "--replace", s.Name, "-")...); err != nil {
@@ -415,35 +466,6 @@ func (m *Manager) createPodmanSecrets(ctx context.Context, secrets []render.Cont
 		}
 	}
 	return nil
-}
-
-// writeDockerSecrets writes the file-backed sources of the compose secrets, 0600
-// inside a 0700 directory beside the compose file (the path the rendered compose
-// file points at). Skipped under --dry-run, which must not write files or echo
-// secret bytes.
-func (m *Manager) writeDockerSecrets(secrets []render.ContainerSecret) error {
-	dir := m.secretsDir()
-	if m.isDryRun() {
-		m.logf("[Info] would write %d secret file(s) to %s (skipped under --dry-run).", len(secrets), dir)
-		return nil
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create secrets dir %q: %w", dir, err)
-	}
-	for _, s := range secrets {
-		path := filepath.Join(dir, s.Name)
-		if err := os.WriteFile(path, []byte(s.Value), 0o600); err != nil {
-			return fmt.Errorf("write secret file %q: %w", path, err)
-		}
-	}
-	m.logf("[ OK ] wrote %d secret file(s) to %s", len(secrets), dir)
-	return nil
-}
-
-// secretsDir is where docker's compose-secret sources live: beside the compose
-// file, so the rendered `file: ./<dir>/<name>` reference resolves relative to it.
-func (m *Manager) secretsDir() string {
-	return filepath.Join(filepath.Dir(m.composeFile()), render.SecretsDirName)
 }
 
 // writeArtifact writes a rendered deploy artifact, reporting whether it differs
@@ -508,13 +530,28 @@ func (m *Manager) deployPodman(ctx context.Context, id config.NodeIdentity) erro
 	if err := m.systemctl(ctx, "daemon-reload"); err != nil {
 		return err
 	}
+	// ASSUMED, NOT VERIFIED: quadlet replaces the container on each service start, so
+	// starting a stopped unit re-reads the store and picks up a rotated secret. Docker's
+	// equivalent branch does NOT behave that way -- a stopped container is started with
+	// the credentials it was created with, which is why deployDocker force-recreates. If
+	// podman turns out to share that behaviour, this branch needs the same fix. To check:
+	// stop the unit, rotate a value, `systemctl start`, then read
+	// /run/secrets/username_admin_password inside the container.
 	if !m.serviceActive(ctx) {
 		return m.systemctl(ctx, "start", svc)
 	}
 	// `systemctl start` on an active unit is a no-op, so an already-running broker
 	// would silently keep the old image. Restart is the only way to apply a change.
 	if !changed {
+		// The store secrets were just replaced, but a running container holds the
+		// values it started with, and the unit is byte-identical -- so a rotated
+		// secret needs the same explicit restart docker's does.
+		if m.Restart {
+			m.logf("[Info] unit unchanged; restarting %s to apply any rotated secret.", svc)
+			return m.systemctl(ctx, "restart", svc)
+		}
 		m.logf("[Info] %s is already active on this unit -- nothing to do.", svc)
+		m.logf("[Info] if you rotated a secret, re-run with --restart to restart the service with it.")
 		return nil
 	}
 	if !m.approveRestart(svc) {
@@ -530,20 +567,38 @@ func (m *Manager) deployDocker(ctx context.Context, id config.NodeIdentity) erro
 	if err != nil {
 		return err
 	}
+	// --force-recreate rather than a plain up: a container that exists but is
+	// stopped would otherwise be *started*, and a compose secret's value is baked in
+	// at creation -- so a start replays the credentials it was created with and a
+	// rotated password would be silently ignored. Recreating costs nothing here (a
+	// stopped broker carries no traffic, and the data dir is a host bind mount), and
+	// it makes the postcondition honest: after a deploy, the running container
+	// reflects the current config AND the current secrets. With no container at all
+	// the flag changes nothing -- compose creates one either way.
 	if !m.containerRunning(ctx) {
-		return m.compose(ctx, "-f", file, "up", "-d")
+		return m.compose(ctx, "-f", file, "up", "-d", "--force-recreate")
 	}
 	// `compose up -d` recreates the container when the file changed, which bounces
 	// a running broker -- the same hazard podman has, so it takes the same consent.
-	if !changed {
-		m.logf("[Info] container %s is already running on this compose file -- nothing to do.", m.name())
-		return nil
+	if changed {
+		if !m.approveRestart("container " + m.name()) {
+			m.staleWarning("the compose file")
+			return nil
+		}
+		return m.compose(ctx, "-f", file, "up", "-d")
 	}
-	if !m.approveRestart("container " + m.name()) {
-		m.staleWarning("the compose file")
-		return nil
+	// Nothing changed in the artifact -- but a rotated secret is invisible here by
+	// design: the value lives only in the config and this host's environment, so
+	// there is no on-disk copy to diff. --restart is therefore the explicit way to
+	// push a rotated password or key into the running broker, and it has to force
+	// the recreate that an unchanged compose file would otherwise skip.
+	if m.Restart {
+		m.logf("[Info] compose file unchanged; recreating container %s to apply any rotated secret.", m.name())
+		return m.compose(ctx, "-f", file, "up", "-d", "--force-recreate")
 	}
-	return m.compose(ctx, "-f", file, "up", "-d")
+	m.logf("[Info] container %s is already running on this compose file -- nothing to do.", m.name())
+	m.logf("[Info] if you rotated a secret, re-run with --restart to recreate the container with it.")
+	return nil
 }
 
 // serviceActive reports whether this host's broker unit is already active, so
@@ -560,12 +615,29 @@ func (m *Manager) serviceActive(ctx context.Context) bool {
 
 // containerRunning reports whether this host's broker container is up. Same
 // dry-run rule as serviceActive.
+//
+// The name is matched in Go rather than by `--filter name=`, which both engines
+// treat as an unanchored REGEX: a bare name is a substring match, so a `solace`
+// deployment would see a running `solace-edge` as its own, and a name carrying '.'
+// (which the schema allows) would match any character there. Anchoring the pattern
+// fixes the first but leaves this decision resting on regex semantics that vary by
+// engine -- and a false negative here is expensive now, since Deploy would take the
+// not-running branch and force-recreate a live broker without asking. Comparing the
+// listed names exactly depends on nothing.
 func (m *Manager) containerRunning(ctx context.Context) bool {
 	if m.isDryRun() {
 		return false
 	}
-	out, err := m.output(ctx, "ps", "--quiet", "--filter", "name="+m.name(), "--filter", "status=running")
-	return err == nil && strings.TrimSpace(string(out)) != ""
+	out, err := m.output(ctx, "ps", "--filter", "status=running", "--format", "{{.Names}}")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == m.name() {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Delete -----------------------------------------------------------------
@@ -573,6 +645,9 @@ func (m *Manager) containerRunning(ctx context.Context) bool {
 // Delete stops and removes the broker container (and its unit/compose artifact),
 // then optionally removes the data directory when purge is set.
 func (m *Manager) Delete(ctx context.Context, purge bool) error {
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
 	var err error
 	if m.P == config.Podman {
 		err = m.deletePodman(ctx)
@@ -639,7 +714,7 @@ func (m *Manager) Status(ctx context.Context) error {
 		if err := m.systemctl(ctx, "status", svc, "--no-pager"); err != nil {
 			m.logf("[WARN] systemctl status %s reported non-zero (unit not active?): %v", svc, err)
 		}
-		return m.run(ctx, "ps", "--all", "--filter", "name="+m.name())
+		return m.run(ctx, "ps", "--all", "--filter", "name="+exactName(m.name()))
 	}
 	file := m.composeFile()
 	if m.isDryRun() || fileExists(file) {
@@ -647,7 +722,7 @@ func (m *Manager) Status(ctx context.Context) error {
 			m.logf("[WARN] compose ps failed: %v", err)
 		}
 	}
-	return m.run(ctx, "ps", "--all", "--filter", "name="+m.name())
+	return m.run(ctx, "ps", "--all", "--filter", "name="+exactName(m.name()))
 }
 
 // Describe prints detailed inspection output for this host's broker, the container
@@ -722,13 +797,19 @@ func (m *Manager) CopyInto(ctx context.Context, files []string, destDir string) 
 
 // CLI opens an interactive Solace CLI session inside the container.
 func (m *Manager) CLI(ctx context.Context) error {
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return err
+	}
 	return m.R.RunInteractive(ctx, r.Name(), r.Args("exec", "-it", m.name(), "cli", "-A")...)
 }
 
 // Shell opens an interactive shell inside the container.
 func (m *Manager) Shell(ctx context.Context) error {
-	r := m.runtime()
+	r, err := m.runtime()
+	if err != nil {
+		return err
+	}
 	return m.R.RunInteractive(ctx, r.Name(), r.Args("exec", "-it", m.name(), "bash")...)
 }
 
@@ -823,6 +904,14 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
+// exactName turns a container name into a `ps --filter name=` value that matches it
+// and nothing else. The filter value is a regex, so a bare name is a substring match
+// (a `solace` deployment would list a sibling `solace-edge`) and an unescaped '.' --
+// which the schema allows in a container name -- would match any character. Used for
+// the display listings only; containerRunning compares names in Go instead, because
+// a decision must not rest on an engine's regex handling.
+func exactName(name string) string { return "^" + regexp.QuoteMeta(name) + "$" }
+
 // platformTitle is the display name for the platform in Check output/errors.
 func platformTitle(p config.Platform) string {
 	if p == config.Podman {
@@ -849,11 +938,12 @@ func setOrMissing(s string) string {
 }
 
 // secretSummary reports the externalized secrets by name, whether each value is
-// present, and the mechanism this platform stores them in. Values never appear.
+// present, and the mechanism this platform supplies them through. Values never
+// appear.
 func secretSummary(p config.Platform, secrets []render.ContainerSecret) string {
 	store := "podman secret store"
 	if p == config.Docker {
-		store = "compose secret files"
+		store = "compose environment secrets"
 	}
 	parts := make([]string, 0, len(secrets))
 	for _, s := range secrets {

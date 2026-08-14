@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,5 +119,123 @@ func TestJudgeMalformedInput(t *testing.T) {
 		if !strings.Contains(report, "malformed govulncheck JSON") {
 			t.Errorf("judge(%q) report = %q, want a malformed-JSON message", in, report)
 		}
+	}
+}
+
+// A finding with an empty trace is a legitimately malformed-but-valid-JSON
+// record (govulncheck emitted the OSV/finding pair but traced no frames). The
+// empty-trace guard must fold it into "uncalled" instead of indexing Trace[0]
+// a few lines later and panicking.
+func TestJudgeEmptyTrace(t *testing.T) {
+	code, report := judge([]byte(`{"finding":{"osv":"GO-2026-5000","trace":[]}}`))
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0\nreport:\n%s", code, report)
+	}
+	if want := "1 vulnerability not called by this module"; !strings.Contains(report, want) {
+		t.Errorf("report missing %q\ngot:\n%s", want, report)
+	}
+}
+
+// With only one vuln per bucket in every other fixture, sort.Slice never calls
+// byID's comparator, so a broken or deleted Less would go uncaught by CI (the
+// "seen" map randomizes iteration order every run). Two fixable OSVs given out
+// of ID order forces the comparator to actually run.
+func TestJudgeSortsFixableByID(t *testing.T) {
+	stream := `{"osv":{"id":"GO-2026-9000","summary":"boom high"}}
+{"finding":{"osv":"GO-2026-9000","fixed_version":"v2.0.0","trace":[
+  {"module":"example.com/foo","package":"example.com/foo","function":"Bar","position":{"filename":"foo.go","line":10}}]}}
+{"osv":{"id":"GO-2026-1000","summary":"boom low"}}
+{"finding":{"osv":"GO-2026-1000","fixed_version":"v1.0.0","trace":[
+  {"module":"example.com/baz","package":"example.com/baz","function":"Qux","position":{"filename":"baz.go","line":20}}]}}`
+
+	code, report := judge([]byte(stream))
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1\nreport:\n%s", code, report)
+	}
+	idxLow := strings.Index(report, "GO-2026-1000")
+	idxHigh := strings.Index(report, "GO-2026-9000")
+	if idxLow == -1 || idxHigh == -1 {
+		t.Fatalf("report missing one of the two OSV ids\ngot:\n%s", report)
+	}
+	if idxLow > idxHigh {
+		t.Errorf("expected GO-2026-1000's block before GO-2026-9000's\ngot:\n%s", report)
+	}
+	if want := "2 vulnerabilities called by this module"; !strings.Contains(report, want) {
+		t.Errorf("report missing %q\ngot:\n%s", want, report)
+	}
+}
+
+// A called finding whose trace[0] carries a function but no module is a
+// plausible partial govulncheck record. describe must fall back to the
+// "unknown module" placeholder rather than print a blank field.
+func TestJudgeUnknownModule(t *testing.T) {
+	code, report := judge([]byte(`{"finding":{"osv":"GO-2026-6000","trace":[{"function":"SomeFunc"}]}}`))
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0\nreport:\n%s", code, report)
+	}
+	if want := "GO-2026-6000  unknown module  no released fix"; !strings.Contains(report, want) {
+		t.Errorf("report missing %q\ngot:\n%s", want, report)
+	}
+}
+
+// run's usage branch must fire for any argument count other than exactly one,
+// print the message on errOut (not out), and return exit code 2.
+func TestRunUsageError(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"noArgs", nil},
+		{"tooManyArgs", []string{"a", "b"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			code := run(tc.args, &out, &errOut)
+			if code != 2 {
+				t.Errorf("run(%v) code = %d, want 2", tc.args, code)
+			}
+			if !strings.Contains(errOut.String(), "usage: vulnjudge") {
+				t.Errorf("run(%v) errOut = %q, want a usage message", tc.args, errOut.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("run(%v) out = %q, want empty on a usage error", tc.args, out.String())
+			}
+		})
+	}
+}
+
+// An unreadable path (missing file, bad permissions) is a setup failure, not a
+// scan result: run must name the file in the error and return code 2 rather
+// than handing a zero-value byte slice to judge.
+func TestRunUnreadableFile(t *testing.T) {
+	var out, errOut bytes.Buffer
+	path := filepath.Join("testdata", "does-not-exist.json")
+	code := run([]string{path}, &out, &errOut)
+	if code != 2 {
+		t.Errorf("code = %d, want 2", code)
+	}
+	if !strings.Contains(errOut.String(), path) {
+		t.Errorf("errOut = %q, want it to name the unreadable file %q", errOut.String(), path)
+	}
+	if out.Len() != 0 {
+		t.Errorf("out = %q, want empty on a read error", out.String())
+	}
+}
+
+// The happy path: run reads the file, hands it to judge, prints judge's
+// report to out, and returns judge's code -- proving the wiring between run
+// and judge, not just judge in isolation.
+func TestRunHappyPath(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := run([]string{filepath.Join("testdata", "called_fixable.json")}, &out, &errOut)
+	if code != 1 {
+		t.Errorf("code = %d, want 1\nout:\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "GO-2026-4971") {
+		t.Errorf("out missing report content, got:\n%s", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("errOut = %q, want empty on success", errOut.String())
 	}
 }

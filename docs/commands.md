@@ -51,6 +51,7 @@ solace
     check
     cli [role]
     config
+      additional-users
       disable-default-users
       disable-default-vpn
       domain-certs
@@ -140,7 +141,7 @@ Inherited by every command.
 | `-e`, `--env` | `env.yaml` | env file name, searched in the base dir then &lt;base-dir&gt;/env; a value with a directory is used as-is |
 | `--gen-env-only` | `false` | render the container broker settings as an env file and print them; change nothing (docker/podman only) |
 | `--gen-only` | `false` | render the deployment artifact this command would apply and print it; change nothing |
-| `--gen-secrets-only` | `false` | render this deployment's secrets (k8s Secret manifests; container secret-creation commands) and print them; change nothing |
+| `--gen-secrets-only` | `false` | render this deployment's secrets (k8s Secret manifests; podman secret-create commands; docker export lines to source) and print them; change nothing |
 | `-y`, `--yes` | `false` | skip confirmation prompts (does NOT imply --purge) |
 
 ## Commands
@@ -152,8 +153,12 @@ Deploy and operate Solace PubSub+ brokers on Kubernetes, Docker, or Podman
 solace is a single CLI for deploying and operating Solace PubSub+ Event Brokers.
 It presents the same lifecycle verbs on every platform:
 
-  check -> prep -> deploy -> config -> verify   (up)
-  delete -> teardown                            (down)
+  check -> prep -> deploy       build the deployment   (up)
+  config -> verify              POST-DEPLOYMENT, over the broker CLI
+  delete -> teardown            tear it down           (down)
+
+'up' covers only the first line. config and verify drive the Solace CLI
+inside a broker that is already running, so run them once it is ready.
 
 Pick a platform (k8s, docker, podman), then a verb. Every command takes
 -e/--env <file>, searched in the current directory then ./env.
@@ -207,6 +212,10 @@ solace docker
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
 
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
+
 
 ### solace docker check
 
@@ -228,9 +237,11 @@ solace docker cli
 
 ### solace docker config
 
-Post-deploy configuration (certs, hardening, product keys, CLI)
+Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
 
-With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone).
+Post-deployment configuration: every step here talks to a broker that is already running in this host's container, over the Solace CLI. Nothing under `config` is part of `deploy`, and none of it is applied by `up` -- run it once the container is up.
+
+With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone), except `leader`: that one is cross-host and primary-only, so run it explicitly on the primary.
 
 ```
 solace docker config
@@ -534,6 +545,10 @@ solace k8s
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `operator`, `prep`, `replicas`, `restart`, `shell`, `show-all`, `status`, `teardown`, `up`, `verify`
 
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
+
 
 ### solace k8s check
 
@@ -555,7 +570,9 @@ solace k8s cli [role]
 
 ### solace k8s config
 
-Post-deploy configuration (certs, hardening, product keys, CLI)
+Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
+
+Post-deployment configuration: every step here talks to a broker that is already deployed and running, over the Solace CLI. Nothing under `config` is part of `deploy`, and none of it is applied by `up` -- run it after the pods are ready.
 
 With no subcommand, runs all applicable config steps in order (HA-only steps skipped in standalone).
 
@@ -563,7 +580,16 @@ With no subcommand, runs all applicable config steps in order (HA-only steps ski
 solace k8s config
 ```
 
-Subcommands: `disable-default-users`, `disable-default-vpn`, `domain-certs`, `exec-cli`, `leader`, `product-keys`, `server-cert`
+Subcommands: `additional-users`, `disable-default-users`, `disable-default-vpn`, `domain-certs`, `exec-cli`, `leader`, `product-keys`, `server-cert`
+
+
+### solace k8s config additional-users
+
+Create the admin.additionalUsers CLI users
+
+```
+solace k8s config additional-users
+```
 
 
 ### solace k8s config disable-default-users
@@ -1051,6 +1077,10 @@ solace podman
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
 
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
+
 
 ### solace podman check
 
@@ -1072,9 +1102,11 @@ solace podman cli
 
 ### solace podman config
 
-Post-deploy configuration (certs, hardening, product keys, CLI)
+Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
 
-With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone).
+Post-deployment configuration: every step here talks to a broker that is already running in this host's container, over the Solace CLI. Nothing under `config` is part of `deploy`, and none of it is applied by `up` -- run it once the container is up.
+
+With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone), except `leader`: that one is cross-host and primary-only, so run it explicitly on the primary.
 
 ```
 solace podman config

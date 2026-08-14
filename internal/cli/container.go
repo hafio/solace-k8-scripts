@@ -26,9 +26,13 @@ func newContainerCmd(app *App, p config.Platform) *cobra.Command {
 			if err := checkGenFlags(cmd, app); err != nil {
 				return err
 			}
+			if err := checkAllowCommand(cmd, app); err != nil {
+				return err
+			}
 			return app.load()
 		},
 	}
+	addAllowCommandFlag(c, app)
 
 	// --- lifecycle: check -> prep -> deploy -> config -> verify ---
 	c.AddCommand(leaf(app, "check", "Validate config, DNS, and container runtime", opCtrCheck))
@@ -89,8 +93,13 @@ func newCtrDeployCmd(app *App) *cobra.Command {
 func newCtrConfigCmd(app *App) *cobra.Command {
 	cfg := &cobra.Command{
 		Use:   "config",
-		Short: "Post-deploy configuration (certs, hardening, product keys, CLI)",
-		Long:  "With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone).",
+		Short: "Configure a DEPLOYED broker (certs, hardening, product keys, CLI)",
+		Long: "Post-deployment configuration: every step here talks to a broker that is already " +
+			"running in this host's container, over the Solace CLI. Nothing under `config` is part " +
+			"of `deploy`, and none of it is applied by `up` -- run it once the container is up.\n\n" +
+			"With no subcommand, runs all applicable config steps (HA-only steps skipped in " +
+			"standalone), except `leader`: that one is cross-host and primary-only, so run it " +
+			"explicitly on the primary.",
 		Args:  cobra.NoArgs,
 		RunE:  func(*cobra.Command, []string) error { return opCtrConfigAll(app) },
 	}
@@ -152,7 +161,7 @@ func newCtrVerifyCmd(app *App) *cobra.Command {
 }
 
 func newCtrGenCmd(app *App) *cobra.Command {
-	return genCapable(&cobra.Command{
+	return renderOnly(genCapable(&cobra.Command{
 		Use:   "gen [primary|backup|monitor]",
 		Short: "Render the deploy artifact (quadlet/compose/run) to stdout without applying",
 		Args:  cobra.MaximumNArgs(1),
@@ -163,7 +172,7 @@ func newCtrGenCmd(app *App) *cobra.Command {
 			}
 			return opCtrGen(app, role)
 		},
-	})
+	}))
 }
 
 // newCtrDescribeCmd is the container analog of `k8s describe`. "inspect" is an

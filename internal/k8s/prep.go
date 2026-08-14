@@ -39,6 +39,9 @@ func namespaceManifest(ns string) []byte {
 
 // CreateNamespace applies the broker namespace (011). Idempotent via `apply`.
 func (c *Cluster) CreateNamespace(ctx context.Context) error {
+	if err := c.Preflight(ctx, "create", "namespaces"); err != nil {
+		return err
+	}
 	c.logf("creating namespace %s", c.ns())
 	return c.apply(ctx, namespaceManifest(c.ns()))
 }
@@ -110,6 +113,11 @@ func (c *Cluster) CreateSecrets(ctx context.Context) error {
 	if err := c.secretPreflight(); err != nil {
 		return err
 	}
+	// Ahead of GenSecrets, which reads the cert/key files off disk: no reason to
+	// load key material into this process for a cluster that will refuse it.
+	if err := c.Preflight(ctx, "create", "secrets"); err != nil {
+		return err
+	}
 	manifest, err := GenSecrets(c.Cfg)
 	if err != nil {
 		return err
@@ -122,7 +130,7 @@ func (c *Cluster) CreateSecrets(ctx context.Context) error {
 // always, the TLS and image-pull secrets only when their names are configured. All
 // use --ignore-not-found so a partial or repeat teardown is not an error.
 func (c *Cluster) DeleteSecrets(ctx context.Context) error {
-	names := []string{c.Cfg.Admin.UserSecret}
+	names := []string{c.Cfg.K8s.AdminSecret}
 	if c.Cfg.TLS.ServerSecret != "" {
 		names = append(names, c.Cfg.TLS.ServerSecret)
 	}
@@ -149,6 +157,9 @@ func (c *Cluster) DeleteSecrets(ctx context.Context) error {
 func (c *Cluster) UpdateServerCertSecret(ctx context.Context) error {
 	if c.Cfg.TLS.ServerSecret == "" {
 		return fmt.Errorf("tls.serverSecret must be set to update the server-certificate secret")
+	}
+	if err := c.Preflight(ctx, "update", "secrets"); err != nil {
+		return err
 	}
 	manifest, err := TLSSecret(c.Cfg)
 	if err != nil {
@@ -298,8 +309,10 @@ func (c *Cluster) LabelNodes(ctx context.Context) error {
 		fmt.Fprintln(c.out(), "No custom node labels configured; nothing to label.")
 		return nil
 	}
-	if _, err := c.output(ctx, "auth", "can-i", "update", "nodes"); err != nil {
-		return fmt.Errorf("current context cannot label nodes (kubectl auth can-i update nodes): %w", err)
+	// This check predates Preflight and was its model; it now shares that one
+	// implementation, which tells "you are not allowed" apart from "nobody answered".
+	if err := c.Preflight(ctx, "update", "nodes"); err != nil {
+		return err
 	}
 	nodes, err := c.nodeNames(ctx)
 	if err != nil {

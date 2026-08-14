@@ -12,11 +12,15 @@
 // gen_env_pairs (docker-podman/000-env.sh), gen_quadlet (podman-020) and
 // gen_compose (docker-020).
 //
-// No deployment artifact here ever carries a secret value: the admin password
-// and the redundancy pre-shared key are externalized (podman's secret store,
-// docker's file-backed compose secrets) and referenced by name, so a rendered
-// artifact is safe to print, diff, and commit. SecretScript is the one function
-// that emits secret values, and only a `--gen-secrets-only` run calls it.
+// No deployment artifact here ever carries a secret value: every secret is
+// externalized (podman's secret store, docker's environment-sourced compose
+// secrets) and referenced by name, so a rendered artifact is safe to print, diff,
+// and commit. SecretScript is the one function that emits secret values, and only
+// a `--gen-secrets-only` run calls it.
+//
+// Both engines deliver secrets to the broker the same way k8s does: as files the
+// broker reads through the setting's *filepath variant, mounted under
+// /run/secrets under the name of the setting they feed.
 //
 // Rendering is done with plain string builders rather than text/template: the
 // broker CR is deeply conditional YAML where template whitespace control is
@@ -37,7 +41,7 @@ import (
 const (
 	dataMount = "/var/lib/solace"
 	certMount = "/run/secrets/tls.crt"
-	// secretMount is where docker compose exposes a file-backed secret.
+	// secretMount is where both engines expose a file-backed secret.
 	secretMount = "/run/secrets"
 )
 
@@ -75,8 +79,8 @@ func BrokerCR(c *config.Config) []byte {
 		fmt.Fprint(&b, "  serviceAccount:\n")
 		fmt.Fprintf(&b, "    name: %s\n", c.K8s.ServiceAccount)
 	}
-	fmt.Fprintf(&b, "  adminCredentialsSecret: %s\n", c.Admin.UserSecret)
-	fmt.Fprintf(&b, "  monitoringCredentialsSecret: %s\n", c.Admin.UserSecret)
+	fmt.Fprintf(&b, "  adminCredentialsSecret: %s\n", c.K8s.AdminSecret)
+	fmt.Fprintf(&b, "  monitoringCredentialsSecret: %s\n", c.K8s.AdminSecret)
 	fmt.Fprintf(&b, "  redundancy: %s\n", boolStr(c.RedundancyEnabled()))
 	fmt.Fprintf(&b, "  updateStrategy: %s\n", c.K8s.UpdateStrategy)
 	fmt.Fprint(&b, "  podDisruptionBudgetForHA: true\n")
@@ -389,75 +393,145 @@ type EnvPair struct{ Key, Value string }
 // Assignment renders the pair as "key=value" (podman Environment=, env-file line).
 func (p EnvPair) Assignment() string { return p.Key + "=" + p.Value }
 
-// Externalized container secret names. They are engine-side identifiers (a
-// podman secret name, a compose secret key), so they are fixed rather than
-// configurable -- the deploy artifact and the secret-creation script have to
-// agree on them, and nothing else consumes them.
+// Suffixes for the engine-side secret names. The name is the container name plus
+// one of these: it is a host-wide identifier (a podman secret in the host's store,
+// a host environment variable feeding compose), so two brokers on one host must
+// not collide -- while the default container name "solace" keeps the names the
+// tool has always used. The deploy artifact and the secret-creation script derive
+// them the same way, and nothing else consumes them.
 const (
-	adminPassSecretName = "solace-admin-password"
-	pskSecretName       = "solace-redundancy-psk"
-	certPassSecretName  = "solace-tls-passphrase"
-
-	// SecretsDirName is the directory, alongside the compose file, holding the
-	// file-backed sources of docker's compose secrets. Exported because the
-	// Manager writes the files the rendered compose file points at.
-	SecretsDirName = "solace-secrets"
+	adminPassSuffix = "-admin-password"
+	pskSuffix       = "-redundancy-psk"
+	certPassSuffix  = "-tls-passphrase"
 
 	// filePathSuffix turns a broker setting into its "read the value from this
 	// file" variant (username_admin_password ->
-	// username_admin_passwordfilepath). Docker needs it because compose secrets
-	// arrive as files under /run/secrets, not as environment values; podman
-	// injects its secrets as the setting itself and never uses this form.
+	// username_admin_passwordfilepath). Every platform uses this form: secrets
+	// reach the broker as files, never as environment values.
 	filePathSuffix = "filepath"
 )
 
-// ContainerSecret is one broker setting whose value is a secret, kept out of
-// every deployment artifact. Podman injects Value into the container as EnvKey
-// from its own secret store; docker mounts Value as a file and points
-// FilePathKey at it. Value is only ever written to the engine's secret store (or
-// a 0600 file) and printed by SecretScript -- never rendered into an artifact.
-type ContainerSecret struct {
-	Name      string // engine-side secret name
-	EnvKey    string // the broker setting this secret feeds
-	Value     string // the secret itself
-	ConfigKey string // the env-file key it came from, for actionable errors
+// secretSpec is one secret of this deployment before the engine-side name is
+// known: the broker setting it feeds, the env-file key it came from, its value,
+// and the suffix that names it on the host. ContainerSecrets adds the container
+// name; EnvPairs needs only the setting, since the in-container path is derived
+// from it and is therefore identical on both engines.
+type secretSpec struct {
+	envKey     string
+	configKey  string
+	value      string
+	nameSuffix string
 }
 
-// FilePathKey is the broker setting docker uses to read the value from the
-// mounted secret file instead of an environment value.
-func (s ContainerSecret) FilePathKey() string { return s.EnvKey + filePathSuffix }
-
-// MountPath is where docker compose exposes this secret's file.
-func (s ContainerSecret) MountPath() string { return secretMount + "/" + s.Name }
-
-// ContainerSecrets lists the values that must never appear in a deploy artifact:
-// the admin password (always), the redundancy pre-shared key in HA, and the
-// server-certificate passphrase when the key is encrypted. The order is fixed so
-// the rendered references and the secret-creation script are deterministic and
+// containerSecretSpecs lists the values that must never appear in a deploy
+// artifact: the admin password (always), one password per additional CLI user, the
+// redundancy pre-shared key in HA, and the server-certificate passphrase when the
+// key is encrypted. The order is fixed -- config order for the users -- so the
+// rendered references and the secret-creation script are deterministic and
 // golden-testable.
-func ContainerSecrets(c *config.Config) []ContainerSecret {
-	secrets := []ContainerSecret{{
-		Name:      adminPassSecretName,
-		EnvKey:    "username_" + c.Admin.User + "_password",
-		Value:     c.Admin.Pass,
-		ConfigKey: "admin.pass",
+func containerSecretSpecs(c *config.Config) []secretSpec {
+	specs := []secretSpec{{
+		envKey:     "username_" + c.Admin.User + "_password",
+		configKey:  "admin.pass",
+		value:      c.Admin.Pass,
+		nameSuffix: adminPassSuffix,
 	}}
+	// Usernames are unique and identifier-checked by config.Validate, so both the
+	// host-side name and the in-container filename are unique without further work.
+	for _, u := range c.Admin.AdditionalUsers {
+		specs = append(specs, secretSpec{
+			envKey:     "username_" + u.Username + "_password",
+			configKey:  "admin.additionalUsers." + u.Username + ".password",
+			value:      u.Password,
+			nameSuffix: "-user-" + u.Username + "-password",
+		})
+	}
 	if c.RedundancyEnabled() {
-		secrets = append(secrets, ContainerSecret{
-			Name:      pskSecretName,
-			EnvKey:    "redundancy_authentication_presharedkey_key",
-			Value:     c.Nodes.PSK,
-			ConfigKey: "nodes.psk",
+		specs = append(specs, secretSpec{
+			envKey:     "redundancy_authentication_presharedkey_key",
+			configKey:  "nodes.psk",
+			value:      c.Nodes.PSK,
+			nameSuffix: pskSuffix,
 		})
 	}
 	// Only when the key is actually encrypted: an empty passphrase must not
 	// produce a secret the broker would then try to unlock a plain key with.
 	if c.TLS.CertPassphrase != "" {
+		specs = append(specs, secretSpec{
+			envKey:     "tls_servercertificate_passphrase",
+			configKey:  "tls.certPassphrase",
+			value:      c.TLS.CertPassphrase,
+			nameSuffix: certPassSuffix,
+		})
+	}
+	return specs
+}
+
+// ContainerSecret is one broker setting whose value is a secret, kept out of
+// every deployment artifact. Both engines mount Value as a file at MountPath and
+// point FilePathKey at it; they differ only in where the value comes from --
+// podman's own secret store, or a host environment variable compose reads. Value
+// is only ever handed to the engine and printed by SecretScript -- never rendered
+// into an artifact.
+type ContainerSecret struct {
+	Name      string // engine-side secret name (container name + suffix)
+	EnvKey    string // the broker setting this secret feeds
+	Value     string // the secret itself
+	ConfigKey string // the env-file key it came from, for actionable errors
+}
+
+// FilePathKey is the broker setting that reads the value from the mounted secret
+// file instead of taking it directly.
+func (s ContainerSecret) FilePathKey() string { return s.EnvKey + filePathSuffix }
+
+// MountPath is where the secret's file appears inside the container. It is named
+// after the broker setting rather than the host-side secret name, so the layout
+// inside the container is the same on every host and matches the data keys of the
+// equivalent Kubernetes Secret.
+func (s ContainerSecret) MountPath() string { return secretFilePath(s.EnvKey) }
+
+// Target is the in-container filename the engine mounts this secret as -- the
+// last element of MountPath, which is what compose's `target:` and podman's
+// `target=` take.
+func (s ContainerSecret) Target() string { return s.EnvKey }
+
+// EnvVar is the host environment variable docker's compose file reads this
+// secret's value from: the uppercased secret name with every character a variable
+// name cannot carry replaced by '_'. A name starting with a digit gets a leading
+// '_', since a shell cannot export the former.
+func (s ContainerSecret) EnvVar() string {
+	var b strings.Builder
+	for i, r := range strings.ToUpper(s.Name) {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// secretFilePath is the in-container path of the secret feeding setting envKey.
+func secretFilePath(envKey string) string { return secretMount + "/" + envKey }
+
+// ContainerSecrets is the deployment's secrets with their engine-side names for
+// platform p, which is what the artifacts reference and the Manager creates.
+func ContainerSecrets(c *config.Config, p config.Platform) []ContainerSecret {
+	prefix := c.ContainerBlock(p).Name
+	specs := containerSecretSpecs(c)
+	secrets := make([]ContainerSecret, 0, len(specs))
+	for _, s := range specs {
 		secrets = append(secrets, ContainerSecret{
-			Name:      certPassSecretName,
-			EnvKey:    "tls_servercertificate_passphrase",
-			Value:     c.TLS.CertPassphrase,
-			ConfigKey: "tls.certPassphrase",
+			Name:      prefix + s.nameSuffix,
+			EnvKey:    s.envKey,
+			Value:     s.value,
+			ConfigKey: s.configKey,
 		})
 	}
 	return secrets
@@ -468,9 +542,9 @@ func ContainerSecrets(c *config.Config) []ContainerSecret {
 // It takes no platform: every value it reads is shared, since the docker and
 // podman broker configuration is identical and only the framing differs.
 //
-// Secret settings are deliberately absent: the admin password and the redundancy
-// pre-shared key come from ContainerSecrets and are referenced by the artifact
-// rather than embedded, so this list is safe to print in full (§3).
+// No secret value is here: each one is externalized (ContainerSecrets) and this
+// list only points the broker at the file it will be mounted as, so it is safe to
+// print in full (§3).
 func EnvPairs(c *config.Config, id config.NodeIdentity) []EnvPair {
 	// TZ is the same cross-platform timezone the k8s CR uses, and it is optional:
 	// an unset one leaves the container on the image default, so the pair is
@@ -521,6 +595,19 @@ func EnvPairs(c *config.Config, id config.NodeIdentity) []EnvPair {
 		EnvPair{"messagespool_maxspoolusage", itoa(c.Scaling.MaxSpoolUsageMB)},
 		EnvPair{"username_" + c.Admin.User + "_globalaccesslevel", "admin"},
 	)
+
+	// An additional user's access level is not a secret, so it rides the artifact
+	// like any other setting; only the password is externalized (below).
+	for _, u := range c.Admin.AdditionalUsers {
+		pairs = append(pairs, EnvPair{"username_" + u.Username + "_globalaccesslevel", u.AccessLevel})
+	}
+
+	// Point each secret-bearing setting at the file the engine mounts it as. The
+	// path derives from the setting, not from the per-host secret name, so both
+	// engines emit exactly these lines and the value stays out of the artifact (§3).
+	for _, s := range containerSecretSpecs(c) {
+		pairs = append(pairs, EnvPair{s.envKey + filePathSuffix, secretFilePath(s.envKey)})
+	}
 	return pairs
 }
 
@@ -610,10 +697,12 @@ func Quadlet(c *config.Config, id config.NodeIdentity) []byte {
 	for _, pair := range EnvPairs(c, id) {
 		fmt.Fprintf(&b, "Environment=\"%s\"\n", quadletEscape(pair.Assignment()))
 	}
-	// Secrets ride podman's own secret store: the unit names them, podman injects
-	// each value as its broker setting at start, and no secret lands in the unit.
-	for _, s := range ContainerSecrets(c) {
-		fmt.Fprintf(&b, "Secret=%s,type=env,target=%s\n", s.Name, s.EnvKey)
+	// Secrets ride podman's own secret store: the unit names them, podman mounts
+	// each one at /run/secrets/<target> at start (the EnvPairs above already point
+	// the broker there), and no secret lands in the unit. A relative target is
+	// resolved under /run/secrets by every podman that supports mount secrets.
+	for _, s := range ContainerSecrets(c, p) {
+		fmt.Fprintf(&b, "Secret=%s,type=mount,target=%s\n", s.Name, s.Target())
 	}
 	fmt.Fprint(&b, "\n")
 	fmt.Fprint(&b, "[Service]\n")
@@ -675,20 +764,20 @@ func Compose(c *config.Config, id config.NodeIdentity) []byte {
 	for _, pair := range EnvPairs(c, id) {
 		fmt.Fprintf(&b, "      %s: %q\n", pair.Key, pair.Value)
 	}
-	// Compose secrets arrive as files, not environment values, so the broker is
-	// pointed at each mount path through the setting's *filepath variant.
-	secrets := ContainerSecrets(c)
-	for _, s := range secrets {
-		fmt.Fprintf(&b, "      %s: %q\n", s.FilePathKey(), s.MountPath())
-	}
+	// Secrets are mounted as files under the name of the setting they feed (the
+	// *filepath pointers are already among the EnvPairs above), and their values
+	// come from this host's environment -- which `deploy` sets for the compose
+	// process -- so nothing secret is written beside this file.
+	secrets := ContainerSecrets(c, p)
 	fmt.Fprint(&b, "    secrets:\n")
 	for _, s := range secrets {
-		fmt.Fprintf(&b, "      - %s\n", s.Name)
+		fmt.Fprintf(&b, "      - source: %s\n", s.Name)
+		fmt.Fprintf(&b, "        target: %s\n", s.Target())
 	}
 	fmt.Fprint(&b, "secrets:\n")
 	for _, s := range secrets {
 		fmt.Fprintf(&b, "  %s:\n", s.Name)
-		fmt.Fprintf(&b, "    file: ./%s/%s\n", SecretsDirName, s.Name)
+		fmt.Fprintf(&b, "    environment: %s\n", s.EnvVar())
 	}
 	return []byte(b.String())
 }
@@ -700,7 +789,7 @@ func Compose(c *config.Config, id config.NodeIdentity) []byte {
 // or mate-link key and only fails later, obscurely. nodes.psk is legitimately
 // empty until `prep host` generates it, which is exactly the case the hint names.
 func SecretPreflight(c *config.Config, p config.Platform) error {
-	for _, s := range ContainerSecrets(c) {
+	for _, s := range ContainerSecrets(c, p) {
 		if s.Value != "" {
 			continue
 		}
@@ -714,26 +803,30 @@ func SecretPreflight(c *config.Config, p config.Platform) error {
 	return nil
 }
 
-// SecretScript renders the shell commands that create this deployment's
+// SecretScript renders the shell commands that supply this deployment's
 // externalized secrets, one line per secret -- what `--gen-secrets-only` prints.
-// Podman loads them into its secret store; docker writes the 0600 files backing
-// its compose secrets. This is the only renderer that emits secret values, so
-// its output must be handled exactly like the env file it came from.
+// Podman loads them into its secret store, so the script is run once. Docker's
+// compose secrets read host environment variables, so the script is *sourced* in
+// the shell that runs compose; `deploy` sets the same variables for its own
+// compose process and needs no script at all. This is the only renderer that
+// emits secret values, so its output must be handled exactly like the env file it
+// came from.
 func SecretScript(c *config.Config, p config.Platform) []byte {
-	secrets := ContainerSecrets(c)
+	secrets := ContainerSecrets(c, p)
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s secrets for container %s -- CONTAINS SECRET VALUES.\n", p, c.ContainerBlock(p).Name)
-	fmt.Fprint(&b, "# Run on this host to create them; `deploy` creates the same ones itself.\n")
 	if p == config.Podman {
+		fmt.Fprint(&b, "# Run on this host to create them; `deploy` creates the same ones itself.\n")
 		rt := c.ContainerRuntime(p).String()
 		for _, s := range secrets {
 			fmt.Fprintf(&b, "printf '%%s' %s | %s secret create --replace %s -\n", shQuote(s.Value), rt, s.Name)
 		}
 		return []byte(b.String())
 	}
-	fmt.Fprintf(&b, "mkdir -p -m 700 ./%s\n", SecretsDirName)
+	fmt.Fprint(&b, "# Source this in the shell you run `docker compose` from; `deploy` sets the\n")
+	fmt.Fprint(&b, "# same variables for its own compose process, so it needs nothing from here.\n")
 	for _, s := range secrets {
-		fmt.Fprintf(&b, "( umask 077; printf '%%s' %s > ./%s/%s )\n", shQuote(s.Value), SecretsDirName, s.Name)
+		fmt.Fprintf(&b, "export %s=%s\n", s.EnvVar(), shQuote(s.Value))
 	}
 	return []byte(b.String())
 }

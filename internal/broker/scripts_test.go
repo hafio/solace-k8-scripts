@@ -3,6 +3,8 @@ package broker
 import (
 	"strings"
 	"testing"
+
+	"solace/internal/config"
 )
 
 func TestFixedScripts(t *testing.T) {
@@ -107,6 +109,30 @@ func TestProductKeysScript(t *testing.T) {
 	want := "enable\nadmin\nproduct-key KEY-1\nproduct-key KEY-2\nshow product-key\n"
 	if got != want {
 		t.Errorf("productKeysScript = %q, want %q", got, want)
+	}
+}
+
+func TestAdditionalUsersScript(t *testing.T) {
+	got := additionalUsersScript([]config.AdditionalUser{
+		{Username: "appuser", AccessLevel: "read-write", Password: "app-pass"},
+		{Username: "ro.user", AccessLevel: "read-only", Password: "ro pass"},
+	})
+	want := "home\nno paging\nenable\nconfigure\n" +
+		"create username \"appuser\" password \"app-pass\"\nglobal-access-level read-write\nexit\n" +
+		"create username \"ro.user\" password \"ro pass\"\nglobal-access-level read-only\nexit\n" +
+		"end\n"
+	if got != want {
+		t.Errorf("additionalUsersScript =\n%q\nwant\n%q", got, want)
+	}
+	// A space in a password survives because both values are quoted -- the character
+	// set that would break the quoting is rejected upstream, not escaped here.
+	if !strings.Contains(got, `password "ro pass"`) {
+		t.Errorf("a quoted password must survive intact: %q", got)
+	}
+	// No `show username *` tail: the caller never displays this script's output, and a
+	// trailing show would add broker state to a transcript that is already withheld.
+	if strings.Contains(got, "show username") {
+		t.Errorf("the script must not end with a show whose output is discarded anyway: %q", got)
 	}
 }
 
