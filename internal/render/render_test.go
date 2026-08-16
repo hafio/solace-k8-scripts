@@ -584,3 +584,166 @@ func TestQuadletEscape(t *testing.T) {
 		t.Errorf("quadletEscape = %q", got)
 	}
 }
+
+// TestScalingTierReachesEveryArtifact pins the point of the change: one tier
+// value in the env file decides the CPU cap in all three artifacts, and the
+// goldens only ever show the default tier. 100000 is not the default on any
+// platform, so this also proves the value is read rather than hardcoded.
+func TestScalingTierReachesEveryArtifact(t *testing.T) {
+	k := load(t, config.K8s)
+	k.Scaling.MaxConnections = 100000
+	k.K8s.MsgNode.Mem = "" // clear the tier-100 default so the new tier can fill it
+	k.ApplyDefaults(config.K8s)
+	cr := string(BrokerCR(k))
+	if !strings.Contains(cr, `messagingNodeCpu: "8"`) {
+		t.Errorf("broker CR missing the 100000-tier CPU:\n%s", cr)
+	}
+	if !strings.Contains(cr, "messagingNodeMemory: 30925Mi") {
+		t.Errorf("broker CR missing the 100000-tier memory:\n%s", cr)
+	}
+
+	d := load(t, config.Docker)
+	d.Scaling.MaxConnections = 100000
+	d.Docker.Container.Mem = ""
+	d.ApplyDefaults(config.Docker)
+	compose := string(Compose(d, d.ResolveNode(config.Primary)))
+	if !strings.Contains(compose, `    cpus: "8"`) || !strings.Contains(compose, "    mem_limit: 30925m") {
+		t.Errorf("compose missing the 100000-tier limits:\n%s", compose)
+	}
+
+	p := load(t, config.Podman)
+	p.Scaling.MaxConnections = 100000
+	p.Podman.Container.Mem = ""
+	p.ApplyDefaults(config.Podman)
+	unit := string(Quadlet(p, p.ResolveNode(config.Primary)))
+	if !strings.Contains(unit, "PodmanArgs=--cpus=8") || !strings.Contains(unit, "Memory=30925m") {
+		t.Errorf("quadlet missing the 100000-tier limits:\n%s", unit)
+	}
+}
+
+// scalingSettings is every broker scaling setting the schema drives, under the
+// names the broker itself uses. k8s writes them into spec.systemScaling and the
+// containers pass them as environment variables, but the set is the same.
+var scalingSettings = []string{
+	"system_scaling_maxconnectioncount",
+	"system_scaling_maxqueuemessagecount",
+	"system_scaling_maxkafkabridgecount",
+	"system_scaling_maxkafkabrokerconnectioncount",
+	"system_scaling_maxbridgecount",
+	"system_scaling_maxsubscriptioncount",
+	"system_scaling_maxguaranteedmessagesize",
+}
+
+// TestScalingReachesContainersAsEnv pins the delivery split. Every scaling knob
+// must reach docker and podman as a container environment variable -- five of
+// them used to be rendered on k8s only -- with the values the env file gave,
+// including an explicit 0, which is a real setting and not an absent one.
+func TestScalingReachesContainersAsEnv(t *testing.T) {
+	for _, p := range []config.Platform{config.Docker, config.Podman} {
+		c := load(t, p)
+		c.Scaling.MaxQueueMessages = 240
+		c.Scaling.MaxKafkaBridge = 0
+		c.Scaling.MaxKafkaConnections = 0
+		c.Scaling.MaxBridges = 500
+		c.Scaling.MaxSubscriptions = 5000000
+		c.Scaling.MaxGuaranteedMsgMB = 30
+		c.Scaling.MaxSpoolUsageMB = 1500
+
+		got := map[string]string{}
+		for _, pair := range EnvPairs(c, c.ResolveNode(config.Primary)) {
+			got[pair.Key] = pair.Value
+		}
+		for _, want := range append(scalingSettings, "messagespool_maxspoolusage") {
+			if _, ok := got[want]; !ok {
+				t.Errorf("%s: %s is not passed to the container", p, want)
+			}
+		}
+		for k, want := range map[string]string{
+			"system_scaling_maxqueuemessagecount":          "240",
+			"system_scaling_maxkafkabridgecount":           "0",
+			"system_scaling_maxkafkabrokerconnectioncount": "0",
+			"system_scaling_maxbridgecount":                "500",
+			"system_scaling_maxsubscriptioncount":          "5000000",
+			"system_scaling_maxguaranteedmessagesize":      "30",
+			"messagespool_maxspoolusage":                   "1500",
+		} {
+			if got[k] != want {
+				t.Errorf("%s: %s = %q, want %q", p, k, got[k], want)
+			}
+		}
+	}
+}
+
+// TestScalingReachesK8sAsSpecOnly is the other half: on k8s these are CR fields
+// under spec.systemScaling, never container environment variables. The operator
+// owns the pod, so an env-var delivery there would be both wrong and invisible.
+func TestScalingReachesK8sAsSpecOnly(t *testing.T) {
+	c := load(t, config.K8s)
+	cr := string(BrokerCR(c))
+	if !strings.Contains(cr, "  systemScaling:\n") {
+		t.Fatalf("broker CR has no systemScaling block:\n%s", cr)
+	}
+	for _, want := range scalingSettings {
+		if !strings.Contains(cr, "    "+want+": ") {
+			t.Errorf("broker CR does not carry %s under systemScaling:\n%s", want, cr)
+		}
+	}
+	// The spool size is the one setting the CR spells differently.
+	if !strings.Contains(cr, "    maxSpoolUsage: 10000\n") {
+		t.Errorf("broker CR should carry maxSpoolUsage from scaling.maxSpoolUsageMB:\n%s", cr)
+	}
+	if strings.Contains(cr, "messagespool_maxspoolusage") {
+		t.Errorf("the container env spelling must not appear in the CR:\n%s", cr)
+	}
+	// env: is how a pod would take variables; the CR must not grow one for these.
+	if strings.Contains(cr, "\n  env:\n") {
+		t.Errorf("scaling must reach k8s as spec fields, not pod env vars:\n%s", cr)
+	}
+}
+
+// TestContainerMemOverrideReachesArtifact proves the asymmetry survives to the
+// artifact: memory is the operator's to override, CPU is not.
+func TestContainerMemOverrideReachesArtifact(t *testing.T) {
+	d := load(t, config.Docker)
+	d.Docker.Container.Mem = "24g"
+	compose := string(Compose(d, d.ResolveNode(config.Primary)))
+	if !strings.Contains(compose, "    mem_limit: 24g") {
+		t.Errorf("compose did not carry the mem override:\n%s", compose)
+	}
+	if !strings.Contains(compose, `    cpus: "2"`) {
+		t.Errorf("compose CPU should stay the tier's, got:\n%s", compose)
+	}
+}
+
+// TestUnresolvedTierOmitsLimits covers the renderers' fail-safe branch. A Config
+// built in code -- which is what the executors are handed, and what several
+// container tests construct -- carries maxConnections 0, which is no tier. The
+// artifacts must then omit the limits rather than emit an empty cpus:/--cpus=,
+// which the engines would reject outright.
+func TestUnresolvedTierOmitsLimits(t *testing.T) {
+	d := load(t, config.Docker)
+	d.Scaling.CPU = ""
+	d.Docker.Container.Mem = ""
+	compose := string(Compose(d, d.ResolveNode(config.Primary)))
+	for _, unwanted := range []string{"cpus:", "mem_limit:"} {
+		if strings.Contains(compose, unwanted) {
+			t.Errorf("compose emitted %q with no tier resolved:\n%s", unwanted, compose)
+		}
+	}
+
+	p := load(t, config.Podman)
+	p.Scaling.CPU = ""
+	p.Podman.Container.Mem = ""
+	unit := string(Quadlet(p, p.ResolveNode(config.Primary)))
+	for _, unwanted := range []string{"PodmanArgs=", "Memory="} {
+		if strings.Contains(unit, unwanted) {
+			t.Errorf("quadlet emitted %q with no tier resolved:\n%s", unwanted, unit)
+		}
+	}
+
+	k := load(t, config.K8s)
+	k.Scaling.CPU = ""
+	if cr := string(BrokerCR(k)); strings.Contains(cr, "messagingNodeCpu:") {
+		t.Errorf("broker CR emitted messagingNodeCpu with no tier resolved:\n%s", cr)
+	}
+}

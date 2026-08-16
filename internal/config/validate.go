@@ -26,6 +26,12 @@ func (c *Config) Validate(p Platform) error {
 		return err
 	}
 
+	// Scaling applies to every platform -- k8s through the CR, containers through
+	// the environment -- so it is checked once here (scaling.go).
+	if err := c.validateScaling(); err != nil {
+		return err
+	}
+
 	switch p {
 	case K8s:
 		return c.validateK8s()
@@ -129,6 +135,13 @@ func (c *Config) validateK8s() error {
 	})
 	if len(missing) > 0 {
 		return missingErr(missing)
+	}
+	if c.K8s.MsgNode.CPU != "" {
+		// Removed rather than ignored: a stale cpu: in an env file is a sizing
+		// decision the operator believes is in effect, so it has to be seen.
+		return fmt.Errorf("k8s.msgNode.cpu was removed; broker CPU is fixed by the scaling tier and "+
+			"derived from scaling.maxConnections (one of %s) -- drop the key. "+
+			"k8s.msgNode.mem is unaffected: it still overrides the tier's default memory", scalingTierList)
 	}
 	switch c.K8s.UpdateStrategy {
 	case "automatedRolling", "manualPodRestart":
@@ -347,6 +360,13 @@ func (c *Config) validateContainer(p Platform) error {
 	if u := cb.RunUser; u != "" && !runUserRE.MatchString(u) {
 		return fmt.Errorf("%s.container.runUser %q is invalid: expected uid[:gid] using only letters, digits, '.', '_' and '-'",
 			platformKey(p), u)
+	}
+	if m := cb.Mem; m != "" && !containerMemRE.MatchString(m) {
+		// The likely mistake is copying k8s.msgNode.mem's Kubernetes quantity
+		// across; the engines reject "Mi"/"Gi", and catching it here beats a
+		// compose parse error at deploy time.
+		return fmt.Errorf("%s.container.mem %q is invalid: docker and podman take an integer followed by "+
+			"b, k, m or g (e.g. 6898m), not the Mi/Gi suffix k8s.msgNode.mem uses", platformKey(p), m)
 	}
 	if err := c.validateAdditionalUsers(p); err != nil {
 		return err

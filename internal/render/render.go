@@ -94,8 +94,14 @@ func BrokerCR(c *config.Config) []byte {
 	fmt.Fprintf(&b, "    system_scaling_maxbridgecount: %d\n", s.MaxBridges)
 	fmt.Fprintf(&b, "    system_scaling_maxsubscriptioncount: %d\n", s.MaxSubscriptions)
 	fmt.Fprintf(&b, "    system_scaling_maxguaranteedmessagesize: %d\n", s.MaxGuaranteedMsgMB)
-	fmt.Fprintf(&b, "    maxSpoolUsage: %d\n", s.MaxPool)
-	fmt.Fprintf(&b, "    messagingNodeCpu: %q\n", c.K8s.MsgNode.CPU)
+	fmt.Fprintf(&b, "    maxSpoolUsage: %d\n", s.MaxSpoolUsageMB)
+	// CPU is derived from the tier above rather than read from the env file
+	// (config/scaling.go). It is empty only for a Config built in code that never
+	// ran ApplyDefaults; emitting nothing then leaves the operator's own default
+	// in place, which beats writing an empty quantity the CRD would reject.
+	if s.CPU != "" {
+		fmt.Fprintf(&b, "    messagingNodeCpu: %q\n", s.CPU)
+	}
 	fmt.Fprintf(&b, "    messagingNodeMemory: %s\n", c.K8s.MsgNode.Mem)
 
 	fmt.Fprint(&b, "  storage:\n")
@@ -589,9 +595,19 @@ func EnvPairs(c *config.Config, id config.NodeIdentity) []EnvPair {
 		pairs = append(pairs, EnvPair{"tls_servercertificate_filepath", certMount})
 	}
 
+	// Every scaling knob reaches the container, in the same order and under the
+	// same broker setting names the k8s CR writes into spec.systemScaling -- one
+	// schema block, one set of settings, two ways of delivering them. They are
+	// emitted unconditionally so the artifact states the whole sizing rather than
+	// leaving the broker's internal defaults to fill the gaps invisibly.
 	pairs = append(pairs,
 		EnvPair{"system_scaling_maxconnectioncount", itoa(c.Scaling.MaxConnections)},
 		EnvPair{"system_scaling_maxqueuemessagecount", itoa(c.Scaling.MaxQueueMessages)},
+		EnvPair{"system_scaling_maxkafkabridgecount", itoa(c.Scaling.MaxKafkaBridge)},
+		EnvPair{"system_scaling_maxkafkabrokerconnectioncount", itoa(c.Scaling.MaxKafkaConnections)},
+		EnvPair{"system_scaling_maxbridgecount", itoa(c.Scaling.MaxBridges)},
+		EnvPair{"system_scaling_maxsubscriptioncount", itoa(c.Scaling.MaxSubscriptions)},
+		EnvPair{"system_scaling_maxguaranteedmessagesize", itoa(c.Scaling.MaxGuaranteedMsgMB)},
 		EnvPair{"messagespool_maxspoolusage", itoa(c.Scaling.MaxSpoolUsageMB)},
 		EnvPair{"username_" + c.Admin.User + "_globalaccesslevel", "admin"},
 	)
@@ -664,6 +680,19 @@ func Quadlet(c *config.Config, id config.NodeIdentity) []byte {
 	if gid != "" {
 		fmt.Fprintf(&b, "Group=%s\n", gid)
 	}
+	// Memory has a first-class quadlet key; CPU has none, so the tier's core cap
+	// rides PodmanArgs -- the documented escape hatch for a podman run flag
+	// quadlet does not map. ASSUMED, NOT VERIFIED: podman was not testable here,
+	// so confirm both against the target podman before relying on them; if
+	// Memory= predates that version, fold it into the same PodmanArgs line.
+	// Both are skipped when unset, which is what a Config built in code without
+	// ApplyDefaults carries -- an empty --cpus= would fail the unit at start.
+	if c.Scaling.CPU != "" {
+		fmt.Fprintf(&b, "PodmanArgs=--cpus=%s\n", c.Scaling.CPU)
+	}
+	if cb.Mem != "" {
+		fmt.Fprintf(&b, "Memory=%s\n", cb.Mem)
+	}
 	fmt.Fprintf(&b, "ShmSize=%s\n", cb.ShmSize)
 	fmt.Fprintf(&b, "Ulimit=nofile=%s\n", cb.Ulimits.NoFile)
 	fmt.Fprintf(&b, "Ulimit=memlock=%s\n", cb.Ulimits.MemLock)
@@ -728,6 +757,17 @@ func Compose(c *config.Config, id config.NodeIdentity) []byte {
 	fmt.Fprintf(&b, "    hostname: %s\n", id.Hostname)
 	fmt.Fprintf(&b, "    user: %q\n", cb.RunUser)
 	fmt.Fprint(&b, "    restart: always\n")
+	// Service-level cpus:/mem_limit: rather than deploy.resources.limits, which
+	// the standalone v1 docker-compose binary -- the documented fallback behind
+	// docker.compose -- ignores without --compatibility, silently dropping the
+	// cap. These two are honoured by both v1 and the v2 plugin. Skipped when
+	// unset, which is what a Config built in code without ApplyDefaults carries.
+	if c.Scaling.CPU != "" {
+		fmt.Fprintf(&b, "    cpus: %q\n", c.Scaling.CPU)
+	}
+	if cb.Mem != "" {
+		fmt.Fprintf(&b, "    mem_limit: %s\n", cb.Mem)
+	}
 	fmt.Fprintf(&b, "    shm_size: %s\n", cb.ShmSize)
 	fmt.Fprint(&b, "    ulimits:\n")
 	fmt.Fprint(&b, "      nofile:\n")

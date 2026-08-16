@@ -78,16 +78,36 @@ tls:
   #   - certs/ca.crt
 
 # scaling: omit to take platform defaults (k8s and container differ). Override any:
+#
+# maxConnections is the Solace scaling tier, and it FIXES the broker's CPU on every
+# platform -- there is no cpu key anywhere in this schema. It must be exactly one of
+# the five values below; a value between tiers is rejected, not rounded, because
+# Solace publishes no sizing for it. Memory is the tier's default and stays yours to
+# override (k8s.msgNode.mem, docker/podman container.mem).
+#
+#   maxConnections | cpu (fixed) | memory default
+#   ---------------+-------------+----------------
+#   100            | 2           | 3410Mi  (k8s default tier)
+#   1000           | 2           | 6898Mi  (container default tier)
+#   10000          | 4           | 12435Mi
+#   100000         | 8           | 30925Mi
+#   200000         | 12          | 52581Mi
+#
+# Every knob below applies to every platform. Only the delivery differs: k8s writes
+# them into the broker CR's spec.systemScaling, while docker and podman pass them to
+# the container as environment variables under the broker's own setting names
+# (system_scaling_*, messagespool_maxspoolusage). Two of the defaults differ by
+# platform, marked below; the rest are the same either way.
+#
 # scaling:
 #   maxConnections: 100             # k8s default 100, container default 1000
-#   maxQueueMessages: 100           # both platforms
-#   maxSpoolUsageMB: 100000         # container only
-#   maxPool: 10000                  # k8s only
-#   maxKafkaBridge: 0               # k8s only
-#   maxKafkaConnections: 0          # k8s only
-#   maxBridges: 25                  # k8s only
-#   maxSubscriptions: 50000         # k8s only
-#   maxGuaranteedMsgMB: 10          # k8s only
+#   maxSpoolUsageMB: 10000          # k8s default 10000, container default 100000
+#   maxQueueMessages: 100
+#   maxKafkaBridge: 0
+#   maxKafkaConnections: 0
+#   maxBridges: 25
+#   maxSubscriptions: 50000
+#   maxGuaranteedMsgMB: 10
 
 # replication: parsed from the legacy REPL_* variables by `solace convert` and kept
 # in the schema, but NO command in this binary reads it yet -- the block is
@@ -133,9 +153,11 @@ k8s:
     class: standard                 # StorageClass; omit to use the cluster default
     msgNode: 30Gi                   # mandatory
     monNode: 5Gi
-  # msgNode:                        # message-node pod resources
-  #   cpu: "2"
-  #   mem: 3410Mi
+  # msgNode:                        # message-node pod resources. There is no cpu
+  #   mem: 3410Mi                   # key: CPU is fixed by scaling.maxConnections
+                                    # (see the tier table above), and setting one is
+                                    # a load-time error. mem defaults to that tier's
+                                    # memory and stays overridable here.
   # operator:                       # cluster-scoped EventBroker Operator
   #   image: docker.io/solace/pubsubplus-eventbroker-operator:1.4.0
   #   namespace: pubsubplus-operator-system  # omit to discover the running one
@@ -216,6 +238,11 @@ docker:
                                     # names, so two brokers on one host cannot clash
   #   runUser: "0:0"                # uid:gid the container runs as
   #   shmSize: 1g
+  #   mem: 6898m                    # memory limit, in docker's/podman's own b|k|m|g
+                                    # suffix -- NOT the Mi/Gi k8s.msgNode.mem takes.
+                                    # Defaults to the scaling.maxConnections tier's
+                                    # memory (container default tier 1000 -> 6898m).
+                                    # There is no cpu key: it is fixed by the tier.
   #   ulimits:
   #     nofile: "2448:1048576"
   #     memlock: "-1"
@@ -255,6 +282,7 @@ podman:
   #   name: solace
   #   runUser: "0:0"
   #   shmSize: 1g
+  #   mem: 6898m                    # same rules as docker.container.mem
   #   ulimits:
   #     nofile: "2448:1048576"
   #     memlock: "-1"

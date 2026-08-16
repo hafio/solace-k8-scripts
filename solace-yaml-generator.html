@@ -171,7 +171,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
   <!-- 4. Scaling -->
   <div class="sec" id="s-scale"><h3>Scaling</h3>
     <div class="fr">
-      <div class="f"><label>Max Client Connections</label><select id="i-maxconn" onchange="gen()"><option value="100" selected>100</option><option value="1000">1,000</option><option value="10000">10,000</option><option value="100000">100,000</option><option value="200000">200,000</option></select></div>
+      <div class="f"><label>Max Client Connections</label><select id="i-maxconn" onchange="syncTier();gen()"><option value="100" selected>100</option><option value="1000">1,000</option><option value="10000">10,000</option><option value="100000">100,000</option><option value="200000">200,000</option></select></div>
       <div class="f"><label>Max Spool Usage (MB)</label><input id="i-maxpool" value="10000" oninput="gen()"></div>
       <div class="f"><label>Max Queue Messages (M)</label><select id="i-maxqmsg" onchange="gen()"><option value="100" selected>100</option><option value="240">240</option><option value="3000">3,000</option></select></div>
     </div>
@@ -190,7 +190,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
   <div class="sec" id="s-res"><h3>Resources</h3>
     <div class="f"><a href="https://docs.solace.com/Admin-Ref/Resource-Calculator/pubsubplus-resource-calculator.html" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--st);text-decoration:none;border-bottom:1px dashed var(--st)">Solace Resource Calculator</a></div>
     <div class="fr">
-      <div class="f"><label>Messaging Node CPU</label><input id="i-bkcpu" value="2" oninput="gen()"></div>
+      <div class="f"><label>Messaging Node CPU (fixed by tier)</label><input id="i-bkcpu" value="2" readonly disabled></div>
       <div class="f"><label>Messaging Node Memory</label><input id="i-bkmem" value="3410Mi" oninput="gen()"></div>
     </div>
   </div>
@@ -308,6 +308,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
       <div class="fr">
         <div class="f"><label>Data Directory</label><input id="i-ctrdata" value="/opt/solace/data" oninput="gen()"><div class="h">Host path bind-mounted to /var/lib/solace.</div></div>
         <div class="f"><label>Shared Memory</label><input id="i-ctrshm" value="1g" oninput="gen()"></div>
+        <div class="f"><label>Memory Limit</label><input id="i-ctrmem" value="3410m" oninput="gen()"><div class="h">Docker/podman suffix (b|k|m|g), not Kubernetes' Mi/Gi. Defaults to the scaling tier. CPU has no field: it is fixed by the tier.</div></div>
       </div>
       <div class="fr">
         <div class="f"><label>ulimit nofile</label><input id="i-ctrnofile" value="2448:1048576" oninput="gen()"></div>
@@ -778,7 +779,7 @@ data:
 
 // ═══════ BROKER YAML ═══════
 function genBroker(){
-  const name=V('i-bkname')||'solace-event-broker',ns=V('i-bkns')||'solace-namespace',repo=V('i-repo'),img=V('i-bkimg')||'solace-pubsub-standard',tag=V('i-bktag')||'latest',ps=$('i-pson').checked?V('i-pullsecret'):'',ha=$('i-ha').checked,admSec=V('i-admsecret')||'solace-admin-secret',sc=V('i-sc'),stMsg=V('i-stmsg'),stMon=V('i-stmon'),cpu=V('i-bkcpu'),mem=V('i-bkmem');
+  const name=V('i-bkname')||'solace-event-broker',ns=V('i-bkns')||'solace-namespace',repo=V('i-repo'),img=V('i-bkimg')||'solace-pubsub-standard',tag=V('i-bktag')||'latest',ps=$('i-pson').checked?V('i-pullsecret'):'',ha=$('i-ha').checked,admSec=V('i-admsecret')||'solace-admin-secret',sc=V('i-sc'),stMsg=V('i-stmsg'),stMon=V('i-stmon'),cpu=tier().cpu,mem=V('i-bkmem');
   const fRepo=repo?`${repo}/${img}`:img;
   const tlsOn=$('i-tlson').checked,tlsSec=V('i-tlssecret');
   let y=`apiVersion: pubsubplus.solace.com/v1beta1
@@ -908,6 +909,26 @@ function yq(s){
   return '"'+s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
 }
 // kv/klist/blk skip empty values, and blk drops a block whose body came out empty.
+// Solace scaling tiers. maxConnections fixes the broker's CPU and defaults its
+// memory; this mirrors internal/config/scaling.go, so the two move together.
+const TIERS={100:{cpu:'2',mem:'3410Mi'},1000:{cpu:'2',mem:'6898Mi'},10000:{cpu:'4',mem:'12435Mi'},
+             100000:{cpu:'8',mem:'30925Mi'},200000:{cpu:'12',mem:'52581Mi'}};
+function tier(){return TIERS[V('i-maxconn')]||TIERS[100];}
+// ctrMem rewrites a Kubernetes quantity into the suffix docker and podman accept
+// (they reject Mi/Gi); both count in binary units, so only the trailing i goes.
+function ctrMem(m){return /i$/.test(m)?m.slice(0,-1).toLowerCase():m;}
+// isTierMem reports a memory field still holding some tier's default, so syncTier
+// can refresh it on a tier change without discarding a hand-typed value.
+function isTierMem(v){return v===''||Object.values(TIERS).some(t=>t.mem===v||ctrMem(t.mem)===v);}
+// syncTier pushes the selected tier into the resource fields. CPU is always
+// overwritten -- it is not the user's to set -- while memory is only refreshed
+// when it has not been customised.
+function syncTier(){
+  const t=tier(),cpu=$('i-bkcpu'),mem=$('i-bkmem'),ctr=$('i-ctrmem');
+  if(cpu)cpu.value=t.cpu;
+  if(mem&&isTierMem(mem.value))mem.value=t.mem;
+  if(ctr&&isTierMem(ctr.value))ctr.value=ctrMem(t.mem);
+}
 function kv(k,v,ind){return v?`${ind}${k}: ${yq(v)}\n`:'';}
 function knum(k,v,ind){return v!==''&&v!=null?`${ind}${k}: ${v}\n`:'';}
 function klist(k,arr,ind){if(!arr||!arr.length)return '';let o=`${ind}${k}:\n`;arr.forEach(v=>{o+=`${ind}  - ${yq(v)}\n`;});return o;}
@@ -949,8 +970,7 @@ function genEnv(){
   y+='\nscaling:\n'
     +knum('maxConnections',V('i-maxconn'),'  ')
     +knum('maxQueueMessages',V('i-maxqmsg'),'  ')
-    +knum('maxPool',V('i-maxpool'),'  ')
-    +(ctrOn?knum('maxSpoolUsageMB',V('i-maxpool'),'  '):'')
+    +knum('maxSpoolUsageMB',V('i-maxpool'),'  ')
     +knum('maxKafkaBridge',V('i-maxkb'),'  ')
     +knum('maxKafkaConnections',V('i-maxkc'),'  ')
     +knum('maxBridges',V('i-maxbr'),'  ')
@@ -969,7 +989,8 @@ function genEnv(){
     +kv('cliScriptsFolder',V('i-clifolder'),'  ')
     +kv('diagDir',V('i-diagdir'),'  ');
   y+=blk('storage',kv('class',V('i-sc'),'    ')+kv('msgNode',V('i-stmsg'),'    ')+kv('monNode',V('i-stmon'),'    '),'  ');
-  y+=blk('msgNode',kv('cpu',V('i-bkcpu'),'    ')+kv('mem',V('i-bkmem'),'    '),'  ');
+  // No cpu key: it is fixed by the scaling tier, and the loader rejects one.
+  y+=blk('msgNode',kv('mem',V('i-bkmem'),'    '),'  ');
   // watchBrokerNs defaults to true in the schema, so it is only emitted when the
   // user turned it off -- keeping the output to "what the source actually set".
   y+=blk('operator',kv('image',V('i-opimg'),'    ')+kv('namespace',V('i-opns'),'    ')
@@ -1007,7 +1028,7 @@ function genEnv(){
   // ── docker / podman / nodes ──
   if(ctrOn){
     const cblock=kv('name',V('i-ctrname'),'    ')+kv('runUser',V('i-ctruser'),'    ')
-      +kv('shmSize',V('i-ctrshm'),'    ')+kv('dataDir',V('i-ctrdata'),'    ')
+      +kv('shmSize',V('i-ctrshm'),'    ')+kv('mem',V('i-ctrmem'),'    ')+kv('dataDir',V('i-ctrdata'),'    ')
       +blk('ulimits',kv('nofile',V('i-ctrnofile'),'      ')+kv('memlock',V('i-ctrmemlock'),'      ')
         +kv('core',V('i-ctrcore'),'      '),'    ');
     const nblock=kv('mode',V('i-ctrnetmode'),'    ')+klist('ports',L('i-ctrports'),'    ');

@@ -217,14 +217,25 @@ func TestConvertLegacyK8sEnv(t *testing.T) {
 	// only warning allowed here is the replication advisory -- this fixture does set
 	// REPL_MATE/REPL_CONN_SSL, and they map into a schema block no command reads
 	// yet. Anything else is still a failure.
+	// SOLBK_MSGNODE_CPU is the second allowed warning: the fixture sets it, as
+	// every real legacy file does, and broker CPU is now fixed by the scaling
+	// tier -- so it is dropped with a reason rather than carried over.
 	for _, w := range res.Warnings {
-		if strings.Contains(w, "REPL_MATE") {
+		if strings.Contains(w, "REPL_MATE") || strings.Contains(w, "SOLBK_MSGNODE_CPU") {
 			continue
 		}
 		t.Errorf("unexpected warning converting the sample: %s", w)
 	}
 	if !hasWarning(res.Warnings, "REPL_MATE") {
 		t.Error("the sample configures replication, so the inert-block advisory should have fired")
+	}
+	if !hasWarning(res.Warnings, "SOLBK_MSGNODE_CPU") {
+		t.Error("the sample sets SOLBK_MSGNODE_CPU, so the removal advisory should have fired")
+	}
+	// SOLOP_CPU is "500m" in this fixture, so a bare `cpu: "2"` could only be the
+	// dropped msgNode one.
+	if strings.Contains(string(res.YAML), `cpu: "2"`) {
+		t.Errorf("SOLBK_MSGNODE_CPU must not reach the YAML:\n%s", res.YAML)
 	}
 }
 
@@ -442,6 +453,63 @@ func TestConvertDockerRunModeWarns(t *testing.T) {
 	}
 	if !hasWarning(res.Warnings, "DOCKER_MODE") {
 		t.Errorf("warnings should name DOCKER_MODE, got %v", res.Warnings)
+	}
+}
+
+// TestConvertOffTierMaxConnWarns covers the legacy value that has no successor:
+// SOLBK_SCALING_MAXCONN was any integer, and it is now one of five tiers. The
+// value still converts -- rewriting the operator's declared load would be worse
+// than reporting it -- and Convert's own re-validation of its output is what
+// surfaces the problem, so this needs no dedicated mapping code.
+func TestConvertOffTierMaxConnWarns(t *testing.T) {
+	src := "SOLBK_IMAGE=\"r\"\nSOLBK_IMG_TAG=\"t\"\nSOLBK_ADM_PASS=\"p\"\nSOLBK_NODE_PRI_NAME=\"h\"\n" +
+		"SOLBK_NETWORK_MODE=\"host\"\nSOLBK_DATA_DIR=\"/opt/solace/data\"\nSOLBK_SCALING_MAXCONN=\"5000\"\n"
+	res := convertOK(t, src, config.Docker)
+	if !strings.Contains(string(res.YAML), "maxConnections: 5000") {
+		t.Errorf("the declared load must still be written for the operator to fix:\n%s", res.YAML)
+	}
+	if !hasWarning(res.Warnings, "will not load as-is") {
+		t.Errorf("warnings should flag that the output does not load, got %v", res.Warnings)
+	}
+	if !hasWarning(res.Warnings, "scaling.maxConnections must be one of") {
+		t.Errorf("warnings should carry the tier error, got %v", res.Warnings)
+	}
+}
+
+// TestConvertSpoolVariablesUnify covers the two legacy names for one key: the k8s
+// bootstrap spelled the spool size SOLBK_SCALING_MAXPOOL and the container one
+// SOLBK_SPOOL_MAXUSAGE, and scaling.maxSpoolUsageMB is now the only key. Each
+// platform's own name wins, and a file carrying both is told which was used
+// rather than having one picked in silence.
+func TestConvertSpoolVariablesUnify(t *testing.T) {
+	const ctrBase = "SOLBK_IMAGE=\"r\"\nSOLBK_IMG_TAG=\"t\"\nSOLBK_ADM_PASS=\"p\"\nSOLBK_NODE_PRI_NAME=\"h\"\n" +
+		"SOLBK_NETWORK_MODE=\"host\"\nSOLBK_DATA_DIR=\"/opt/solace/data\"\n"
+
+	// The k8s name alone still converts, on either platform's file.
+	res := convertOK(t, ctrBase+"SOLBK_SCALING_MAXPOOL=\"1500\"\n", config.Docker)
+	if !strings.Contains(string(res.YAML), "maxSpoolUsageMB: 1500") {
+		t.Errorf("the legacy k8s spelling should map to the surviving key:\n%s", res.YAML)
+	}
+	if strings.Contains(string(res.YAML), "maxPool:") {
+		t.Errorf("maxPool was removed and must not be emitted:\n%s", res.YAML)
+	}
+
+	// Both set: this platform's own name wins and the other is reported.
+	res = convertOK(t, ctrBase+"SOLBK_SPOOL_MAXUSAGE=\"2500\"\nSOLBK_SCALING_MAXPOOL=\"1500\"\n", config.Docker)
+	if !strings.Contains(string(res.YAML), "maxSpoolUsageMB: 2500") {
+		t.Errorf("the container bootstrap's own variable should win on docker:\n%s", res.YAML)
+	}
+	if !hasWarning(res.Warnings, "SOLBK_SPOOL_MAXUSAGE was used") {
+		t.Errorf("warnings should name which variable won, got %v", res.Warnings)
+	}
+
+	// On k8s the preference is the other way round.
+	res = convertOK(t, k8sEnv+"SOLBK_SPOOL_MAXUSAGE=\"2500\"\nSOLBK_SCALING_MAXPOOL=\"1500\"\n", config.K8s)
+	if !strings.Contains(string(res.YAML), "maxSpoolUsageMB: 1500") {
+		t.Errorf("the k8s bootstrap's own variable should win on k8s:\n%s", res.YAML)
+	}
+	if !hasWarning(res.Warnings, "SOLBK_SCALING_MAXPOOL was used") {
+		t.Errorf("warnings should name which variable won, got %v", res.Warnings)
 	}
 }
 

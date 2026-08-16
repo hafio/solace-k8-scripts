@@ -219,8 +219,17 @@ func TestApplyDefaultsK8s(t *testing.T) {
 	if c.K8s.Storage.MonNode != "5Gi" {
 		t.Errorf("Storage.MonNode = %q", c.K8s.Storage.MonNode)
 	}
-	if c.K8s.MsgNode.CPU != "2" || c.K8s.MsgNode.Mem != "3410Mi" {
-		t.Errorf("MsgNode = %+v", c.K8s.MsgNode)
+	// CPU is never defaulted into the msgNode block any more: it is fixed by the
+	// scaling tier and lands on Scaling.CPU, leaving MsgNode.CPU as the sentinel
+	// validateK8s rejects. Memory comes from the same tier (100 -> 3410Mi).
+	if c.K8s.MsgNode.CPU != "" {
+		t.Errorf("MsgNode.CPU = %q, want empty (CPU is tier-fixed)", c.K8s.MsgNode.CPU)
+	}
+	if c.K8s.MsgNode.Mem != "3410Mi" {
+		t.Errorf("MsgNode.Mem = %q, want 3410Mi", c.K8s.MsgNode.Mem)
+	}
+	if c.Scaling.CPU != "2" {
+		t.Errorf("Scaling.CPU = %q, want 2", c.Scaling.CPU)
 	}
 	if c.K8s.Operator.Image != "docker.io/solace/pubsubplus-eventbroker-operator:1.4.0" {
 		t.Errorf("Operator.Image = %q", c.K8s.Operator.Image)
@@ -228,7 +237,7 @@ func TestApplyDefaultsK8s(t *testing.T) {
 	if c.K8s.Operator.CPU != "500m" || c.K8s.Operator.Mem != "512Mi" {
 		t.Errorf("Operator resources = %+v", c.K8s.Operator)
 	}
-	if c.Scaling.MaxConnections != 100 || c.Scaling.MaxPool != 10000 ||
+	if c.Scaling.MaxConnections != 100 || c.Scaling.MaxSpoolUsageMB != 10000 ||
 		c.Scaling.MaxQueueMessages != 100 || c.Scaling.MaxBridges != 25 ||
 		c.Scaling.MaxSubscriptions != 50000 || c.Scaling.MaxGuaranteedMsgMB != 10 {
 		t.Errorf("Scaling defaults = %+v", c.Scaling)
@@ -270,6 +279,11 @@ func assertContainerBlockDefaults(t *testing.T, b Container) {
 	if b.ShmSize != "1g" {
 		t.Errorf("ShmSize = %q, want 1g", b.ShmSize)
 	}
+	// The container default tier is 1000 connections -> 6898Mi, rewritten into the
+	// b|k|m|g suffix docker and podman accept.
+	if b.Mem != "6898m" {
+		t.Errorf("Mem = %q, want 6898m", b.Mem)
+	}
 	if b.DataDir != "/opt/solace/data" {
 		t.Errorf("DataDir = %q, want /opt/solace/data", b.DataDir)
 	}
@@ -297,6 +311,19 @@ func assertContainerScaling(t *testing.T, c *Config) {
 	t.Helper()
 	if c.Scaling.MaxConnections != 1000 || c.Scaling.MaxQueueMessages != 100 || c.Scaling.MaxSpoolUsageMB != 100000 {
 		t.Errorf("container Scaling defaults = %+v", c.Scaling)
+	}
+	// Every knob reaches the container, so the ones that used to be k8s-only are
+	// defaulted here too -- and to the same values, so an env file that omits them
+	// sizes the same broker on either platform.
+	if c.Scaling.MaxBridges != 25 || c.Scaling.MaxSubscriptions != 50000 || c.Scaling.MaxGuaranteedMsgMB != 10 {
+		t.Errorf("container Scaling defaults missing the shared knobs = %+v", c.Scaling)
+	}
+	// The kafka pair has no default on either platform: 0 is a real value.
+	if c.Scaling.MaxKafkaBridge != 0 || c.Scaling.MaxKafkaConnections != 0 {
+		t.Errorf("container kafka scaling should stay 0 = %+v", c.Scaling)
+	}
+	if c.Scaling.CPU != "2" {
+		t.Errorf("container Scaling.CPU = %q, want 2 (tier 1000)", c.Scaling.CPU)
 	}
 }
 
@@ -425,6 +452,9 @@ func TestValidateK8sValid(t *testing.T) {
 
 func TestValidateK8sMissingMandatory(t *testing.T) {
 	c := &Config{Redundancy: "yes"} // no defaults applied; all mandatory empty
+	// The scaling tier is checked ahead of the platform switch, so a hand-built
+	// config has to name one to reach the mandatory-field message under test.
+	c.Scaling.MaxConnections = 100
 	err := c.Validate(K8s)
 	if err == nil {
 		t.Fatal("expected error for missing mandatory k8s fields")
@@ -882,6 +912,7 @@ func TestValidateDockerComposeCommand(t *testing.T) {
 
 func TestValidateUnknownPlatform(t *testing.T) {
 	c := &Config{Redundancy: "yes"}
+	c.Scaling.MaxConnections = 100 // reach the platform switch, not the tier check
 	err := c.Validate(Platform("nope"))
 	if err == nil || !strings.Contains(err.Error(), "unknown platform") {
 		t.Errorf("expected unknown platform error, got: %v", err)

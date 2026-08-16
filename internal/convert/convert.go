@@ -243,8 +243,24 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 	d.section("scaling", func(d *doc) {
 		num(d, "maxConnections", "SOLBK_SCALING_MAXCONN")
 		num(d, "maxQueueMessages", "SOLBK_SCALING_MAXQMSG")
-		num(d, "maxSpoolUsageMB", "SOLBK_SPOOL_MAXUSAGE")
-		num(d, "maxPool", "SOLBK_SCALING_MAXPOOL")
+		// One key now, two legacy names for it: the container bootstrap spelled the
+		// spool size SOLBK_SPOOL_MAXUSAGE and the k8s one SOLBK_SCALING_MAXPOOL.
+		// Read this platform's own first so a file carrying both converts to the
+		// value its bootstrap actually used, and say so rather than picking in
+		// silence.
+		spoolVars := []string{"SOLBK_SPOOL_MAXUSAGE", "SOLBK_SCALING_MAXPOOL"}
+		if p == config.K8s {
+			spoolVars = []string{"SOLBK_SCALING_MAXPOOL", "SOLBK_SPOOL_MAXUSAGE"}
+		}
+		pick := spoolVars[1]
+		if v.s(spoolVars[0]) != "" {
+			pick = spoolVars[0]
+			if v.s(spoolVars[1]) != "" {
+				warns = append(warns, spoolVars[0]+" and "+spoolVars[1]+" are now the single key "+
+					"scaling.maxSpoolUsageMB; "+spoolVars[0]+" was used, the other dropped")
+			}
+		}
+		num(d, "maxSpoolUsageMB", pick)
 		num(d, "maxKafkaBridge", "SOLBK_SCALING_MAXKAFKABRIDGE")
 		num(d, "maxKafkaConnections", "SOLBK_SCALING_MAXKAFKACONN")
 		num(d, "maxBridges", "SOLBK_SCALING_MAXBRIDGE")
@@ -292,7 +308,15 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 				d.kv("monNode", v.s("SOLBK_STORAGE_MONNODE"))
 			})
 			d.block("msgNode", func(d *doc) {
-				d.kv("cpu", v.s("SOLBK_MSGNODE_CPU"))
+				// cpu was removed, so carrying the value over would only fail
+				// validation later; it is dropped here with the reason named. The
+				// read still happens so the variable counts as mapped rather than
+				// resurfacing in the unmapped list.
+				if v.s("SOLBK_MSGNODE_CPU") != "" {
+					warns = append(warns, `SOLBK_MSGNODE_CPU is no longer supported: broker CPU is fixed by the scaling `+
+						`tier and derived from scaling.maxConnections, so k8s.msgNode.cpu was omitted. `+
+						`Check that SOLBK_SCALING_MAXCONN names the tier you sized for`)
+				}
 				d.kv("mem", v.s("SOLBK_MSGNODE_MEM"))
 			})
 			d.block("operator", func(d *doc) {

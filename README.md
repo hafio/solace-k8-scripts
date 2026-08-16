@@ -161,6 +161,12 @@ privileged one and says so; raise it per user as needed.
 `admin.userSecret` is now `k8s.adminSecret`, and the `admin.userPasswords`
 `["user=password"]` list is now `admin.additionalUsers`.
 
+**Removed keys: `k8s.msgNode.cpu` and `scaling.maxPool`.** Broker CPU is now fixed by the
+scaling tier rather than set by hand, and `maxPool` named the same broker setting as
+`scaling.maxSpoolUsageMB` -- one concept under two platform-specific keys, which the scaling
+block no longer has. Both fail to load naming their replacement; `k8s.msgNode.mem` is
+unaffected. See [Scaling](#scaling).
+
 **`env/sample.yaml` is the authoritative, fully annotated schema** -- start there rather
 than from this README. The most-used keys:
 
@@ -194,6 +200,82 @@ Common optional knobs:
 | `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
 | `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |
 | `k8s.containerSecurity` | -- | `runAsUser`/`runAsGroup`/`readOnlyRootFilesystem` for the broker container |
+| `scaling.*` | see [Scaling](#scaling) | Broker sizing, applied on every platform -- the CR's `spec.systemScaling` on k8s, container environment variables on docker and podman |
+| `scaling.maxConnections` | `100` (k8s) / `1000` (container) | The Solace scaling tier. Fixes the broker's CPU and defaults its memory on every platform -- see [Scaling tiers](#scaling-tiers) |
+| `<docker\|podman>.container.mem` | the tier's memory | Container memory limit, in docker's and podman's own `b\|k\|m\|g` suffix (not Kubernetes' `Mi`/`Gi`). There is no matching cpu key: CPU is fixed by the tier |
+
+### Scaling
+
+Every key under `scaling` applies to every platform. Only the delivery differs: Kubernetes
+writes them into the broker CR's `spec.systemScaling`, while docker and podman pass them to
+the container as environment variables under the broker's own setting names. One env file
+therefore sizes the same broker whichever platform runs it.
+
+| `scaling` key | Broker setting (container env var / CR field) |
+| --- | --- |
+| `maxConnections` | `system_scaling_maxconnectioncount` |
+| `maxQueueMessages` | `system_scaling_maxqueuemessagecount` |
+| `maxKafkaBridge` | `system_scaling_maxkafkabridgecount` |
+| `maxKafkaConnections` | `system_scaling_maxkafkabrokerconnectioncount` |
+| `maxBridges` | `system_scaling_maxbridgecount` |
+| `maxSubscriptions` | `system_scaling_maxsubscriptioncount` |
+| `maxGuaranteedMsgMB` | `system_scaling_maxguaranteedmessagesize` |
+| `maxSpoolUsageMB` | `messagespool_maxspoolusage` (the CR spells it `maxSpoolUsage`) |
+
+Defaults are identical across platforms except `maxConnections` (100 on k8s, 1000 on
+containers) and `maxSpoolUsageMB` (10000 on k8s, 100000 on containers).
+
+#### Scaling tiers
+
+`scaling.maxConnections` is the Solace scaling tier, and it decides the broker's CPU on all
+three platforms. CPU is **not** configurable: sizing a broker by connection count and then
+sizing its CPU independently is how a 200k-connection broker ends up on two cores. Memory is
+the tier's default and stays yours to override; storage is untouched by the tier.
+
+| `scaling.maxConnections` | CPU cores (fixed) | Memory default (k8s / container) |
+| --- | --- | --- |
+| `100` (k8s default) | 2 | `3410Mi` / `3410m` |
+| `1000` (container default) | 2 | `6898Mi` / `6898m` |
+| `10000` | 4 | `12435Mi` / `12435m` |
+| `100000` | 8 | `30925Mi` / `30925m` |
+| `200000` | 12 | `52581Mi` / `52581m` |
+
+The value must be **exactly** one of those five. A value between tiers is rejected rather
+than rounded, because Solace publishes no sizing for it. Override memory with
+`k8s.msgNode.mem` (a Kubernetes quantity, `Mi`/`Gi`) or `<docker|podman>.container.mem`
+(docker's and podman's own `b|k|m|g` suffix -- the engines reject `Mi`, so the two spellings
+are not interchangeable and the loader says so).
+
+Docker and podman previously emitted no CPU or memory limit at all. They now carry the
+tier's cap in the generated compose file (`cpus:`, `mem_limit:`) and quadlet unit
+(`PodmanArgs=--cpus=`, `Memory=`), so an existing container deployment must be **redeployed**
+-- not just restarted -- to pick them up. In an HA group the monitor host gets the same caps
+as the messaging hosts; these are ceilings rather than reservations, so an oversized monitor
+limit costs nothing.
+
+#### File descriptors on rootless podman
+
+Both container artifacts ask the engine for `<docker|podman>.container.ulimits.nofile`
+(default `2448:1048576`). A **rootless** container cannot raise `nofile` above the hard limit
+of the user invoking podman -- the kernel refuses -- so `solace podman prep` checks it and
+stops with the exact drop-in to add when it is too low:
+
+```
+solace podman prep -e env/prod.yaml
+...
+error: rootless podman: this user's hard nofile limit is 1024, but
+podman.container.ulimits.nofile needs 1048576 -- a rootless container cannot raise it
+above the user's own hard limit, so the broker would start under-provisioned.
+  Add this as root to /etc/security/limits.d/99-solace.conf, replacing <user> with the
+  account that runs the container, then log out and back in:
+    <user> hard nofile 1048576
+    <user> soft nofile 2448
+```
+
+Prep reports and refuses rather than fixing it: raising a hard limit means editing host-wide
+security configuration as root, which is what a rootless deployment exists to avoid. Rootful
+podman and docker are unaffected -- their privileged engine raises the limit itself -- so the
+check runs only for `podman.rootless: true`.
 
 ### The command fields are executable content
 

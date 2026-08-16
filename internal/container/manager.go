@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"solace/internal/config"
@@ -242,6 +243,79 @@ func (m *Manager) Reachable(ctx context.Context) error {
 	return nil
 }
 
+// checkNoFile is the rootless-only half of the nofile limit. Both artifacts ask
+// the engine for the configured limit (compose `ulimits.nofile`, quadlet
+// `Ulimit=nofile=`), but a ROOTLESS container cannot raise nofile above the hard
+// limit of the user invoking podman -- the kernel refuses, and the broker then
+// starts against a limit far below what it needs and fails obscurely later.
+// Rootful podman and docker are unaffected: their daemon/engine runs privileged
+// and can raise the limit itself, which is why this runs only in that branch.
+//
+// It reports and refuses rather than fixing: raising a hard limit means editing
+// host-wide security configuration as root, which is precisely what a rootless
+// deployment exists to avoid. The message carries the exact drop-in to add.
+func (m *Manager) checkNoFile(ctx context.Context) error {
+	want := m.Cfg.ContainerBlock(m.P).Ulimits.NoFile
+	_, hardWant := splitLimit(want)
+	if hardWant == 0 {
+		return nil // unlimited or unparseable: nothing to assert against
+	}
+	// `ulimit` is a shell builtin, so it needs a shell; this is the user's own
+	// limit because prep runs as the user that will own the rootless container.
+	out, err := m.R.Output(ctx, "sh", "-c", "ulimit -Hn")
+	if m.isDryRun() {
+		fmt.Fprintln(m.out(), "  nofile         : skipped (--dry-run)")
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("cannot read this user's hard nofile limit (`sh -c 'ulimit -Hn'`): %w", err)
+	}
+	got := strings.TrimSpace(string(out))
+	if got == "unlimited" {
+		fmt.Fprintf(m.out(), "  [ OK ] hard nofile limit: unlimited (need %d)\n", hardWant)
+		return nil
+	}
+	hardGot, convErr := strconv.Atoi(got)
+	if convErr != nil {
+		return fmt.Errorf("cannot parse this user's hard nofile limit %q from `ulimit -Hn`: %w", got, convErr)
+	}
+	if hardGot >= hardWant {
+		fmt.Fprintf(m.out(), "  [ OK ] hard nofile limit: %d (need %d)\n", hardGot, hardWant)
+		return nil
+	}
+	// The account is named as a placeholder rather than resolved: prep may be
+	// running as root against a rootless deployment (the warning above), in which
+	// case this process's own user is the wrong one to write into the drop-in.
+	soft, _ := splitLimit(want)
+	return fmt.Errorf("rootless podman: this user's hard nofile limit is %d, but "+
+		"podman.container.ulimits.nofile needs %d -- a rootless container cannot raise it above the "+
+		"user's own hard limit, so the broker would start under-provisioned.\n"+
+		"  Add this as root to /etc/security/limits.d/99-solace.conf, replacing <user> with the account "+
+		"that runs the container, then log out and back in (a new login session is what re-reads it):\n"+
+		"    <user> hard nofile %d\n"+
+		"    <user> soft nofile %d",
+		hardGot, hardWant, hardWant, soft)
+}
+
+// splitLimit parses a `soft:hard` ulimit pair, or a single value meaning both.
+// A non-numeric half (including "-1", meaning unlimited) reports 0, which
+// checkNoFile reads as "nothing to assert".
+func splitLimit(v string) (soft, hard int) {
+	s, h := v, v
+	if i := strings.Index(v, ":"); i >= 0 {
+		s, h = v[:i], v[i+1:]
+	}
+	soft, _ = strconv.Atoi(strings.TrimSpace(s))
+	hard, _ = strconv.Atoi(strings.TrimSpace(h))
+	if soft < 0 {
+		soft = 0
+	}
+	if hard < 0 {
+		hard = 0
+	}
+	return soft, hard
+}
+
 // checkDNS resolves the broker hostname(s): in HA every node name must resolve
 // (fail loud on any miss, matching 002-host-prep.sh); standalone warns only on
 // the single name (it is used just as the routername). Skipped under --dry-run,
@@ -307,6 +381,9 @@ func (m *Manager) PrepHost(ctx context.Context) error {
 		// enter the user namespace to apply the ownership the container will see.
 		if err := m.run(ctx, "unshare", "chown", cb.RunUser, cb.DataDir); err != nil {
 			return fmt.Errorf("chown data dir %q (rootless): %w", cb.DataDir, err)
+		}
+		if err := m.checkNoFile(ctx); err != nil {
+			return err
 		}
 	} else if err := m.R.Run(ctx, "chown", cb.RunUser, cb.DataDir); err != nil {
 		return fmt.Errorf("chown data dir %q to %q: %w", cb.DataDir, cb.RunUser, err)

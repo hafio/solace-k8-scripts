@@ -5,6 +5,8 @@ services:
     hostname: solace-primary
     user: "0:0"
     restart: always
+    cpus: "2"
+    mem_limit: 6898m
     shm_size: 1g
     ulimits:
       nofile:
@@ -23,6 +25,11 @@ services:
       tls_servercertificate_filepath: "/run/secrets/tls.crt"
       system_scaling_maxconnectioncount: "1000"
       system_scaling_maxqueuemessagecount: "100"
+      system_scaling_maxkafkabridgecount: "0"
+      system_scaling_maxkafkabrokerconnectioncount: "0"
+      system_scaling_maxbridgecount: "25"
+      system_scaling_maxsubscriptioncount: "50000"
+      system_scaling_maxguaranteedmessagesize: "10"
       messagespool_maxspoolusage: "100000"
       username_admin_globalaccesslevel: "admin"
       username_admin_passwordfilepath: "/run/secrets/username_admin_password"

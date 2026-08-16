@@ -9,6 +9,8 @@ ContainerName=solace
 HostName=solace-primary
 User=0
 Group=0
+PodmanArgs=--cpus=2
+Memory=6898m
 ShmSize=1g
 Ulimit=nofile=2448:1048576
 Ulimit=memlock=-1
@@ -32,6 +34,11 @@ Environment="redundancy_matelink_tls_enable=yes"
 Environment="tls_servercertificate_filepath=/run/secrets/tls.crt"
 Environment="system_scaling_maxconnectioncount=1000"
 Environment="system_scaling_maxqueuemessagecount=100"
+Environment="system_scaling_maxkafkabridgecount=0"
+Environment="system_scaling_maxkafkabrokerconnectioncount=0"
+Environment="system_scaling_maxbridgecount=25"
+Environment="system_scaling_maxsubscriptioncount=50000"
+Environment="system_scaling_maxguaranteedmessagesize=10"
 Environment="messagespool_maxspoolusage=100000"
 Environment="username_admin_globalaccesslevel=admin"
 Environment="username_admin_passwordfilepath=/run/secrets/username_admin_password"

@@ -1,12 +1,12 @@
 {
   "README.md": {
-    "mtime": 1786689747.5523982,
-    "ast_hash": "1d0a5804b1f31da58d7d005b16935ed3",
+    "mtime": 1786766887.0497923,
+    "ast_hash": "76bba6b2e54588a2e2c147327fe2531d",
     "semantic_hash": ""
   },
   "solace-yaml-generator.html": {
-    "mtime": 1786585640.8154726,
-    "ast_hash": "861368284d6f868435f015173f89421f",
+    "mtime": 1786766896.0755184,
+    "ast_hash": "615173bcc8ec7060bd9e8dbcfbd8baee",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -115,18 +115,18 @@
     "semantic_hash": ""
   },
   "internal/config/config.go": {
-    "mtime": 1786679031.6762257,
-    "ast_hash": "6bc9abc5d951f5ec79fa3b81b32c2a92",
+    "mtime": 1786766489.121034,
+    "ast_hash": "853d0ce993d4b6b15a1bd44bcd16ee6b",
     "semantic_hash": ""
   },
   "internal/config/config_test.go": {
-    "mtime": 1786689542.4200063,
-    "ast_hash": "00e8dd8d685ae736e6bf076e5f9cacb2",
+    "mtime": 1786766664.6212654,
+    "ast_hash": "00bc5a373d46b85e16f6de334331439e",
     "semantic_hash": ""
   },
   "internal/config/load.go": {
-    "mtime": 1786679089.9288106,
-    "ast_hash": "432dd7cda5215ab608d88ccdc508adf7",
+    "mtime": 1786766505.0802867,
+    "ast_hash": "7e92e345cb3999a3d3dd7294878d61c4",
     "semantic_hash": ""
   },
   "internal/config/roles.go": {
@@ -135,18 +135,18 @@
     "semantic_hash": "6cfc7d1ff2ca43fc9e6b3aa49e5017bb"
   },
   "internal/config/validate.go": {
-    "mtime": 1786679834.9493062,
-    "ast_hash": "9422003f0d143fd596a891e7274385bf",
+    "mtime": 1786766521.60826,
+    "ast_hash": "db990cccb8a7092a65e4a4ca3c4c3812",
     "semantic_hash": ""
   },
   "internal/container/manager.go": {
-    "mtime": 1786679600.8308513,
-    "ast_hash": "80a2b879486480ded32a277a04e9cd44",
+    "mtime": 1786767042.3464968,
+    "ast_hash": "f960c4ca69a7ae789ea4a852592e40c9",
     "semantic_hash": ""
   },
   "internal/container/manager_test.go": {
-    "mtime": 1786679898.223648,
-    "ast_hash": "05615475425c9c41fb212c32e931884c",
+    "mtime": 1786766832.6310446,
+    "ast_hash": "a5b1f069cff992b936626d7956c98b56",
     "semantic_hash": ""
   },
   "internal/container/transport.go": {
@@ -260,13 +260,13 @@
     "semantic_hash": ""
   },
   "internal/render/render.go": {
-    "mtime": 1786544531.540936,
-    "ast_hash": "1477bf99d43cdb80b9a5106b463b55b1",
+    "mtime": 1786766475.8712068,
+    "ast_hash": "2fedaf6b07042de137b0c4ac2197739f",
     "semantic_hash": ""
   },
   "internal/render/render_test.go": {
-    "mtime": 1786544531.5449338,
-    "ast_hash": "9660d25e030c1f5933325f9f308d1cc0",
+    "mtime": 1786766731.9857035,
+    "ast_hash": "8258393a58e3b9d8b856ba927aa171aa",
     "semantic_hash": ""
   },
   "main.go": {
@@ -290,8 +290,8 @@
     "semantic_hash": ""
   },
   "env/sample.yaml": {
-    "mtime": 1786689747.5559165,
-    "ast_hash": "a88c7da7eeb31adf09950f53ab4b0161",
+    "mtime": 1786766850.8289886,
+    "ast_hash": "a7ba1cacda79932922fe1b662927738b",
     "semantic_hash": ""
   },
   ".github/dependabot.yml": {
@@ -335,13 +335,13 @@
     "semantic_hash": ""
   },
   "internal/convert/convert.go": {
-    "mtime": 1786681010.4915376,
-    "ast_hash": "1a6fbeee9d2bd04092dec51204e22d6e",
+    "mtime": 1786767070.44808,
+    "ast_hash": "294af861f28e05a748fc0f52c108fa9b",
     "semantic_hash": ""
   },
   "internal/convert/convert_test.go": {
-    "mtime": 1786681041.4613893,
-    "ast_hash": "5e1bafc8876bb925ee3db1c12a3dfaf8",
+    "mtime": 1786766988.496283,
+    "ast_hash": "bce45dedc9c6860e70404a2a3db9560c",
     "semantic_hash": ""
   },
   "internal/convert/parse.go": {
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "docs/test.md": {
-    "mtime": 1786689992.6582298,
-    "ast_hash": "41dcb3ae7616f0072e6265326514d9ba",
+    "mtime": 1786810617.0272503,
+    "ast_hash": "a99382e1e3b1ce3f8892eebcad86abaa",
     "semantic_hash": ""
   },
   "internal/cli/commanddoc_test.go": {
@@ -422,6 +422,16 @@
   "internal/k8s/preflight_test.go": {
     "mtime": 1786683097.5728543,
     "ast_hash": "4faae4dc83d014e2b13fe9c4a7a2f0c5",
+    "semantic_hash": ""
+  },
+  "internal/config/scaling.go": {
+    "mtime": 1786766516.2341402,
+    "ast_hash": "c9555ba066dc25fd1ccbba26e3f51a6d",
+    "semantic_hash": ""
+  },
+  "internal/config/scaling_test.go": {
+    "mtime": 1786766710.46925,
+    "ast_hash": "a0b94c0a6a6026b694be258c4f492d81",
     "semantic_hash": ""
   }
 }

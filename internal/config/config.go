@@ -231,18 +231,32 @@ type TLS struct {
 	ServerSecret      string `yaml:"serverSecret"`      // SOLBK_SVR_SECRET (k8s; enables the TLS secret)
 }
 
-// Scaling is the superset of broker scaling knobs; each platform reads the
-// subset it supports (container uses MaxConnections/MaxQueueMessages/SpoolMaxUsageMB).
+// Scaling is the broker's sizing, and every knob applies to every platform. They
+// differ only in delivery: k8s writes them into the CR's spec.systemScaling,
+// while docker and podman pass them to the container as environment variables
+// under the same broker setting names (render.EnvPairs).
 type Scaling struct {
 	MaxConnections      int `yaml:"maxConnections"`      // system_scaling_maxconnectioncount
 	MaxQueueMessages    int `yaml:"maxQueueMessages"`    // system_scaling_maxqueuemessagecount
-	MaxSpoolUsageMB     int `yaml:"maxSpoolUsageMB"`     // messagespool_maxspoolusage (container)
-	MaxPool             int `yaml:"maxPool"`             // k8s maxSpoolUsage / connection pool
-	MaxKafkaBridge      int `yaml:"maxKafkaBridge"`      // k8s
-	MaxKafkaConnections int `yaml:"maxKafkaConnections"` // k8s
-	MaxBridges          int `yaml:"maxBridges"`          // k8s
-	MaxSubscriptions    int `yaml:"maxSubscriptions"`    // k8s
-	MaxGuaranteedMsgMB  int `yaml:"maxGuaranteedMsgMB"`  // k8s
+	MaxSpoolUsageMB     int `yaml:"maxSpoolUsageMB"`     // messagespool_maxspoolusage / CR maxSpoolUsage
+	MaxKafkaBridge      int `yaml:"maxKafkaBridge"`      // system_scaling_maxkafkabridgecount
+	MaxKafkaConnections int `yaml:"maxKafkaConnections"` // system_scaling_maxkafkabrokerconnectioncount
+	MaxBridges          int `yaml:"maxBridges"`          // system_scaling_maxbridgecount
+	MaxSubscriptions    int `yaml:"maxSubscriptions"`    // system_scaling_maxsubscriptioncount
+	MaxGuaranteedMsgMB  int `yaml:"maxGuaranteedMsgMB"`  // system_scaling_maxguaranteedmessagesize
+
+	// MaxPool is retained so an env file carrying the removed maxPool fails with
+	// an actionable error instead of a bare unknown-field decode error. It named
+	// the same broker setting as MaxSpoolUsageMB -- one concept under two keys,
+	// one per platform -- which is exactly what this block no longer has.
+	MaxPool int `yaml:"maxPool"`
+
+	// CPU is the broker CPU the MaxConnections tier fixes, derived in
+	// ApplyDefaults once MaxConnections resolves (scaling.go). Not read from
+	// YAML, so no env file can set it: k8s renders it as messagingNodeCpu,
+	// docker and podman as their own CPU cap. It replaces the independently
+	// settable k8s.msgNode.cpu, which could contradict the tier.
+	CPU string `yaml:"-"`
 }
 
 // Replication holds the data-replication generator inputs (k8s repl tooling).
@@ -283,10 +297,14 @@ type Storage struct {
 	MonNode string `yaml:"monNode"` // SOLBK_STORAGE_MONNODE
 }
 
-// Resources is a cpu/memory pair.
+// Resources is the message-node resource block.
 type Resources struct {
+	// CPU is retained so an env file carrying the removed k8s.msgNode.cpu fails
+	// with an actionable error instead of a bare unknown-field decode error. It
+	// is never defaulted and never rendered: broker CPU is fixed by the scaling
+	// tier (scaling.go, Scaling.CPU). validateK8s rejects any value here.
 	CPU string `yaml:"cpu"`
-	Mem string `yaml:"mem"`
+	Mem string `yaml:"mem"` // SOLBK_MSGNODE_MEM (defaults to the scaling tier's memory)
 }
 
 // Operator is the cluster-scoped EventBroker Operator configuration.
@@ -440,9 +458,16 @@ type Network struct {
 
 // Container is the shared docker/podman container runtime settings.
 type Container struct {
-	Name        string      `yaml:"name"`    // CONTAINER_NAME
-	RunUser     string      `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
-	ShmSize     string      `yaml:"shmSize"` // SOLBK_SHM_SIZE
+	Name    string `yaml:"name"`    // CONTAINER_NAME
+	RunUser string `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
+	ShmSize string `yaml:"shmSize"` // SOLBK_SHM_SIZE
+	// Mem is the container memory limit in docker's and podman's own b|k|m|g
+	// suffix, NOT the Mi/Gi Kubernetes quantity k8s.msgNode.mem takes -- the
+	// engines reject that spelling, so validateContainer catches it here rather
+	// than letting compose fail at deploy. Defaults to the scaling tier's memory
+	// (scaling.go). CPU has no counterpart: it is fixed by the tier, so there is
+	// nothing here to override.
+	Mem         string      `yaml:"mem"`
 	DataDir     string      `yaml:"dataDir"` // SOLBK_DATA_DIR (host bind mount)
 	Ulimits     Ulimits     `yaml:"ulimits"`
 	HealthCheck HealthCheck `yaml:"healthCheck"`

@@ -135,6 +135,11 @@ func (c *Config) ApplyDefaults(p Platform) {
 	if p.IsContainer() {
 		c.applyContainerDefaults(p)
 	}
+
+	// Last, because it reads scaling.maxConnections: the branches above are where
+	// that value gets its platform default (100 on k8s, 1000 on containers), so a
+	// tier lookup any earlier would read a zero (scaling.go).
+	c.applyScalingTierDefaults(p)
 }
 
 func (c *Config) applyK8sDefaults() {
@@ -143,16 +148,18 @@ func (c *Config) applyK8sDefaults() {
 	setDefault(&c.K8s.DiagDir, "diag-configs")
 	setDefault(&c.K8s.CLIScriptsFolder, "cli")
 	setDefault(&c.K8s.Storage.MonNode, "5Gi")
-	setDefault(&c.K8s.MsgNode.CPU, "2")
-	setDefault(&c.K8s.MsgNode.Mem, "3410Mi")
+	// k8s.msgNode.cpu and .mem are not defaulted here: CPU is fixed by the
+	// scaling tier and memory defaults from it, both in applyScalingTierDefaults
+	// once maxConnections below has resolved (scaling.go).
 
 	setDefault(&c.K8s.Operator.Image, "docker.io/solace/pubsubplus-eventbroker-operator:1.4.0")
 	setDefault(&c.K8s.Operator.CPU, "500m")
 	setDefault(&c.K8s.Operator.Mem, "512Mi")
 
-	// Scaling (k8s defaults differ from container).
+	// Scaling: every knob applies to both platforms, but two of the defaults
+	// differ (maxConnections and the spool size), so the two lists stay separate.
 	setDefaultInt(&c.Scaling.MaxConnections, 100)
-	setDefaultInt(&c.Scaling.MaxPool, 10000)
+	setDefaultInt(&c.Scaling.MaxSpoolUsageMB, 10000)
 	setDefaultInt(&c.Scaling.MaxQueueMessages, 100)
 	setDefaultInt(&c.Scaling.MaxBridges, 25)
 	setDefaultInt(&c.Scaling.MaxSubscriptions, 50000)
@@ -203,10 +210,16 @@ func (c *Config) applyContainerDefaults(p Platform) {
 	setDefault(&c.K8s.DiagDir, "diag-configs")
 	setDefault(&c.K8s.CLIScriptsFolder, "cli")
 
-	// Scaling (container defaults differ from k8s).
+	// Scaling: the same knobs k8s takes, since every one of them now reaches the
+	// container as an environment variable. Only maxConnections and the spool
+	// size differ from the k8s defaults; the rest are deliberately identical, so
+	// the same env file sizes the same broker whichever platform runs it.
 	setDefaultInt(&c.Scaling.MaxConnections, 1000)
-	setDefaultInt(&c.Scaling.MaxQueueMessages, 100)
 	setDefaultInt(&c.Scaling.MaxSpoolUsageMB, 100000)
+	setDefaultInt(&c.Scaling.MaxQueueMessages, 100)
+	setDefaultInt(&c.Scaling.MaxBridges, 25)
+	setDefaultInt(&c.Scaling.MaxSubscriptions, 50000)
+	setDefaultInt(&c.Scaling.MaxGuaranteedMsgMB, 10)
 
 	if p == Docker {
 		setDefaultCmd(&c.Docker.Runtime, "docker")

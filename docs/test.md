@@ -46,21 +46,21 @@ test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
-25 test files, 502 test functions. `TestHelperProcess` in `internal/engine` is not a real
+31 test files, 576 test functions. `TestHelperProcess` in `internal/engine` is not a real
 test -- it is the os/exec helper-process shim, a no-op unless `GO_WANT_HELPER_PROCESS=1`.
 
 | Package | Files | Tests |
 | --- | --- | --- |
 | internal/broker | 4 | 135 |
-| internal/k8s | 10 | 88 |
-| internal/container | 3 | 78 |
-| internal/config | 2 | 66 |
-| internal/cli | 2 | 64 |
-| internal/convert | 1 | 28 |
-| internal/engine | 1 | 20 |
+| internal/k8s | 11 | 96 |
+| internal/config | 4 | 95 |
+| internal/container | 4 | 93 |
+| internal/cli | 3 | 74 |
+| internal/convert | 1 | 30 |
+| internal/engine | 2 | 25 |
+| internal/render | 1 | 17 |
 | internal/tools/vulnjudge | 1 | 11 |
-| internal/render | 1 | 12 |
-| **Total** | **25** | **502** |
+| **Total** | **31** | **576** |
 
 ## Coverage
 
@@ -95,7 +95,7 @@ this artifact.
 
 Config loading, defaults, validation, and env-file resolution, plus the `Command`
 type behind the platform CLI overrides and the execution guard that decides what a
-`Command` may be. 82 tests across 3 files.
+`Command` may be, and the scaling block that sizes the broker on every platform. 95 tests across 4 files.
 
 ### command_test.go
 
@@ -151,7 +151,7 @@ validator and every executor enforce it from one definition.
 | `TestContainerRuntime` | Runtime command comes from the platform's block, leading args included; k8s has none |
 | `TestContainerBlock` | Podman reads its own container block; everything else falls through to docker's |
 | `TestNetworkBlock` | Network block is selected per platform |
-| `TestApplyDefaultsK8s` | Every k8s default lands: redundancy, update strategy, admin secret, diag dir, CLI folder, storage, resources, operator image/resources, scaling, ports, anti-affinity |
+| `TestApplyDefaultsK8s` | Every k8s default lands: redundancy, update strategy, admin secret, diag dir, CLI folder, storage, operator image/resources, scaling, ports, anti-affinity. Broker resources now come from the scaling tier instead: `msgNode.cpu` stays empty (it is the removal sentinel, not a value), `msgNode.mem` is the tier-100 default and `Scaling.CPU` its cores |
 | `TestApplyDefaultsK8sTLS` | TLS cert/key default only when `tls.serverSecret` is set |
 | `TestApplyDefaultsDocker` | Docker defaults (runtime, compose mode, the compose command derived from the runtime, host network, admin user, container name) plus the shared `k8s.*` fields containers reuse |
 | `TestApplyDefaultsPodmanRootful` | Rootful podman gets the system quadlet dir, no `--user`, `multi-user.target` |
@@ -196,6 +196,28 @@ validator and every executor enforce it from one definition.
 | `TestValidateAdditionalUserPasswordCharsetIsK8sOnly` | The one platform-specific rule: k8s puts the password on a CLI line, so the characters the broker rejects there fail validation (naming the character, never the password), while the same env file stays valid for docker and podman, which mount the value as a file |
 | `TestValidateAdditionalUsers` | On k8s and docker alike: a valid entry passes, and missing/invalid/duplicate usernames, the built-in `admin`/`monitor` names, a missing or invalid access level, and an empty password all fail. Two usernames differing only in `.`/`_`/`-` are refused too: they fold to one docker host variable name, which would feed one user's password to both |
 | `TestValidateAdditionalUserClashesWithAdminUser` | The container-only clash: a listed user matching a configured `admin.user` is refused (two secrets would feed one broker setting) |
+
+### scaling_test.go
+
+The scaling-tier table: `scaling.maxConnections` fixes the broker's CPU on every
+platform and defaults its memory, so these cover the table itself, the derivation,
+and the two keys the change removed or added.
+
+| Test | What it covers |
+| --- | --- |
+| `TestScalingTiers` | All five tiers resolve to the published cores and memory, and the case count is asserted against the table so a tier added to one and not the other fails |
+| `TestTierForRejectsOffTierValues` | The deliberate absence of rounding: values between, below and above the tiers (including 0 and a negative) resolve to nothing rather than to a neighbour |
+| `TestScalingTierListMatchesTable` | The error message's tier list cannot drift from the table -- every listed value is a key, the list is ascending, and its rendering is exact. The package avoids `sort`, so the order is a literal that needs pinning |
+| `TestContainerMem` | The one rewrite between the schema's two memory spellings: Kubernetes' `Mi`/`Gi` to the bare `m`/`g` docker and podman accept, leaving an already-container value untouched. Every tier's rewritten default is checked against the validator it would face from an env file, so a default cannot be one the loader rejects |
+| `TestApplyScalingTierDefaultsK8s` | A non-default tier derives its cores into `Scaling.CPU` and its memory into `k8s.msgNode.mem`, while `msgNode.cpu` stays empty so `validateK8s` can read any value there as user-set |
+| `TestApplyScalingTierDefaultsMemOverride` | The asymmetry the change rests on: an explicit memory survives defaulting on both k8s and container, while CPU is the tier's regardless |
+| `TestApplyScalingTierDefaultsContainerBlocks` | Both container blocks are filled whichever container platform is active, matching `applyContainerDefaults`' existing parity |
+| `TestApplyScalingTierDefaultsOffTier` | The fail-safe: an unresolvable tier derives nothing rather than inventing a footprint, and `Validate` is what the operator hears from |
+| `TestValidateScalingTierRejectsOffTier` | An off-tier value fails on all three platforms with a message listing the five tiers -- the check sits ahead of the platform switch because every platform now renders a CPU limit from it |
+| `TestValidateScalingTierAcceptsEveryTier` | Every tier validates cleanly on every platform, so the enum cannot be narrower than the table |
+| `TestValidateK8sMsgNodeCPURemoved` | Mirrors `TestValidateDockerRunModeRemoved`: the removed `k8s.msgNode.cpu` still decodes, so the operator gets a reason naming `scaling.maxConnections` and noting `mem` is unaffected, rather than a bare unknown-field error |
+| `TestValidateMaxPoolRemoved` | The second folded-away key: `maxPool` named the same broker setting as `maxSpoolUsageMB` under a platform-specific name. It is rejected on all three platforms naming the replacement, and an unset (zero) value does not trip the sentinel |
+| `TestValidateContainerMem` | `container.mem` takes docker's and podman's own `b\|k\|m\|g` suffix: the likely mistake (a `Mi` quantity copied from `k8s.msgNode.mem`) is refused naming that trap, alongside bare numbers, decimals and unknown suffixes, while every legal form and the unset case pass |
 
 ---
 
@@ -302,13 +324,13 @@ executors -- driven through the real command tree.
 ## internal/convert
 
 The legacy bash env -> YAML converter: a shell-assignment parser, the variable
-mapping, and the YAML emitter. 28 tests.
+mapping, and the YAML emitter. 30 tests.
 
 ### convert_test.go
 
 | Test | What it covers |
 | --- | --- |
-| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `k8s.runtime` argv, and no warnings |
+| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `k8s.runtime` argv, and only the two expected advisories. The fixture sets `SOLBK_MSGNODE_CPU`, as every real legacy file does, so the drop is exercised here: it warns, and no `cpu` reaches the YAML |
 | `TestConvertUserPasswordsBecomeAdditionalUsers` | The one legacy variable with no like-for-like successor: `SOLBK_USR_PASS` becomes structured `admin.additionalUsers` entries with the least-privileged `accessLevel: none` plus a warning naming that choice, malformed entries are dropped with a warning naming their POSITION and never their text (a malformed entry is most likely a bare password), and `Convert` re-validating its own output proves the emitted level is a legal one |
 | `TestConvertContainer` | A container env file maps the node table, container block, ulimits, network, and spool scaling |
 | `TestConvertPlatformDetection` | Podman markers, docker markers, and both-present all resolve to the expected section |
@@ -323,6 +345,8 @@ mapping, and the YAML emitter. 28 tests.
 | `TestConvertRedundancyOmitted` | An unset SOLBK_REDUNDANCY emits no key either way, but a container source is warned that its bootstrap defaulted to HA while this CLI defaults to standalone; a k8s source stays silent because the defaults already agree |
 | `TestConvertDockerRunModeWarns` | DOCKER_MODE=run is dropped with the removal reason rather than carried over to fail validation later |
 | `TestConvertBadNumberWarns` | A non-numeric value for a numeric field warns and is not written |
+| `TestConvertSpoolVariablesUnify` | Two legacy names for one key: the k8s bootstrap's `SOLBK_SCALING_MAXPOOL` and the container one's `SOLBK_SPOOL_MAXUSAGE` both map to `scaling.maxSpoolUsageMB`, each platform's own name wins when both are set, and the warning says which was used rather than picking in silence |
+| `TestConvertOffTierMaxConnWarns` | `SOLBK_SCALING_MAXCONN` was any integer and is now one of five tiers. An off-tier value is still written -- rewriting the operator's declared load would be worse than reporting it -- and `Convert` re-validating its own output is what surfaces it, so this needs no mapping code of its own |
 | `TestConvertBadBooleanWarns` | An unparseable boolean (`SOLOP_WATCH_SOLBK_NS`, which the bootstrap never enum-checked) warns and is not written |
 | `TestGeneratedHeaderSanitisesSource` | A control character in the source name cannot end the header comment and inject document structure |
 | `TestConvertIncompleteEnvWarns` | A source env missing mandatory fields converts, but says the result is incomplete |
@@ -669,7 +693,7 @@ operator, day-2 ops, secrets, and the pod transport. 96 tests across 11 files.
 ## internal/container
 
 The host-local Docker/Podman manager, its node-local transport, and the engine
-preflight that precedes every mutating operation. 85 tests across 4 files.
+preflight that precedes every mutating operation. 93 tests across 4 files.
 
 ### runtime_test.go
 
@@ -705,6 +729,14 @@ The read-only engine probe, and the child-environment hygiene it shares with
 | `TestManagerPrepHostDryRunDoesNotWritePSK` | Dry-run leaves the env file untouched, never generates a PSK, and still echoes mkdir/chown |
 | `TestManagerPrepHostWritesPSK` | The generated PSK is written into `nodes.psk`, the replication PSK is untouched, and the data dir is created and chowned |
 | `TestManagerPrepHostRootlessUsesUnshareChown` | Rootless podman chowns via `podman unshare` |
+| `TestPrepHostRootlessNoFileSufficient` | Rootless prep probes this user's hard `nofile` limit with `sh -c 'ulimit -Hn'` and reports the value when it covers `container.ulimits.nofile` |
+| `TestPrepHostRootlessNoFileTooLow` | The point of the check: a rootless container cannot raise `nofile` past the user's hard limit, so prep stops rather than deploying a broker that would run under-provisioned. The message carries both numbers and the exact `limits.d` drop-in, including the re-login that re-reads it |
+| `TestPrepHostRootlessNoFileUnlimited` | An unlimited hard limit satisfies any configured value |
+| `TestPrepHostRootlessNoFileUnreadable` | A limit that will not parse fails loud rather than being assumed adequate |
+| `TestPrepHostRootlessNoFileUnsetSkips` | With no configured `nofile` there is nothing to assert against, so the probe never runs -- the hand-built config the executors are handed |
+| `TestPrepHostRootfulSkipsNoFile` | Docker and rootful podman never probe: their privileged engine raises the limit itself, so the invoking user's hard limit does not bound the container |
+| `TestPrepHostRootlessNoFileDryRun` | `--dry-run` echoes the probe and skips the assertion, the same shape `Preflight` uses, since the Echo runner answers nothing |
+| `TestSplitLimit` | The `soft:hard` ulimit parser: a pair, a single value meaning both, surrounding whitespace, and the values that mean "nothing to assert" (`-1`, empty, non-numeric) |
 | `TestManagerDeployDockerComposeWritesFile` | Deploy writes the compose file and runs `compose up -d --force-recreate` |
 | `TestManagerDockerComposeCommandOverride` | A `docker.compose` override (the standalone `docker-compose` binary) is what every compose call goes through |
 | `TestManagerDockerCheckProbesCompose` | Docker `check` probes the compose command, so a missing plugin fails at check time rather than at deploy time |
@@ -828,7 +860,7 @@ execution guard, which lives here because this is where a binary is actually run
 
 ## internal/render
 
-Manifest and unit-file rendering, guarded by committed goldens. 12 tests.
+Manifest and unit-file rendering, guarded by committed goldens. 17 tests.
 
 ### render_test.go
 
@@ -846,6 +878,11 @@ Manifest and unit-file rendering, guarded by committed goldens. 12 tests.
 | `TestParsePort` | Port entries across the `name=container`, `container:service`, and `/PROTO` forms |
 | `TestParseToleration` | Toleration Equal (`key=value:effect`) and Exists (`key:effect`) forms |
 | `TestQuadletEscape` | systemd `Environment=` escaping of `%`, `"`, and `\` |
+| `TestScalingReachesContainersAsEnv` | Every scaling knob reaches docker and podman as a container environment variable -- five of them used to render on k8s only -- carrying the env file's values, including an explicit `0`, which is a real setting rather than an absent one |
+| `TestScalingReachesK8sAsSpecOnly` | The other half of the delivery split: on k8s the same settings are CR fields under `spec.systemScaling` and never pod environment variables, the spool size is spelled `maxSpoolUsage` there, and the container spelling appears nowhere in the CR |
+| `TestScalingTierReachesEveryArtifact` | One tier value decides the CPU cap in all three artifacts: the broker CR's `messagingNodeCpu`/`messagingNodeMemory`, compose's `cpus:`/`mem_limit:`, and the quadlet's `PodmanArgs=--cpus=`/`Memory=`. It uses 100000, which is no platform's default, so the value is proven read rather than hardcoded -- the goldens only ever show the default tier |
+| `TestContainerMemOverrideReachesArtifact` | The asymmetry survives to the artifact: an overridden `container.mem` reaches compose while the CPU stays the tier's |
+| `TestUnresolvedTierOmitsLimits` | The renderers' fail-safe branch. A `Config` built in code -- what the executors are handed -- carries no tier, and all three artifacts must then omit the limits rather than emit an empty `cpus:`/`--cpus=`/`messagingNodeCpu:`, which the engines and the CRD would reject |
 
 ---
 
