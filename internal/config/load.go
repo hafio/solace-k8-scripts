@@ -63,11 +63,11 @@ func parseError(path string, raw []byte, err error) error {
 	}
 	if bashAssignRE.Match(raw) || bytes.HasPrefix(raw, []byte("#!")) {
 		return fmt.Errorf("parse env file %q: not valid YAML -- this looks like a legacy bash env file: %w\n"+
-			"  convert it first:  solace convert %s -o <name>.yaml", path, err, path)
+			"  convert it first:  solace-util convert %s -o <name>.yaml", path, err, path)
 	}
 	return fmt.Errorf("parse env file %q: not valid YAML: %w\n"+
 		"  the env file must be YAML -- see env/sample.yaml for the schema.\n"+
-		"  converting a legacy bash env file:  solace convert <bash-env-file> -o <name>.yaml", path, err)
+		"  converting a legacy bash env file:  solace-util convert <bash-env-file> -o <name>.yaml", path, err)
 }
 
 // EnvFileDefault is the env file name used when -e/--env is omitted.

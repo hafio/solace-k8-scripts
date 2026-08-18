@@ -1,6 +1,6 @@
 # Command reference
 
-Every command `solace` exposes, with its arguments and flags.
+Every command `solace-util` exposes, with its arguments and flags.
 
 **Generated from the command tree -- do not edit by hand.** Regenerate after any
 command, flag, or description change:
@@ -14,7 +14,12 @@ The `test` task fails while this file is stale, so it cannot drift from the code
 ## Tree
 
 ```
-solace
+solace-util
+  completion
+    bash
+    fish
+    powershell
+    zsh
   convert <bash-env-file>
   docker
     check
@@ -128,6 +133,7 @@ solace
       diagnostics
       login
       redundancy [primary|backup|monitor]
+  version
 ```
 
 ## Global flags
@@ -142,15 +148,16 @@ Inherited by every command.
 | `--gen-env-only` | `false` | render the container broker settings as an env file and print them; change nothing (docker/podman only) |
 | `--gen-only` | `false` | render the deployment artifact this command would apply and print it; change nothing |
 | `--gen-secrets-only` | `false` | render this deployment's secrets (k8s Secret manifests; podman secret-create commands; docker export lines to source) and print them; change nothing |
+| `-v`, `--verbose` | `false` | announce every external command as it runs; by default the binaries this env file names are resolved and listed once, up front |
 | `-y`, `--yes` | `false` | skip confirmation prompts (does NOT imply --purge) |
 
 ## Commands
 
-### solace
+### solace-util
 
 Deploy and operate Solace PubSub+ brokers on Kubernetes, Docker, or Podman
 
-solace is a single CLI for deploying and operating Solace PubSub+ Event Brokers.
+solace-util is a single CLI for deploying and operating Solace PubSub+ Event Brokers.
 It presents the same lifecycle verbs on every platform:
 
   check -> prep -> deploy       build the deployment   (up)
@@ -162,17 +169,120 @@ inside a broker that is already running, so run them once it is ready.
 
 Pick a platform (k8s, docker, podman), then a verb. Every command takes
 -e/--env <file>, searched in the current directory then ./env.
-Coming from the bash scripts? 'solace convert <bash-env-file>' turns an old
-env file into the YAML this reads. See 'solace <platform> --help'.
+Coming from the bash scripts? 'solace-util convert <bash-env-file>' turns an old
+env file into the YAML this reads. See 'solace-util <platform> --help'.
 
 ```
-solace
+solace-util
 ```
 
-Subcommands: `convert`, `docker`, `k8s`, `podman`
+Subcommands: `completion`, `convert`, `docker`, `k8s`, `podman`, `version`
 
 
-### solace convert
+### solace-util completion
+
+Print the shell completion script for solace-util
+
+Print a shell's completion script on stdout. Load it to complete commands and
+flags, plus the values they take: env files for -e/--env, primary|backup|monitor
+for the [role] positionals and --pod, and directories for --base-dir and --dir.
+
+Completion never reads the env file, so it stays inert -- a TAB press cannot
+parse config or run anything. See each shell's help for how to load it.
+
+```
+solace-util completion
+```
+
+Subcommands: `bash`, `fish`, `powershell`, `zsh`
+
+
+### solace-util completion bash
+
+Print the bash completion script
+
+Load into the current shell:
+
+  source <(solace-util completion bash)
+
+Load for every session (needs the bash-completion package):
+
+  solace-util completion bash > /etc/bash_completion.d/solace-util
+
+```
+solace-util completion bash [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--no-descriptions` | `false` | omit the descriptions shown beside each completion |
+
+
+### solace-util completion fish
+
+Print the fish completion script
+
+Load into the current shell:
+
+  solace-util completion fish | source
+
+Load for every session:
+
+  solace-util completion fish > ~/.config/fish/completions/solace-util.fish
+
+```
+solace-util completion fish [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--no-descriptions` | `false` | omit the descriptions shown beside each completion |
+
+
+### solace-util completion powershell
+
+Print the powershell completion script
+
+Load into the current shell:
+
+  solace-util completion powershell | Out-String | Invoke-Expression
+
+Load for every session, by writing the script once and sourcing it from
+your profile:
+
+  solace-util completion powershell > solace-util.ps1
+
+```
+solace-util completion powershell [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--no-descriptions` | `false` | omit the descriptions shown beside each completion |
+
+
+### solace-util completion zsh
+
+Print the zsh completion script
+
+Load into the current shell:
+
+  source <(solace-util completion zsh)
+
+Load for every session (compinit must be enabled in ~/.zshrc):
+
+  solace-util completion zsh > "${fpath[1]}/_solace-util"
+
+```
+solace-util completion zsh [flags]
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--no-descriptions` | `false` | omit the descriptions shown beside each completion |
+
+
+### solace-util convert
 
 Convert a legacy bash env file into a YAML env file
 
@@ -187,12 +297,12 @@ The output carries every secret from the source file verbatim, so treat it
 like the source: write it with -o rather than through a shared terminal, and
 never commit it.
 
-  solace convert bash/env/prod -o prod.yaml
-  solace convert bash/env/prod --platform podman -o prod.yaml
-  solace k8s check -e prod.yaml --dry-run
+  solace-util convert bash/env/prod -o prod.yaml
+  solace-util convert bash/env/prod --platform podman -o prod.yaml
+  solace-util k8s check -e prod.yaml --dry-run
 
 ```
-solace convert <bash-env-file> [flags]
+solace-util convert <bash-env-file> [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -202,12 +312,12 @@ solace convert <bash-env-file> [flags]
 | `--platform` | (none) | platform section to write: k8s, docker, or podman (default: detect) |
 
 
-### solace docker
+### solace-util docker
 
 Deploy/operate the broker directly on a host with Docker
 
 ```
-solace docker
+solace-util docker
 ```
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
@@ -217,25 +327,25 @@ Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `
 | `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
 
 
-### solace docker check
+### solace-util docker check
 
 Validate config, DNS, and container runtime
 
 ```
-solace docker check
+solace-util docker check
 ```
 
 
-### solace docker cli
+### solace-util docker cli
 
 Open an interactive Solace CLI in the container
 
 ```
-solace docker cli
+solace-util docker cli
 ```
 
 
-### solace docker config
+### solace-util docker config
 
 Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
 
@@ -244,101 +354,101 @@ Post-deployment configuration: every step here talks to a broker that is already
 With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone), except `leader`: that one is cross-host and primary-only, so run it explicitly on the primary.
 
 ```
-solace docker config
+solace-util docker config
 ```
 
 Subcommands: `disable-default-users`, `disable-default-vpn`, `domain-certs`, `exec-cli`, `leader`, `product-keys`, `server-cert`
 
 
-### solace docker config disable-default-users
+### solace-util docker config disable-default-users
 
 Shut down default client-usernames in all VPNs
 
 ```
-solace docker config disable-default-users
+solace-util docker config disable-default-users
 ```
 
 
-### solace docker config disable-default-vpn
+### solace-util docker config disable-default-vpn
 
 Shut down the default message-VPN
 
 ```
-solace docker config disable-default-vpn
+solace-util docker config disable-default-vpn
 ```
 
 
-### solace docker config domain-certs
+### solace-util docker config domain-certs
 
 Load domain CA certificates
 
 ```
-solace docker config domain-certs
+solace-util docker config domain-certs
 ```
 
 
-### solace docker config exec-cli
+### solace-util docker config exec-cli
 
 Run a Solace CLI script inside the container (menu if no file given)
 
 ```
-solace docker config exec-cli [file]
+solace-util docker config exec-cli [file]
 ```
 
 
-### solace docker config leader
+### solace-util docker config leader
 
 Assert the config-sync leader on the primary (HA only)
 
 ```
-solace docker config leader [primary|backup|monitor]
+solace-util docker config leader [primary|backup|monitor]
 ```
 
 
-### solace docker config product-keys
+### solace-util docker config product-keys
 
 Apply product keys
 
 ```
-solace docker config product-keys
+solace-util docker config product-keys
 ```
 
 
-### solace docker config server-cert
+### solace-util docker config server-cert
 
 Load/update the TLS server certificate
 
 ```
-solace docker config server-cert
+solace-util docker config server-cert
 ```
 
 
-### solace docker copy
+### solace-util docker copy
 
 Copy files to/from the broker container
 
 ```
-solace docker copy
+solace-util docker copy
 ```
 
 Subcommands: `from`, `into`
 
 
-### solace docker copy from
+### solace-util docker copy from
 
 Copy files from the broker container to the host
 
 ```
-solace docker copy from files...
+solace-util docker copy from files...
 ```
 
 
-### solace docker copy into
+### solace-util docker copy into
 
 Copy files from the host into the broker container
 
 ```
-solace docker copy into files... [flags]
+solace-util docker copy into files... [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -346,12 +456,12 @@ solace docker copy into files... [flags]
 | `--dir` | (none) | destination directory inside the container |
 
 
-### solace docker delete
+### solace-util docker delete
 
 Remove the broker container/unit (data folder kept by default)
 
 ```
-solace docker delete [flags]
+solace-util docker delete [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -361,12 +471,12 @@ solace docker delete [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace docker deploy
+### solace-util docker deploy
 
 Deploy the broker on this host (role required in HA, ignored in standalone)
 
 ```
-solace docker deploy [primary|backup|monitor] [flags]
+solace-util docker deploy [primary|backup|monitor] [flags]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
@@ -376,23 +486,23 @@ Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requ
 | `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
-### solace docker describe
+### solace-util docker describe
 
 Show detailed inspection of the broker container (podman: also the installed unit)
 
 ```
-solace docker describe
+solace-util docker describe
 ```
 
 Also available as: inspect
 
 
-### solace docker down
+### solace-util docker down
 
 Orchestrate delete (data folder kept unless --purge)
 
 ```
-solace docker down [flags]
+solace-util docker down [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -402,90 +512,90 @@ solace docker down [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace docker gen
+### solace-util docker gen
 
 Render the deploy artifact (quadlet/compose/run) to stdout without applying
 
 ```
-solace docker gen [primary|backup|monitor]
+solace-util docker gen [primary|backup|monitor]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace docker logs
+### solace-util docker logs
 
 Tail the local broker container logs
 
 ```
-solace docker logs
+solace-util docker logs
 ```
 
 
-### solace docker prep
+### solace-util docker prep
 
 Prepare the host (data dir + ownership, DNS, PSK generation)
 
 ```
-solace docker prep
+solace-util docker prep
 ```
 
 Subcommands: `host`
 
 
-### solace docker prep host
+### solace-util docker prep host
 
 Create/own the data dir, verify DNS, generate the redundancy PSK
 
 ```
-solace docker prep host
+solace-util docker prep host
 ```
 
 
-### solace docker shell
+### solace-util docker shell
 
 Open an interactive shell in the container
 
 ```
-solace docker shell
+solace-util docker shell
 ```
 
 
-### solace docker status
+### solace-util docker status
 
 Show the local broker container/service status
 
 ```
-solace docker status
+solace-util docker status
 ```
 
 
-### solace docker teardown
+### solace-util docker teardown
 
 Remove broker-scoped prerequisites (the container itself: see delete)
 
 ```
-solace docker teardown
+solace-util docker teardown
 ```
 
 Subcommands: `domain-certs`
 
 
-### solace docker teardown domain-certs
+### solace-util docker teardown domain-certs
 
 Remove domain CA certificates
 
 ```
-solace docker teardown domain-certs
+solace-util docker teardown domain-certs
 ```
 
 
-### solace docker up
+### solace-util docker up
 
 Orchestrate check -> prep host -> deploy <role>
 
 ```
-solace docker up [primary|backup|monitor] [flags]
+solace-util docker up [primary|backup|monitor] [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -493,23 +603,23 @@ solace docker up [primary|backup|monitor] [flags]
 | `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
-### solace docker verify
+### solace-util docker verify
 
 Verify broker health (login, redundancy, diagnostics)
 
 ```
-solace docker verify
+solace-util docker verify
 ```
 
 Subcommands: `diagnostics`, `login`, `redundancy`
 
 
-### solace docker verify diagnostics
+### solace-util docker verify diagnostics
 
 Gather show-command output and a diagnostics bundle
 
 ```
-solace docker verify diagnostics [flags]
+solace-util docker verify diagnostics [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -517,30 +627,30 @@ solace docker verify diagnostics [flags]
 | `--days` | `1` | days of logs/diagnostics to gather |
 
 
-### solace docker verify login
+### solace-util docker verify login
 
 Test SEMP login
 
 ```
-solace docker verify login
+solace-util docker verify login
 ```
 
 
-### solace docker verify redundancy
+### solace-util docker verify redundancy
 
 Exercise failover on this node (HA only; run on primary and backup)
 
 ```
-solace docker verify redundancy [primary|backup|monitor]
+solace-util docker verify redundancy [primary|backup|monitor]
 ```
 
 
-### solace k8s
+### solace-util k8s
 
 Deploy/operate the broker on Kubernetes via the EventBroker Operator
 
 ```
-solace k8s
+solace-util k8s
 ```
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `operator`, `prep`, `replicas`, `restart`, `shell`, `show-all`, `status`, `teardown`, `up`, `verify`
@@ -550,25 +660,25 @@ Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `
 | `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
 
 
-### solace k8s check
+### solace-util k8s check
 
 Validate config, cluster reachability, and StorageClass
 
 ```
-solace k8s check
+solace-util k8s check
 ```
 
 
-### solace k8s cli
+### solace-util k8s cli
 
 Open an interactive Solace CLI in a pod
 
 ```
-solace k8s cli [role]
+solace-util k8s cli [role]
 ```
 
 
-### solace k8s config
+### solace-util k8s config
 
 Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
 
@@ -577,54 +687,54 @@ Post-deployment configuration: every step here talks to a broker that is already
 With no subcommand, runs all applicable config steps in order (HA-only steps skipped in standalone).
 
 ```
-solace k8s config
+solace-util k8s config
 ```
 
 Subcommands: `additional-users`, `disable-default-users`, `disable-default-vpn`, `domain-certs`, `exec-cli`, `leader`, `product-keys`, `server-cert`
 
 
-### solace k8s config additional-users
+### solace-util k8s config additional-users
 
 Create the admin.additionalUsers CLI users
 
 ```
-solace k8s config additional-users
+solace-util k8s config additional-users
 ```
 
 
-### solace k8s config disable-default-users
+### solace-util k8s config disable-default-users
 
 Shut down default client-usernames in all VPNs
 
 ```
-solace k8s config disable-default-users
+solace-util k8s config disable-default-users
 ```
 
 
-### solace k8s config disable-default-vpn
+### solace-util k8s config disable-default-vpn
 
 Shut down the default message-VPN
 
 ```
-solace k8s config disable-default-vpn
+solace-util k8s config disable-default-vpn
 ```
 
 
-### solace k8s config domain-certs
+### solace-util k8s config domain-certs
 
 Load domain CA certificates
 
 ```
-solace k8s config domain-certs
+solace-util k8s config domain-certs
 ```
 
 
-### solace k8s config exec-cli
+### solace-util k8s config exec-cli
 
 Run a Solace CLI script inside a pod
 
 ```
-solace k8s config exec-cli [file] [flags]
+solace-util k8s config exec-cli [file] [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -632,50 +742,50 @@ solace k8s config exec-cli [file] [flags]
 | `--pod` | (none) | pod role to target (p\|b\|m) |
 
 
-### solace k8s config leader
+### solace-util k8s config leader
 
 Assert the config-sync leader (HA only)
 
 ```
-solace k8s config leader
+solace-util k8s config leader
 ```
 
 
-### solace k8s config product-keys
+### solace-util k8s config product-keys
 
 Apply product keys
 
 ```
-solace k8s config product-keys
+solace-util k8s config product-keys
 ```
 
 
-### solace k8s config server-cert
+### solace-util k8s config server-cert
 
 Load/update the TLS server certificate
 
 ```
-solace k8s config server-cert
+solace-util k8s config server-cert
 ```
 
 
-### solace k8s copy
+### solace-util k8s copy
 
 Copy files to/from a broker pod
 
 ```
-solace k8s copy
+solace-util k8s copy
 ```
 
 Subcommands: `from`, `into`
 
 
-### solace k8s copy from
+### solace-util k8s copy from
 
 Copy files from a broker pod to the host
 
 ```
-solace k8s copy from files... [flags]
+solace-util k8s copy from files... [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -683,12 +793,12 @@ solace k8s copy from files... [flags]
 | `--pod` | (none) | pod role to target (p\|b\|m) |
 
 
-### solace k8s copy into
+### solace-util k8s copy into
 
 Copy files from the host into a broker pod
 
 ```
-solace k8s copy into files... [flags]
+solace-util k8s copy into files... [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -697,12 +807,12 @@ solace k8s copy into files... [flags]
 | `--pod` | (none) | pod role to target (p\|b\|m) |
 
 
-### solace k8s delete
+### solace-util k8s delete
 
 Delete the broker CR (PVCs kept by default)
 
 ```
-solace k8s delete [flags]
+solace-util k8s delete [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -712,12 +822,12 @@ solace k8s delete [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace k8s deploy
+### solace-util k8s deploy
 
 Render and apply the PubSubPlusEventBroker custom resource
 
 ```
-solace k8s deploy [flags]
+solace-util k8s deploy [flags]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
@@ -727,12 +837,12 @@ Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requ
 | `--keep-yaml` | `false` | keep the rendered manifest on disk after applying |
 
 
-### solace k8s describe
+### solace-util k8s describe
 
 Describe broker/load-balancer resources
 
 ```
-solace k8s describe
+solace-util k8s describe
 ```
 
 Subcommands: `broker`, `lb`
@@ -740,30 +850,30 @@ Subcommands: `broker`, `lb`
 Also available as: inspect
 
 
-### solace k8s describe broker
+### solace-util k8s describe broker
 
 Describe a broker pod
 
 ```
-solace k8s describe broker [role]
+solace-util k8s describe broker [role]
 ```
 
 
-### solace k8s describe lb
+### solace-util k8s describe lb
 
 Describe the load-balancer service
 
 ```
-solace k8s describe lb
+solace-util k8s describe lb
 ```
 
 
-### solace k8s down
+### solace-util k8s down
 
 Orchestrate delete -> teardown secrets -> teardown namespace
 
 ```
-solace k8s down [flags]
+solace-util k8s down [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -773,167 +883,167 @@ solace k8s down [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace k8s gen
+### solace-util k8s gen
 
 Render a manifest to stdout without applying (like --gen-only)
 
 ```
-solace k8s gen [broker|operator|secrets]
+solace-util k8s gen [broker|operator|secrets]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace k8s logs
+### solace-util k8s logs
 
 Tail broker pod logs
 
 ```
-solace k8s logs [role]
+solace-util k8s logs [role]
 ```
 
 
-### solace k8s operator
+### solace-util k8s operator
 
 Manage the cluster-scoped EventBroker Operator
 
 ```
-solace k8s operator
+solace-util k8s operator
 ```
 
 Subcommands: `delete`, `deploy`, `describe`, `logs`, `status`
 
 
-### solace k8s operator delete
+### solace-util k8s operator delete
 
 Remove the operator (embedded bundle)
 
 ```
-solace k8s operator delete
+solace-util k8s operator delete
 ```
 
 
-### solace k8s operator deploy
+### solace-util k8s operator deploy
 
 Install the operator (embedded bundle)
 
 ```
-solace k8s operator deploy
+solace-util k8s operator deploy
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace k8s operator describe
+### solace-util k8s operator describe
 
 Describe the operator deployment
 
 ```
-solace k8s operator describe
+solace-util k8s operator describe
 ```
 
 
-### solace k8s operator logs
+### solace-util k8s operator logs
 
 Tail operator logs
 
 ```
-solace k8s operator logs
+solace-util k8s operator logs
 ```
 
 
-### solace k8s operator status
+### solace-util k8s operator status
 
 Show operator deployment/pod status
 
 ```
-solace k8s operator status
+solace-util k8s operator status
 ```
 
 
-### solace k8s prep
+### solace-util k8s prep
 
 Prepare cluster prerequisites (operator, namespace, secrets, labels)
 
 With no subcommand, runs all prep steps in order, skipping ones whose config is absent.
 
 ```
-solace k8s prep
+solace-util k8s prep
 ```
 
 Subcommands: `labels`, `namespace`, `operator`, `secrets`
 
 
-### solace k8s prep labels
+### solace-util k8s prep labels
 
 Label nodes for primary/backup/monitor placement
 
 ```
-solace k8s prep labels
+solace-util k8s prep labels
 ```
 
 
-### solace k8s prep namespace
+### solace-util k8s prep namespace
 
 Create the broker namespace
 
 ```
-solace k8s prep namespace
+solace-util k8s prep namespace
 ```
 
 
-### solace k8s prep operator
+### solace-util k8s prep operator
 
 Install the EventBroker Operator
 
 ```
-solace k8s prep operator
+solace-util k8s prep operator
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace k8s prep secrets
+### solace-util k8s prep secrets
 
 Create admin/monitor, TLS, and image-pull secrets
 
 ```
-solace k8s prep secrets
+solace-util k8s prep secrets
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace k8s replicas
+### solace-util k8s replicas
 
 Scale the broker statefulset(s)
 
 ```
-solace k8s replicas
+solace-util k8s replicas
 ```
 
 Subcommands: `start`, `stop`
 
 
-### solace k8s replicas start
+### solace-util k8s replicas start
 
 Scale broker statefulset(s) to 1
 
 ```
-solace k8s replicas start
+solace-util k8s replicas start
 ```
 
 
-### solace k8s replicas stop
+### solace-util k8s replicas stop
 
 Scale broker statefulset(s) to 0
 
 ```
-solace k8s replicas stop
+solace-util k8s replicas stop
 ```
 
 
-### solace k8s restart
+### solace-util k8s restart
 
 Delete a broker pod so the statefulset recreates it (manualPodRestart upgrades)
 
@@ -943,105 +1053,105 @@ With no role, restarts every pod in the safe order (monitor, backup, primary;
 standalone: just the primary), waiting for each to become ready before the next.
 
 The order is by configured role, not by which node is currently active -- after a
-failover they differ. Check `solace k8s verify redundancy` first, or pass a role
+failover they differ. Check `solace-util k8s verify redundancy` first, or pass a role
 and restart them one at a time in the order you want.
 
 ```
-solace k8s restart [primary|backup|monitor]
+solace-util k8s restart [primary|backup|monitor]
 ```
 
 
-### solace k8s shell
+### solace-util k8s shell
 
 Open an interactive shell in a pod
 
 ```
-solace k8s shell [role]
+solace-util k8s shell [role]
 ```
 
 
-### solace k8s show-all
+### solace-util k8s show-all
 
 List all brokers across namespaces
 
 ```
-solace k8s show-all
+solace-util k8s show-all
 ```
 
 
-### solace k8s status
+### solace-util k8s status
 
 Show pods, services, and statefulset for the broker
 
 ```
-solace k8s status
+solace-util k8s status
 ```
 
 
-### solace k8s teardown
+### solace-util k8s teardown
 
 Remove broker-scoped prerequisites (operator kept)
 
 ```
-solace k8s teardown
+solace-util k8s teardown
 ```
 
 Subcommands: `domain-certs`, `namespace`, `secrets`
 
 
-### solace k8s teardown domain-certs
+### solace-util k8s teardown domain-certs
 
 Remove domain CA certificates
 
 ```
-solace k8s teardown domain-certs
+solace-util k8s teardown domain-certs
 ```
 
 
-### solace k8s teardown namespace
+### solace-util k8s teardown namespace
 
 Delete the broker namespace
 
 ```
-solace k8s teardown namespace
+solace-util k8s teardown namespace
 ```
 
 
-### solace k8s teardown secrets
+### solace-util k8s teardown secrets
 
 Delete broker secrets
 
 ```
-solace k8s teardown secrets
+solace-util k8s teardown secrets
 ```
 
 
-### solace k8s up
+### solace-util k8s up
 
 Orchestrate check -> prep -> deploy -> config leader (if HA)
 
 ```
-solace k8s up
+solace-util k8s up
 ```
 
 
-### solace k8s verify
+### solace-util k8s verify
 
 Verify broker health: redundancy failover (HA) then a SEMP login
 
 ```
-solace k8s verify
+solace-util k8s verify
 ```
 
 Subcommands: `diagnostics`, `login`, `redundancy`
 
 
-### solace k8s verify diagnostics
+### solace-util k8s verify diagnostics
 
 Gather show-command output and a diagnostics bundle
 
 ```
-solace k8s verify diagnostics [flags]
+solace-util k8s verify diagnostics [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1049,30 +1159,30 @@ solace k8s verify diagnostics [flags]
 | `--days` | `1` | days of logs/diagnostics to gather |
 
 
-### solace k8s verify login
+### solace-util k8s verify login
 
 Test SEMP login
 
 ```
-solace k8s verify login [role]
+solace-util k8s verify login [role]
 ```
 
 
-### solace k8s verify redundancy
+### solace-util k8s verify redundancy
 
 Exercise failover (HA only)
 
 ```
-solace k8s verify redundancy
+solace-util k8s verify redundancy
 ```
 
 
-### solace podman
+### solace-util podman
 
 Deploy/operate the broker directly on a host with Podman (systemd quadlet)
 
 ```
-solace podman
+solace-util podman
 ```
 
 Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `down`, `gen`, `logs`, `prep`, `shell`, `status`, `teardown`, `up`, `verify`
@@ -1082,25 +1192,25 @@ Subcommands: `check`, `cli`, `config`, `copy`, `delete`, `deploy`, `describe`, `
 | `--allow-command` | `[]` | approve one extra binary for the config's platform command, for this run only (repeatable; a bare name, never a path). The env file cannot grant this |
 
 
-### solace podman check
+### solace-util podman check
 
 Validate config, DNS, and container runtime
 
 ```
-solace podman check
+solace-util podman check
 ```
 
 
-### solace podman cli
+### solace-util podman cli
 
 Open an interactive Solace CLI in the container
 
 ```
-solace podman cli
+solace-util podman cli
 ```
 
 
-### solace podman config
+### solace-util podman config
 
 Configure a DEPLOYED broker (certs, hardening, product keys, CLI)
 
@@ -1109,101 +1219,101 @@ Post-deployment configuration: every step here talks to a broker that is already
 With no subcommand, runs all applicable config steps (HA-only steps skipped in standalone), except `leader`: that one is cross-host and primary-only, so run it explicitly on the primary.
 
 ```
-solace podman config
+solace-util podman config
 ```
 
 Subcommands: `disable-default-users`, `disable-default-vpn`, `domain-certs`, `exec-cli`, `leader`, `product-keys`, `server-cert`
 
 
-### solace podman config disable-default-users
+### solace-util podman config disable-default-users
 
 Shut down default client-usernames in all VPNs
 
 ```
-solace podman config disable-default-users
+solace-util podman config disable-default-users
 ```
 
 
-### solace podman config disable-default-vpn
+### solace-util podman config disable-default-vpn
 
 Shut down the default message-VPN
 
 ```
-solace podman config disable-default-vpn
+solace-util podman config disable-default-vpn
 ```
 
 
-### solace podman config domain-certs
+### solace-util podman config domain-certs
 
 Load domain CA certificates
 
 ```
-solace podman config domain-certs
+solace-util podman config domain-certs
 ```
 
 
-### solace podman config exec-cli
+### solace-util podman config exec-cli
 
 Run a Solace CLI script inside the container (menu if no file given)
 
 ```
-solace podman config exec-cli [file]
+solace-util podman config exec-cli [file]
 ```
 
 
-### solace podman config leader
+### solace-util podman config leader
 
 Assert the config-sync leader on the primary (HA only)
 
 ```
-solace podman config leader [primary|backup|monitor]
+solace-util podman config leader [primary|backup|monitor]
 ```
 
 
-### solace podman config product-keys
+### solace-util podman config product-keys
 
 Apply product keys
 
 ```
-solace podman config product-keys
+solace-util podman config product-keys
 ```
 
 
-### solace podman config server-cert
+### solace-util podman config server-cert
 
 Load/update the TLS server certificate
 
 ```
-solace podman config server-cert
+solace-util podman config server-cert
 ```
 
 
-### solace podman copy
+### solace-util podman copy
 
 Copy files to/from the broker container
 
 ```
-solace podman copy
+solace-util podman copy
 ```
 
 Subcommands: `from`, `into`
 
 
-### solace podman copy from
+### solace-util podman copy from
 
 Copy files from the broker container to the host
 
 ```
-solace podman copy from files...
+solace-util podman copy from files...
 ```
 
 
-### solace podman copy into
+### solace-util podman copy into
 
 Copy files from the host into the broker container
 
 ```
-solace podman copy into files... [flags]
+solace-util podman copy into files... [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1211,12 +1321,12 @@ solace podman copy into files... [flags]
 | `--dir` | (none) | destination directory inside the container |
 
 
-### solace podman delete
+### solace-util podman delete
 
 Remove the broker container/unit (data folder kept by default)
 
 ```
-solace podman delete [flags]
+solace-util podman delete [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1226,12 +1336,12 @@ solace podman delete [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace podman deploy
+### solace-util podman deploy
 
 Deploy the broker on this host (role required in HA, ignored in standalone)
 
 ```
-solace podman deploy [primary|backup|monitor] [flags]
+solace-util podman deploy [primary|backup|monitor] [flags]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
@@ -1241,23 +1351,23 @@ Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requ
 | `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
-### solace podman describe
+### solace-util podman describe
 
 Show detailed inspection of the broker container (podman: also the installed unit)
 
 ```
-solace podman describe
+solace-util podman describe
 ```
 
 Also available as: inspect
 
 
-### solace podman down
+### solace-util podman down
 
 Orchestrate delete (data folder kept unless --purge)
 
 ```
-solace podman down [flags]
+solace-util podman down [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1267,90 +1377,90 @@ solace podman down [flags]
 | `--purge` | `false` | clear persistent data (k8s PVCs / container data folder) |
 
 
-### solace podman gen
+### solace-util podman gen
 
 Render the deploy artifact (quadlet/compose/run) to stdout without applying
 
 ```
-solace podman gen [primary|backup|monitor]
+solace-util podman gen [primary|backup|monitor]
 ```
 
 Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.
 
 
-### solace podman logs
+### solace-util podman logs
 
 Tail the local broker container logs
 
 ```
-solace podman logs
+solace-util podman logs
 ```
 
 
-### solace podman prep
+### solace-util podman prep
 
 Prepare the host (data dir + ownership, DNS, PSK generation)
 
 ```
-solace podman prep
+solace-util podman prep
 ```
 
 Subcommands: `host`
 
 
-### solace podman prep host
+### solace-util podman prep host
 
 Create/own the data dir, verify DNS, generate the redundancy PSK
 
 ```
-solace podman prep host
+solace-util podman prep host
 ```
 
 
-### solace podman shell
+### solace-util podman shell
 
 Open an interactive shell in the container
 
 ```
-solace podman shell
+solace-util podman shell
 ```
 
 
-### solace podman status
+### solace-util podman status
 
 Show the local broker container/service status
 
 ```
-solace podman status
+solace-util podman status
 ```
 
 
-### solace podman teardown
+### solace-util podman teardown
 
 Remove broker-scoped prerequisites (the container itself: see delete)
 
 ```
-solace podman teardown
+solace-util podman teardown
 ```
 
 Subcommands: `domain-certs`
 
 
-### solace podman teardown domain-certs
+### solace-util podman teardown domain-certs
 
 Remove domain CA certificates
 
 ```
-solace podman teardown domain-certs
+solace-util podman teardown domain-certs
 ```
 
 
-### solace podman up
+### solace-util podman up
 
 Orchestrate check -> prep host -> deploy <role>
 
 ```
-solace podman up [primary|backup|monitor] [flags]
+solace-util podman up [primary|backup|monitor] [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1358,23 +1468,23 @@ solace podman up [primary|backup|monitor] [flags]
 | `--restart` | `false` | restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running) |
 
 
-### solace podman verify
+### solace-util podman verify
 
 Verify broker health (login, redundancy, diagnostics)
 
 ```
-solace podman verify
+solace-util podman verify
 ```
 
 Subcommands: `diagnostics`, `login`, `redundancy`
 
 
-### solace podman verify diagnostics
+### solace-util podman verify diagnostics
 
 Gather show-command output and a diagnostics bundle
 
 ```
-solace podman verify diagnostics [flags]
+solace-util podman verify diagnostics [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -1382,20 +1492,36 @@ solace podman verify diagnostics [flags]
 | `--days` | `1` | days of logs/diagnostics to gather |
 
 
-### solace podman verify login
+### solace-util podman verify login
 
 Test SEMP login
 
 ```
-solace podman verify login
+solace-util podman verify login
 ```
 
 
-### solace podman verify redundancy
+### solace-util podman verify redundancy
 
 Exercise failover on this node (HA only; run on primary and backup)
 
 ```
-solace podman verify redundancy [primary|backup|monitor]
+solace-util podman verify redundancy [primary|backup|monitor]
+```
+
+
+### solace-util version
+
+Print the solace-util version
+
+Print the version this binary was built at, plus the Go toolchain and
+platform that built it -- useful to paste alongside a support request.
+
+A release binary (built by scripts/dev.sh or dev.ps1) reports the git tag
+it shipped as, e.g. v1.2.3 -- matching the GitHub release exactly. A plain
+`go build .` with no version stamped reports "dev".
+
+```
+solace-util version
 ```
 

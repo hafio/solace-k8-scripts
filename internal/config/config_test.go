@@ -91,6 +91,30 @@ func TestParseRole(t *testing.T) {
 	}
 }
 
+// TestRoleNames pins the completion suggestion list to the parser: RoleNames is a
+// hand-written slice sitting beside a hand-written switch, so a role added to one
+// and not the other has to fail here rather than at a user's TAB press.
+func TestRoleNames(t *testing.T) {
+	names := RoleNames()
+	got := map[Role]bool{}
+	for _, name := range names {
+		r, err := ParseRole(name)
+		if err != nil {
+			t.Errorf("RoleNames() offers %q, which ParseRole rejects: %v", name, err)
+			continue
+		}
+		if got[r] {
+			t.Errorf("RoleNames() offers two names for role %q", r)
+		}
+		got[r] = true
+	}
+	for _, want := range []Role{Primary, Backup, Monitor} {
+		if !got[want] {
+			t.Errorf("RoleNames() = %v, missing a name for role %q", names, want)
+		}
+	}
+}
+
 func TestRoleLetter(t *testing.T) {
 	tests := []struct {
 		r    Role
@@ -471,6 +495,37 @@ func TestValidateK8sBadUpdateStrategy(t *testing.T) {
 	err := c.Validate(K8s)
 	if err == nil || !strings.Contains(err.Error(), "k8s.updateStrategy must be") {
 		t.Errorf("expected updateStrategy enum error, got: %v", err)
+	}
+}
+
+// TestValidateK8sAdminUserFixed mirrors TestValidateK8sMsgNodeCPURemoved: admin.user is a
+// container knob, and on Kubernetes the operator reads the fixed username_admin_password
+// key out of the credentials Secret, so any other value was silently ignored -- the same
+// "a value the operator believes is in effect has to be seen" case. The default and the
+// unset field must both stay legal, or every k8s env file would fail to load.
+func TestValidateK8sAdminUserFixed(t *testing.T) {
+	c := validK8sConfig()
+	c.Admin.User = "ops"
+	err := c.Validate(K8s)
+	if err == nil || !strings.Contains(err.Error(), "admin.user") {
+		t.Fatalf("expected the admin.user rejection, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "username_admin_password") {
+		t.Errorf("the error should name the key the operator actually reads, got: %v", err)
+	}
+	for _, user := range []string{"admin", ""} {
+		c := validK8sConfig()
+		c.Admin.User = user
+		if err := c.Validate(K8s); err != nil {
+			t.Errorf("admin.user %q must validate (unset means ApplyDefaults fills it): %v", user, err)
+		}
+	}
+	// Containers own the username: it names their globalaccesslevel setting, their
+	// password file and their SEMP login, so the rejection must be k8s-only.
+	ctr := validContainerConfig(Docker, "yes")
+	ctr.Admin.User = "ops"
+	if err := ctr.Validate(Docker); err != nil {
+		t.Errorf("admin.user is a docker/podman knob and must still validate there: %v", err)
 	}
 }
 
@@ -1134,7 +1189,7 @@ func TestLoadBashEnvFileHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("a bash env file should not load")
 	}
-	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace convert"} {
+	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace-util convert"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err.Error(), want)
 		}
@@ -1149,7 +1204,7 @@ func TestLoadNotYAMLHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("a non-YAML file should not load")
 	}
-	for _, want := range []string{"not valid YAML", "env/sample.yaml", "solace convert"} {
+	for _, want := range []string{"not valid YAML", "env/sample.yaml", "solace-util convert"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err.Error(), want)
 		}
@@ -1169,7 +1224,7 @@ func TestLoadUnknownFieldHasNoConvertHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown key should not load")
 	}
-	if strings.Contains(err.Error(), "solace convert") || strings.Contains(err.Error(), "not valid YAML") {
+	if strings.Contains(err.Error(), "solace-util convert") || strings.Contains(err.Error(), "not valid YAML") {
 		t.Errorf("unknown-key error should stay a schema error, got: %v", err)
 	}
 }

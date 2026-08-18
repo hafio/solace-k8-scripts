@@ -169,7 +169,7 @@ func opK8sConfigAdditionalUsers(a *App) error {
 // path is used as-is. The interactive file-picker menu of the bash 059 is not ported.
 func opK8sExecCLI(a *App, file string) error {
 	if file == "" {
-		return fmt.Errorf("a CLI script file is required (e.g. `solace k8s config exec-cli setup.cli`)")
+		return fmt.Errorf("a CLI script file is required (e.g. `solace-util k8s config exec-cli setup.cli`)")
 	}
 	role, err := podRole(a)
 	if err != nil {

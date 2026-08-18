@@ -1,4 +1,4 @@
-# solace
+# solace-util
 
 A single Go binary that deploys and operates Solace PubSub+ Event Brokers on
 Kubernetes, Docker, or Podman. You describe the broker once in a YAML env file and drive
@@ -44,7 +44,7 @@ the whole lifecycle -- `check -> prep -> deploy -> config -> verify` and back do
 Quick local build:
 
 ```
-go build -o solace .
+go build -o solace-util .
 ```
 
 Release binaries (cross-compiled, stripped) via the dev scripts:
@@ -54,11 +54,61 @@ scripts/dev.ps1 dist      # Windows
 ./scripts/dev.sh dist     # Linux/macOS
 ```
 
-This emits `dist/solace-<os>-<arch>` for linux/amd64, linux/arm64, darwin/arm64,
+This emits `dist/solace-util-<os>-<arch>` for linux/amd64, linux/arm64, darwin/arm64,
 and windows/amd64 (Windows gets a `.exe` suffix), built with
-`CGO_ENABLED=0 -trimpath -ldflags '-s -w'`. `scripts/dev.sh build` compiles a
-single target instead -- the host's by default, or `TARGET_OS`/`TARGET_ARCH`
-when set, which is how the release pipeline drives it.
+`CGO_ENABLED=0 -trimpath -ldflags '-s -w -X solace/internal/cli.version=<version>'`.
+`scripts/dev.sh build` compiles a single target instead -- the host's by default, or
+`TARGET_OS`/`TARGET_ARCH` when set, which is how the release pipeline drives it.
+
+`<version>` is `git describe --tags --dirty --always`: on a tag push HEAD is exactly
+the pushed tag, so a release binary reports e.g. `v1.2.3`, matching the GitHub
+release; a local build between tags reports a pseudo-version like
+`v1.2.3-5-gabc1234-dirty`. The quick local `go build` above stamps nothing and
+reports `dev`.
+
+## Version
+
+`solace-util version` prints the stamped version (or `dev`), the Go toolchain, and
+the OS/arch the binary was built for:
+
+```
+solace-util v1.2.3 go1.26.5 linux/amd64
+```
+
+## Shell completion
+
+`solace-util completion <shell>` prints a completion script on stdout. Load it into
+the current shell:
+
+```
+source <(solace-util completion bash)                               # bash
+source <(solace-util completion zsh)                                # zsh
+solace-util completion fish | source                                # fish
+solace-util completion powershell | Out-String | Invoke-Expression  # PowerShell
+```
+
+Load it for every session:
+
+```
+solace-util completion bash > /etc/bash_completion.d/solace-util           # bash
+solace-util completion zsh > "${fpath[1]}/_solace-util"                    # zsh (compinit enabled)
+solace-util completion fish > ~/.config/fish/completions/solace-util.fish  # fish
+solace-util completion powershell > solace-util.ps1                        # PowerShell: source from $PROFILE
+```
+
+Beyond commands and flag names, it completes the values they take:
+
+- `-e`/`--env` -- the `.yaml`/`.yml` files it would actually resolve, searched in
+  the base dir then `<base-dir>/env`, the same order described under
+  [Configuration](#configuration--e--env). A value you type with a directory in it
+  falls back to ordinary file completion, because that is how it resolves.
+- the `[role]` positionals and `--pod` -- `primary`, `backup`, `monitor`.
+- `--base-dir` and `--dir` -- directories only.
+- `convert --platform` -- `k8s`, `docker`, `podman`.
+
+Completion never reads your env file: a TAB press cannot parse config, run a
+command, or print anything into the shell. Add `--no-descriptions` to any of the
+above to drop the help text shown beside each suggestion.
 
 ## Quick start (Kubernetes)
 
@@ -75,27 +125,27 @@ when set, which is how the release pipeline drives it.
    file name; it is found under `env/` because there is no `./dev.yaml`:
 
    ```
-   solace k8s check -e dev.yaml --dry-run
+   solace-util k8s check -e dev.yaml --dry-run
    ```
 
 3. Bring the broker up (check -> prep -> deploy -> config leader if HA):
 
    ```
-   solace k8s up -e dev.yaml
+   solace-util k8s up -e dev.yaml
    ```
 
 4. Verify and inspect:
 
    ```
-   solace k8s verify -e dev.yaml
-   solace k8s status -e dev.yaml
+   solace-util k8s verify -e dev.yaml
+   solace-util k8s status -e dev.yaml
    ```
 
 5. Tear it down (persistent volumes are **kept** by default):
 
    ```
-   solace k8s down -e dev.yaml            # keeps PVCs
-   solace k8s down -e dev.yaml --purge    # also clears PVCs (irreversible)
+   solace-util k8s down -e dev.yaml            # keeps PVCs
+   solace-util k8s down -e dev.yaml --purge    # also clears PVCs (irreversible)
    ```
 
 ## Configuration (`-e`/`--env`)
@@ -113,24 +163,24 @@ Every command reads one YAML env file, selected with `-e`/`--env`. The value is 
 - A value carrying a **directory component** is used exactly as typed and is *not* retried
   under `env/` or joined with `--base-dir` -- e.g. `-e ./configs/prod.yaml`,
   `-e ../shared/prod.yaml`, or an absolute path.
-- The default name is `env.yaml`, so a bare `solace k8s status` looks for `./env.yaml` then
+- The default name is `env.yaml`, so a bare `solace-util k8s status` looks for `./env.yaml` then
   `./env/env.yaml`. Neither is shipped; copy `env/sample.yaml` to create your own.
 
 When no candidate exists the error names every path that was tried.
 
 Decoding is **strict**: an unknown or misspelled key is a hard error, so typos fail loud
 instead of being silently ignored. A file that is not YAML at all is reported as such --
-and if it looks like a legacy bash env file, the error points at `solace convert` (below).
+and if it looks like a legacy bash env file, the error points at `solace-util convert` (below).
 
-### Migrating from the bash env files (`solace convert`)
+### Migrating from the bash env files (`solace-util convert`)
 
 The pre-Go scripts kept their configuration in shell files under `bash/env/`, sourced by
-`000-env.sh`. `solace convert` turns one into the YAML this CLI reads:
+`000-env.sh`. `solace-util convert` turns one into the YAML this CLI reads:
 
 ```
-solace convert bash/env/prod -o prod.yaml                 # kubernetes flavour
-solace convert bash/docker-podman/env/prod -o prod.yaml   # docker/podman flavour
-solace k8s check -e prod.yaml --dry-run
+solace-util convert bash/env/prod -o prod.yaml                 # kubernetes flavour
+solace-util convert bash/docker-podman/env/prod -o prod.yaml   # docker/podman flavour
+solace-util k8s check -e prod.yaml --dry-run
 ```
 
 - The **platform section** is detected from the variables present (`SOLBK_NS`/`SOLOP_*` ->
@@ -196,6 +246,7 @@ Common optional knobs:
 | `tls.serverSecret` | -- | Name of the TLS secret; its presence enables the CR's TLS block |
 | `k8s.adminSecret` | `solace-admin-secret` | Name of the Kubernetes Secret holding the admin/monitor credentials. Was `admin.userSecret` |
 | `admin.additionalUsers` | -- | Extra CLI (management) users, each `{username, accessLevel, password\|passwordEnv}` with `accessLevel` one of `none`, `read-only`, `mesh-manager`, `read-write`, `admin`. Replaces the old `admin.userPasswords` `user=password` list. Created at boot on containers, and by `k8s config additional-users` on Kubernetes -- see below |
+| `admin.user` | `admin` | Broker admin username. **docker/podman only** -- it names the container's `username_<user>_globalaccesslevel` setting, its mounted password file and the SEMP login. On Kubernetes the operator reads the fixed `username_admin_password` key out of `k8s.adminSecret` and creates the user itself, so the admin user is always `admin` there and any other value is a load-time error rather than a silently ignored key |
 | `admin.passEnv` (and every other `*Env`) | -- | Name of an environment variable holding the secret, instead of the value itself. See **Secrets** below |
 | `timezone` | -- | Broker timezone, all platforms (the CR's `timezone` and the containers' `TZ`). Omitted keeps the image default |
 | `k8s.securityContext` | -- | `runAsUser`/`fsGroup` for the pod. Omitted entirely when unset |
@@ -257,11 +308,11 @@ limit costs nothing.
 
 Both container artifacts ask the engine for `<docker|podman>.container.ulimits.nofile`
 (default `2448:1048576`). A **rootless** container cannot raise `nofile` above the hard limit
-of the user invoking podman -- the kernel refuses -- so `solace podman prep` checks it and
+of the user invoking podman -- the kernel refuses -- so `solace-util podman prep` checks it and
 stops with the exact drop-in to add when it is too low:
 
 ```
-solace podman prep -e env/prod.yaml
+solace-util podman prep -e env/prod.yaml
 ...
 error: rootless podman: this user's hard nofile limit is 1024, but
 podman.container.ulimits.nofile needs 1048576 -- a rootless container cannot raise it
@@ -314,8 +365,8 @@ Anything else -- a wrapper such as `microk8s kubectl` or `lima nerdctl`, a site-
 shim -- runs only when **you** approve it, per invocation:
 
 ```sh
-solace k8s deploy --allow-command microk8s
-solace docker up --allow-command lima
+solace-util k8s deploy --allow-command microk8s
+solace-util docker up --allow-command lima
 ```
 
 `--allow-command` is repeatable, takes a bare name (never a path), and exists **only** as a
@@ -332,7 +383,7 @@ file, decided by whoever wrote that file. Elevate the tool instead, at the momen
 so the privilege belongs to one invocation you chose:
 
 ```sh
-sudo solace podman deploy -e prod.yaml     # yes
+sudo solace-util podman deploy -e prod.yaml     # yes
 # runtime: sudo podman  in the env file    # never
 ```
 
@@ -345,8 +396,10 @@ parsing would fix either:
 
 - **A compromised machine.** If an attacker has already put a trojan `kubectl` on your
   `PATH`, they own the host; nothing this tool checks can help. What it does do is make the
-  binary's real location visible -- every execution prints `exec: <resolved path> <args>` to
-  stderr before it runs -- and refuse to resolve a bare name from the current directory.
+  binary's real location visible -- before any work starts, each binary this env file names
+  (`k8s.runtime`, `docker.runtime`, `podman.runtime`, `docker.compose`) is resolved and
+  printed as `==> using <name>: <resolved path>`, and `-v/--verbose` prints every command as
+  it runs -- and refuse to resolve a bare name from the current directory.
 - **Config that is malicious but perfectly legitimate in form.** `k8s.namespace: production`,
   or a valid `kubectl --context` aimed at the wrong cluster, is a review problem. So is a
   flag's *value*: this tool cannot know how many arguments a flag takes, so the token after
@@ -405,6 +458,7 @@ These apply to every subcommand:
 | `--gen-secrets-only` | `false` | Render this deployment's secrets and print them; change nothing -- k8s Secret manifests, podman `secret create` commands, docker `export` lines to source. **Prints secret values.** |
 | `--gen-env-only` | `false` | Render the container broker settings as an env file and print them; change nothing (docker/podman only). |
 | `--dry-run` | `false` | Print the external commands instead of running them. |
+| `-v`, `--verbose` | `false` | Announce every external command as it runs (`==> exec: <resolved path> <args>`). By default the binaries this env file names are resolved and listed once, up front. |
 | `-y`, `--yes` | `false` | Skip confirmation prompts. Does **not** imply `--purge`. |
 
 On the `k8s`, `docker` and `podman` trees only:
@@ -443,7 +497,7 @@ The tables below group the commands by lifecycle phase. For the **complete** sur
 every command, its arguments, and every flag with its default -- see
 [docs/commands.md](docs/commands.md), which is generated from the command tree itself.
 
-Run `solace k8s --help` (or `--help` on any subcommand) for the live tree. A `[role]`
+Run `solace-util k8s --help` (or `--help` on any subcommand) for the live tree. A `[role]`
 positional accepts `p`|`b`|`m` or `primary`|`backup`|`monitor` and defaults to primary.
 
 The verbs fall into two halves. `check`, `prep` and `deploy` build the deployment and are
@@ -540,15 +594,15 @@ the safe way to inspect an env file you did not write (see
 [The command fields are executable content](#the-command-fields-are-executable-content)):
 
 ```
-solace k8s gen broker -e dev.yaml                 # the PubSubPlusEventBroker CR
-solace k8s gen operator -e dev.yaml               # the operator bundle
-solace k8s gen secrets -e dev.yaml                # the Secret manifests (secret values!)
-solace k8s deploy -e dev.yaml --gen-only          # equivalent to gen broker
-solace k8s operator deploy -e dev.yaml --gen-only # equivalent to gen operator
-solace docker gen primary -e dev.yaml             # the compose file
-solace podman gen primary -e dev.yaml             # the quadlet unit
-solace docker gen primary -e dev.yaml --gen-env-only     # the broker settings, key=value
-solace docker gen primary -e dev.yaml --gen-secrets-only # commands that supply the secrets
+solace-util k8s gen broker -e dev.yaml                 # the PubSubPlusEventBroker CR
+solace-util k8s gen operator -e dev.yaml               # the operator bundle
+solace-util k8s gen secrets -e dev.yaml                # the Secret manifests (secret values!)
+solace-util k8s deploy -e dev.yaml --gen-only          # equivalent to gen broker
+solace-util k8s operator deploy -e dev.yaml --gen-only # equivalent to gen operator
+solace-util docker gen primary -e dev.yaml             # the compose file
+solace-util podman gen primary -e dev.yaml             # the quadlet unit
+solace-util docker gen primary -e dev.yaml --gen-env-only     # the broker settings, key=value
+solace-util docker gen primary -e dev.yaml --gen-secrets-only # commands that supply the secrets
 ```
 
 The flag selects the artifact, not the command: any artifact command honors all three.
@@ -588,7 +642,7 @@ declarative route for it:
 - **Docker / Podman** -- created at container boot, from the mounted password file plus a
   `username_<username>_globalaccesslevel` setting in the artifact. Nothing to run
   afterwards.
-- **Kubernetes** -- created post-deployment by **`solace k8s config additional-users`**,
+- **Kubernetes** -- created post-deployment by **`solace-util k8s config additional-users`**,
   which builds a Solace CLI script and runs it on the primary. Verified against a live
   cluster: extra `username_<user>_password` keys in the credentials Secret are **ignored by
   the operator**, and the only declarative alternative (`extraEnvVars` /
@@ -616,7 +670,7 @@ compose file and brings it up with `docker compose`, Podman a systemd **quadlet*
 `.container` unit. (Docker's older `docker.mode: run` was removed: a bare `docker run`
 cannot recreate an existing container, so re-deploying after an image-tag bump failed on a
 name conflict where compose recreates cleanly. An env file still carrying it fails with
-that explanation.) Run `solace docker --help` / `solace podman --help` for the live tree.
+that explanation.) Run `solace-util docker --help` / `solace-util podman --help` for the live tree.
 
 A `[primary|backup|monitor]` positional (also `p`|`b`|`m`) selects the redundancy role and
 defaults to primary. In standalone mode (`redundancy: no`) it is ignored; in an HA group
@@ -701,7 +755,7 @@ what is already on disk, so the three outcomes are distinguishable:
   deliberately not `--yes`: dropping messaging traffic is its own decision.
 
 This is what makes an image-tag bump a one-command upgrade: edit `image.tag`, then
-`solace podman deploy <role> --restart` (or `solace docker deploy --restart`). Podman needs
+`solace-util podman deploy <role> --restart` (or `solace-util docker deploy --restart`). Podman needs
 this because `systemctl start` on an already-active unit is a no-op -- the old
 behaviour rewrote the unit, reported success, and left the previous image running.
 
@@ -746,12 +800,12 @@ writes it back to the env file; `deploy` externalizes it as a secret). Container
 Example (HA -- run each line on the matching host):
 
 ```
-solace podman up primary -e prod.yaml       # on the primary host
-solace podman up backup  -e prod.yaml       # on the backup host
-solace podman up monitor -e prod.yaml       # on the monitor host
-solace podman config leader -e prod.yaml    # on the primary only
+solace-util podman up primary -e prod.yaml       # on the primary host
+solace-util podman up backup  -e prod.yaml       # on the backup host
+solace-util podman up monitor -e prod.yaml       # on the monitor host
+solace-util podman config leader -e prod.yaml    # on the primary only
 # then, concurrently on the primary and backup hosts:
-solace podman verify redundancy -e prod.yaml
+solace-util podman verify redundancy -e prod.yaml
 ```
 
 ## Upgrading a running broker
@@ -762,7 +816,7 @@ bump `image.tag` in the env file -- but applying it differs:
 **Kubernetes, `updateStrategy: automatedRolling` (the default)**
 
 ```
-solace k8s deploy -e dev.yaml
+solace-util k8s deploy -e dev.yaml
 ```
 
 `deploy` re-applies the custom resource; the operator sees the new tag and rolls the
@@ -771,21 +825,21 @@ pods itself (monitor, then backup, then the active node).
 **Kubernetes, `updateStrategy: manualPodRestart`**
 
 ```
-solace k8s deploy -e dev.yaml     # updates the statefulset template; no pod is touched
-solace k8s restart -e dev.yaml    # bounces monitor -> backup -> primary, waiting for each
+solace-util k8s deploy -e dev.yaml     # updates the statefulset template; no pod is touched
+solace-util k8s restart -e dev.yaml    # bounces monitor -> backup -> primary, waiting for each
 ```
 
 The operator deliberately waits for you here, so `deploy` alone changes nothing
 visible. `restart <role>` bounces one pod if you would rather drive the order
 yourself -- worth doing after a failover, since the order above is by configured
 role and the active node may not be the configured primary. Check with
-`solace k8s verify redundancy` first.
+`solace-util k8s verify redundancy` first.
 
 **Docker / Podman** (on each host, with its own role)
 
 ```
-solace podman deploy primary -e prod.yaml --restart
-solace docker deploy -e prod.yaml --restart
+solace-util podman deploy primary -e prod.yaml --restart
+solace-util docker deploy -e prod.yaml --restart
 ```
 
 `deploy` compares the rendered artifact with the one on disk: unchanged is a no-op,
@@ -803,7 +857,7 @@ build/test/scan command. The workflows call task names only, so local runs match
 | --- | --- |
 | `tidy` | `go mod tidy` |
 | `vet` | `go vet ./...` |
-| `build` | Compile -> `dist/solace-<os>-<arch>[.exe]`. `TARGET_OS`/`TARGET_ARCH` pick the target; unset means the host |
+| `build` | Compile -> `dist/solace-util-<os>-<arch>[.exe]`. `TARGET_OS`/`TARGET_ARCH` pick the target; unset means the host. Stamps `solace-util version` from `git describe` (falls back to `dev`) |
 | `test` | `go test -count=1 ./...` (race on by default on `dev.sh`; opt-in on `dev.ps1`) |
 | `cov` | Coverage profile -> `coverage/coverage.html` + `.out`, prints the total |
 | `scan` | `go tool govulncheck -format json` (version pinned in `go.mod`/`go.sum`), judged by [internal/tools/vulnjudge](internal/tools/vulnjudge) -- **fatal** on a fixable vulnerability this module calls, **warns and passes** on one with no released fix. Raw stream kept at `scripts/logs/scan.json` |
@@ -856,7 +910,7 @@ git tag v0.1.0 && git push origin v0.1.0
 | `internal/broker` | Platform-agnostic config/verify operations over an injected transport. |
 | `internal/k8s` | Kubernetes cluster/operator operations and the kubectl transport. |
 | `internal/container` | Docker/Podman host operations (Manager) and the node-local `<runtime> exec`/`cp` transport. |
-| `internal/convert` | Legacy bash env -> YAML converter behind `solace convert`. |
+| `internal/convert` | Legacy bash env -> YAML converter behind `solace-util convert`. |
 | `internal/cli` | Cobra command tree and handlers. |
 | `internal/tools/vulnjudge` | Dev-only judge the `scan` task pipes govulncheck JSON through. |
 | `env/` | Config files (`sample.yaml` is the annotated template). |

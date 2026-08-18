@@ -10,7 +10,7 @@ import (
 	"solace/internal/convert"
 )
 
-// newConvertCmd builds `solace convert`, the migration aid from the pre-Go bash
+// newConvertCmd builds `solace-util convert`, the migration aid from the pre-Go bash
 // env format to the YAML env file every other command reads. It sits at the root
 // rather than under a platform because it loads no config of its own: the file
 // it reads is the argument, not -e/--env, so the app context stays unused.
@@ -31,9 +31,9 @@ func newConvertCmd(_ *App) *cobra.Command {
 			"The output carries every secret from the source file verbatim, so treat it\n" +
 			"like the source: write it with -o rather than through a shared terminal, and\n" +
 			"never commit it.\n\n" +
-			"  solace convert bash/env/prod -o prod.yaml\n" +
-			"  solace convert bash/env/prod --platform podman -o prod.yaml\n" +
-			"  solace k8s check -e prod.yaml --dry-run",
+			"  solace-util convert bash/env/prod -o prod.yaml\n" +
+			"  solace-util convert bash/env/prod --platform podman -o prod.yaml\n" +
+			"  solace-util k8s check -e prod.yaml --dry-run",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -44,6 +44,7 @@ func newConvertCmd(_ *App) *cobra.Command {
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write the YAML here instead of stdout")
 	cmd.Flags().StringVar(&platform, "platform", "", "platform section to write: k8s, docker, or podman (default: detect)")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite the --out file if it already exists")
+	registerFlagCompletion(cmd, "platform", completePlatforms)
 	return cmd
 }
 

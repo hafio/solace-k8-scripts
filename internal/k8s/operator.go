@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strings"
 	"text/template"
 
 	"solace/internal/config"
@@ -35,14 +36,10 @@ type operatorTmplVars struct {
 // the imagePullSecrets block is emitted only when an image-pull secret is configured.
 func RenderOperator(cfg *config.Config, opNS string) ([]byte, error) {
 	op := cfg.K8s.Operator
-	image := op.Image
-	if cfg.Image.Registry != "" {
-		image = cfg.Image.Registry + "/" + image
-	}
 	vars := operatorTmplVars{
 		Namespace:      opNS,
 		WatchNamespace: watchNamespace(cfg),
-		Image:          image,
+		Image:          operatorImage(cfg),
 		CPU:            op.CPU,
 		Mem:            op.Mem,
 		PullSecret:     cfg.Image.PullSecret != "",
@@ -71,18 +68,44 @@ func GenOperator(cfg *config.Config) ([]byte, error) {
 	return RenderOperator(cfg, opNS)
 }
 
+// operatorImage is the operator image reference a deploy will actually pull:
+// Operator.Image with Image.Registry/ prefixed when set (010:2019). RenderOperator
+// substitutes it into the bundle and CheckEnv reports it, both from this one definition,
+// so the report cannot name an image the apply does not use. Image.Ref() is not the
+// helper for this: it composes repo:tag, which Operator.Image already carries.
+func operatorImage(cfg *config.Config) string {
+	if cfg.Image.Registry != "" {
+		return cfg.Image.Registry + "/" + cfg.K8s.Operator.Image
+	}
+	return cfg.K8s.Operator.Image
+}
+
 // watchNamespace builds the operator's WATCH_NAMESPACE value: the configured watch
 // list with the broker namespace appended (comma-joined) when broker-ns watching is
 // enabled -- the default (000-env.sh:85-89).
+//
+// Entries are trimmed and de-duplicated, first occurrence winning. The broker namespace
+// is very often already in the configured list, and the repeat reached both the `check`
+// report and the applied Deployment's WATCH_NAMESPACE; controller-runtime's cache is
+// map-keyed, so it collapsed there harmlessly, which is exactly why it went unnoticed.
 func watchNamespace(cfg *config.Config) string {
-	watch := cfg.K8s.Operator.WatchNamespaces
-	if cfg.K8s.Operator.WatchBrokerNSEnabled() {
-		if watch != "" {
-			watch += ","
+	var out []string
+	seen := make(map[string]bool)
+	add := func(ns string) {
+		ns = strings.TrimSpace(ns)
+		if ns == "" || seen[ns] {
+			return
 		}
-		watch += cfg.K8s.Namespace
+		seen[ns] = true
+		out = append(out, ns)
 	}
-	return watch
+	for _, ns := range strings.Split(cfg.K8s.Operator.WatchNamespaces, ",") {
+		add(ns)
+	}
+	if cfg.K8s.Operator.WatchBrokerNSEnabled() {
+		add(cfg.K8s.Namespace)
+	}
+	return strings.Join(out, ",")
 }
 
 // OperatorApply installs the operator: it resolves the operator namespace, applies the

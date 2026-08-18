@@ -26,7 +26,7 @@ func writeRuntimeEnv(t *testing.T, runtime string) string {
 
 // TestAllowCommandIsRegisteredOnPlatformTrees: the escape hatch reaches every verb
 // that can execute, and only through the platform subtrees. Registering it on root
-// would put it on `solace convert`, which loads no config and runs no platform CLI.
+// would put it on `solace-util convert`, which loads no config and runs no platform CLI.
 func TestAllowCommandIsRegisteredOnPlatformTrees(t *testing.T) {
 	root := newRootCmd(&App{})
 	for _, platform := range []string{"k8s", "docker", "podman"} {
@@ -43,7 +43,7 @@ func TestAllowCommandIsRegisteredOnPlatformTrees(t *testing.T) {
 		t.Error("--allow-command is a root persistent flag; it must be scoped to the platform trees")
 	}
 	if _, err := runRoot(t, []string{"convert", "--allow-command", "lima", "somefile"}); err == nil {
-		t.Error("`solace convert --allow-command` should be a usage error: convert runs no platform CLI")
+		t.Error("`solace-util convert --allow-command` should be a usage error: convert runs no platform CLI")
 	}
 }
 
@@ -95,7 +95,7 @@ func TestAllowCommandRejectsBadValues(t *testing.T) {
 		{"empty", "", "empty argument"},
 		// Privilege escalation is refused outright, not merely unlisted: granting it
 		// once here would elevate every command the tool issues for the life of the
-		// env file. `sudo solace ...` is the supported way, and the message says so.
+		// env file. `sudo solace-util ...` is the supported way, and the message says so.
 		{"sudo", "sudo", "is never permitted"},
 		{"doas", "doas", "is never permitted"},
 		{"pkexec", "pkexec", "is never permitted"},

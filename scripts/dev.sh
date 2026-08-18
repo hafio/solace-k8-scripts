@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/dev.sh -- build/vet/test/cov/scan/dist tasks for the `solace` Go CLI.
+# scripts/dev.sh -- build/vet/test/cov/scan/dist tasks for the `solace-util` Go CLI.
 #
 # Mirror of scripts/dev.ps1 (behaviourally identical). The USER runs this; CI
 # (.github/workflows/ci.yml and tag.yml) calls task names only, so local == CI
@@ -15,7 +15,14 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_DIR="${SCRIPT_DIR}/logs"
 DIST_DIR="${REPO_ROOT}/dist"
 COV_DIR="${REPO_ROOT}/coverage"
-BIN_NAME="solace"
+BIN_NAME="solace-util"
+
+# Version stamp: on a tag push git describe is exactly the pushed tag, so
+# `solace-util version` matches the GitHub release. --always falls back to the
+# short hash when no tag is reachable; "dev" when git is unavailable or this
+# is not a repo. Computed once per run: dist builds four legs from one commit.
+VERSION="$(git -C "${REPO_ROOT}" describe --tags --dirty --always 2>/dev/null || true)"
+[[ -z "${VERSION}" ]] && VERSION="dev"
 
 # govulncheck is a go.mod `tool` dependency, so its version is pinned by go.sum
 # rather than by a variable here. Bump it with:
@@ -90,7 +97,7 @@ build_one() {
   mkdir -p "${DIST_DIR}"
   step "  ${os}/${arch}"
   CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" \
-    cap go build -trimpath -ldflags "-s -w" -o "${out}" .
+    cap go build -trimpath -ldflags "-s -w -X solace/internal/cli.version=${VERSION}" -o "${out}" .
 }
 
 # CI sets TARGET_OS/TARGET_ARCH (from the BUILD_TARGETS repo variable); unset
@@ -160,7 +167,7 @@ FULL="build vet test cov scan graphify"
 
 usage() {
   cat >&2 <<EOF
-${B}dev.sh${RST} -- build/test/scan tooling for the solace CLI
+${B}dev.sh${RST} -- build/test/scan tooling for the solace-util CLI
 
 Usage: ${0##*/} <task> [task...]
 
@@ -168,7 +175,8 @@ Tasks:
   tidy     go mod tidy
   vet      go vet ./...
   build    compile -> dist/${BIN_NAME}-<os>-<arch>[.exe]; TARGET_OS/TARGET_ARCH
-           pick the target, unset means host
+           pick the target, unset means host; stamps \`solace-util version\`
+           from git describe (falls back to "dev")
   test     go test ${RACE_FLAG[*]:-} -count=1 ./...
   cov      coverage profile -> coverage/coverage.html + printed total
   scan     govulncheck (fatal on a fixable vulnerability this module calls;

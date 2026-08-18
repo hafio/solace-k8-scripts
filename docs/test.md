@@ -46,38 +46,38 @@ test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
-31 test files, 576 test functions. `TestHelperProcess` in `internal/engine` is not a real
+32 test files, 602 test functions. `TestHelperProcess` in `internal/engine` is not a real
 test -- it is the os/exec helper-process shim, a no-op unless `GO_WANT_HELPER_PROCESS=1`.
 
 | Package | Files | Tests |
 | --- | --- | --- |
 | internal/broker | 4 | 135 |
-| internal/k8s | 11 | 96 |
-| internal/config | 4 | 95 |
+| internal/k8s | 11 | 98 |
+| internal/config | 4 | 97 |
 | internal/container | 4 | 93 |
-| internal/cli | 3 | 74 |
-| internal/convert | 1 | 30 |
+| internal/cli | 4 | 95 |
+| internal/convert | 1 | 31 |
 | internal/engine | 2 | 25 |
 | internal/render | 1 | 17 |
 | internal/tools/vulnjudge | 1 | 11 |
-| **Total** | **31** | **576** |
+| **Total** | **32** | **602** |
 
 ## Coverage
 
-Last recorded run, from `scripts/logs/cov.log` (2026-08-14 14:27), total **96.8%**. Re-run
+Last recorded run, from `scripts/logs/cov.log` (2026-08-18 13:36), total **96.9%**. Re-run
 `cov` after any change; these figures go stale the moment tests move, and the previous
 total is the floor the next run has to hold.
 
 | Package | Coverage |
 | --- | --- |
 | internal/tools/vulnjudge | 98.8% |
-| internal/config | 98.0% |
-| internal/cli | 97.8% |
+| internal/config | 98.4% |
+| internal/cli | 97.7% |
 | internal/broker | 97.3% |
 | internal/render | 96.9% |
-| internal/convert | 96.8% |
-| internal/k8s | 96.1% |
-| internal/container | 95.1% |
+| internal/convert | 96.9% |
+| internal/k8s | 96.2% |
+| internal/container | 95.2% |
 | internal/engine | see below |
 
 **`internal/engine` is not currently measurable.** It reports `0.0%` in this run and
@@ -86,7 +86,7 @@ measurement artifact, not coverage that vanished. The package's `Exec` tests re-
 test binary as a child process (`TestHelperProcess`/`helperCommand`), and a coverage-
 instrumented child can clobber the parent's profile; the run also slows to 17s when it
 happens. Until that is fixed, treat the total above as understated by roughly engine's
-share, and do not read `96.8%` as a drop from `97.2%` -- the difference is almost entirely
+share, and do not read `96.9%` as a drop from `97.2%` -- the difference is almost entirely
 this artifact.
 
 ---
@@ -95,7 +95,7 @@ this artifact.
 
 Config loading, defaults, validation, and env-file resolution, plus the `Command`
 type behind the platform CLI overrides and the execution guard that decides what a
-`Command` may be, and the scaling block that sizes the broker on every platform. 95 tests across 4 files.
+`Command` may be, and the scaling block that sizes the broker on every platform. 97 tests across 4 files.
 
 ### command_test.go
 
@@ -130,7 +130,7 @@ validator and every executor enforce it from one definition.
 | `TestExecutorRejectsWithoutValidate` | The reason the check runs twice: a `Config` built in code, which never went through `config.Load`, is still refused by `ClusterCommand`, `RuntimeCommand` and `ComposeCommand` |
 | `TestAllowCommandsAccepts` | `--allow-command` is repeatable, each value extends the same set, and `.exe` folds to one entry |
 | `TestAllowCommandsRejects` | A bad hatch value is a usage error naming the flag: paths (so the hatch cannot reintroduce the path form layer 2 refuses), metacharacters, whitespace, control characters, empty |
-| `TestAllowCommandsRejectsEscalation` | The escape hatch has a floor: `sudo`, `doas`, `su`, `pkexec`, `run0`, `runas`, `gsudo` and their `.exe` spellings can be approved by nobody. Granting one elevates every command the tool issues for the life of an env file, where `sudo solace ...` elevates one invocation the operator chose -- so the message must name that alternative, and the name must not be recorded despite the failure |
+| `TestAllowCommandsRejectsEscalation` | The escape hatch has a floor: `sudo`, `doas`, `su`, `pkexec`, `run0`, `runas`, `gsudo` and their `.exe` spellings can be approved by nobody. Granting one elevates every command the tool issues for the life of an env file, where `sudo solace-util ...` elevates one invocation the operator chose -- so the message must name that alternative, and the name must not be recorded despite the failure |
 | `TestEscalationCannotBeAllowedByAnyRoute` | The structural backstop: even with an escalation wrapper forced into the allow-set (a future edit to `execBinaries`, or a caller populating `extraAllowed` directly), `allowed()` strips the category back out -- while a legitimate wrapper in the same forced set still works, proving it is a deny-list and not a broken allow-set |
 | `TestAllowedBinaryIsNotGloballyAllowed` | An approval is per-`Config`, so it cannot leak into a second config in the same process |
 | `TestComposeCommandDerivation` | `docker.compose` defaults to the runtime's own `compose` subcommand, and `ApplyDefaults` stores exactly what `ComposeCommand` derives -- the two definitions cannot drift |
@@ -145,6 +145,7 @@ validator and every executor enforce it from one definition.
 | `TestRedundancyEnabled` | Only the literal `yes` enables HA; `no`, empty, and junk do not |
 | `TestImageRef` | `Image.Ref` joins repo:tag, prefixing the registry only when set |
 | `TestParseRole` | Long and short role spellings parse, empty defaults to primary, junk errors |
+| `TestRoleNames` | Pins the shell-completion suggestion list to the parser: every name `RoleNames` offers parses, no two name the same role, and all three roles are covered -- a hand-written slice beside a hand-written switch has to fail here, not at a user's TAB press |
 | `TestRoleLetter` | Role -> `p`/`b`/`m` letter used in resource names |
 | `TestResolveNodeStandalone` | Standalone ignores the role and always resolves the primary as a message-routing node |
 | `TestResolveNodeHA` | HA resolves each role to its host name, with the monitor typed `monitoring` |
@@ -160,6 +161,7 @@ validator and every executor enforce it from one definition.
 | `TestValidateK8sValid` | A fully populated k8s config validates clean |
 | `TestValidateK8sMissingMandatory` | Every missing mandatory k8s field is named in one message, exact wording pinned |
 | `TestValidateK8sBadUpdateStrategy` | `k8s.updateStrategy` enum is rejected loud |
+| `TestValidateK8sAdminUserFixed` | Mirrors `TestValidateK8sMsgNodeCPURemoved` for a credential: the operator reads the fixed `username_admin_password` key, so a non-`admin` `admin.user` was silently ignored on Kubernetes and is now refused naming that key. `"admin"` and unset both stay legal (unset means `ApplyDefaults` fills it), and docker still accepts any name -- there the username drives the access-level setting, the password file and the SEMP login |
 | `TestValidateContainerHA` | A valid HA container config validates for both docker and podman |
 | `TestValidateContainerStandalone` | Standalone only requires `nodes.primary.name` among the node fields |
 | `TestValidateContainerMissingMandatory` | Missing container fields (image, admin, all three node name/ip pairs) are all named |
@@ -186,7 +188,7 @@ validator and every executor enforce it from one definition.
 | `TestLoadReadError` | A missing file errors with `read env file` |
 | `TestLoadParseError` | Malformed YAML errors with `parse env file` |
 | `TestLoadUnknownField` | Strict decoding turns a typo'd key into a hard error |
-| `TestLoadBashEnvFileHint` | A legacy bash env file is reported as not-YAML and points at `solace convert` |
+| `TestLoadBashEnvFileHint` | A legacy bash env file is reported as not-YAML and points at `solace-util convert` |
 | `TestLoadNotYAMLHint` | Any other non-YAML file says the env file must be YAML and names the schema and the converter |
 | `TestLoadUnknownFieldHasNoConvertHint` | A valid-YAML file with an unknown key stays a schema error, without the convert hint |
 | `TestLoadValidationError` | A file that parses but fails validation surfaces the missing-fields message |
@@ -224,8 +226,9 @@ and the two keys the change removed or added.
 ## internal/cli
 
 Command-tree wiring, global flags, confirm prompts, and end-to-end `--dry-run` /
-gen-flag passes over the sample env, plus the generated command reference and the
-end-to-end behaviour of the execution guard. 74 tests across three files.
+gen-flag passes over the sample env, plus the generated command reference, shell
+completion, and the end-to-end behaviour of the execution guard. 95 tests across
+four files.
 
 ### cli_test.go
 
@@ -237,6 +240,9 @@ end-to-end behaviour of the execution guard. 74 tests across three files.
 | `TestNotImplemented` | The placeholder error names the command and says "not implemented yet" |
 | `TestEmit` | `emit` writes bytes to stdout unchanged |
 | `TestWarnAndStep` | `warn` and `step` write `[WARN]` / `==>` lines to stderr |
+| `TestAnnounceCommandsNamesResolvedBinaries` | The preamble that replaced the per-call `exec:` line: each binary the env file names is resolved and printed once as `==> using <name>: <path>`. k8s announces the cluster CLI; docker announces one line when `compose` is the runtime's own subcommand and two when a standalone `docker-compose` is configured; a name that resolves nowhere is skipped in silence, since a report must not invent a failure the first real execution already reports. Hermetic -- a stub binary is written into a temp dir put at the front of `PATH`, so the expected path is exact and no test host needs kubectl or docker |
+| `TestBinaryAnnouncementWiring` | The same through the real command tree, with the stub named `kubectl` so it is the schema default and needs no `--allow-command` (which is itself refused where nothing executes). A real run announces before it works; `--dry-run`, `--gen-only` and `gen` announce nothing -- `--dry-run` is documented to need no runtime binary installed at all |
+| `TestVerboseFlagTracesEveryCommand` | `-v` prints `==> exec: <path> <args>` per call, a run without it prints none, and `--dry-run -v` still works (Echo already echoes every command) |
 | `TestTreeStructure` | Every platform and a representative set of leaf command paths exist in the tree |
 | `TestFlagsRegistered` | Per-command flags (`purge`/`clear-data`/`keep-data`, `keep-yaml`, `days`, `pod`, `dir`) are registered where expected |
 | `TestHelpNoConfig` | `--help` at root and per platform short-circuits before config load, so no env is needed |
@@ -272,7 +278,11 @@ end-to-end behaviour of the execution guard. 74 tests across three files.
 | `TestConvertToFile` | `-o` writes the file, a second run refuses to clobber it, and `--force` overrides |
 | `TestConvertRoundTrip` | A converted file loads: `-e` against it drives a real command |
 | `TestConvertErrorPaths` | Bad `--platform`, a missing source file, and a missing argument all fail loud |
-| `TestBashEnvGivenToEnvFlag` | Pointing `-e` at a legacy bash file reports not-valid-YAML and names `solace convert` |
+| `TestVersionPrintsStampedValue` | `version` reports whatever the dev scripts' `-X` flag (or a test) set the package var to, verbatim -- the contract that aligns a release binary with its git tag |
+| `TestVersionDefaultsToDev` | An unstamped build (plain `go build .` or `go test`) reports "dev" |
+| `TestVersionIncludesToolchainAndPlatform` | Output carries `runtime.Version()` and GOOS/GOARCH, for support triage |
+| `TestVersionRejectsArgs` | `version` takes no arguments |
+| `TestBashEnvGivenToEnvFlag` | Pointing `-e` at a legacy bash file reports not-valid-YAML and names `solace-util convert` |
 | `TestExecute` | `Execute()` builds the tree and runs `--help` without error |
 | `TestK8sConfirmDeclined` | a non-interactive `k8s delete`/`k8s down` (no --yes) makes zero cluster calls, using the new App.Interactive seam instead of ambient stdin |
 | `TestK8sRestartConfirmGate` | a non-interactive `k8s restart` (all or one role) bounces nothing, and a bad role is rejected before any prompt |
@@ -302,7 +312,7 @@ executors -- driven through the real command tree.
 
 | Test | What it covers |
 | --- | --- |
-| `TestAllowCommandIsRegisteredOnPlatformTrees` | `--allow-command` is declared on `k8s`/`docker`/`podman` and inherited by their leaves, is NOT a root flag, and is a usage error on `solace convert`, which loads no config and runs no platform CLI |
+| `TestAllowCommandIsRegisteredOnPlatformTrees` | `--allow-command` is declared on `k8s`/`docker`/`podman` and inherited by their leaves, is NOT a root flag, and is a usage error on `solace-util convert`, which loads no config and runs no platform CLI |
 | `TestAllowCommandIsRepeatable` | Both values of a repeated flag are collected in order, so a chain needing two approvals does not force a choice |
 | `TestAllowCommandApprovesAWrappedRuntime` | The accept case end to end: `microk8s kubectl` is refused with a message naming the hatch, and runs -- reaching the echoed command -- once the operator passes `--allow-command microk8s` |
 | `TestAllowCommandRejectsBadValues` | A path, a metacharacter, an empty value, or any privilege-escalation wrapper is a usage error, so the hatch cannot reintroduce what the guard refuses |
@@ -319,12 +329,38 @@ executors -- driven through the real command tree.
 | --- | --- |
 | `TestCommandDocs` | Renders the command reference from the live tree and fails while `docs/commands.md` is stale -- the drift gate for every command path, positional, flag, and `Short` string. This file is also the generator: `-update` rewrites the doc |
 
+### completion_test.go
+
+Shell completion end to end. The value tests drive cobra's hidden `__complete`
+endpoint through the real tree -- the same request a loaded completion script makes
+on every TAB press -- via the `runComplete` helper, which cannot reuse `runRoot`
+because that discards cobra's own writer. Nothing here loads an env file: the
+platform `PersistentPreRunE` never runs for `__complete`, which is what keeps a TAB
+press from parsing config or executing anything.
+
+| Test | What it covers |
+| --- | --- |
+| `TestCompletionScriptsGenerate` | Each of bash/zsh/fish/powershell emits its own script, matched on the line that actually binds the completer to `solace-util`, so a script that generated but wired up nothing still fails |
+| `TestCompletionNoDescriptions` | `--no-descriptions` is honoured on every shell: the generated script requests `__completeNoDesc` instead of `__complete`, and does not without the flag |
+| `TestCompletionNeedsAShell` | An unsupported shell, or none at all, fails loud with nothing on stdout -- the reason the parent carries a `RunE`, since cobra answers a non-runnable command by printing help to stdout and exiting 0, which would put help text into `solace-util completion tcsh > solace-util.ps1` and call it a success |
+| `TestCompletionHelpStillWorks` | `--help` short-circuits ahead of that `RunE`, so asking how to use the command is not itself an error |
+| `TestEnvFlagCompletesEnvFiles` | `-e` is completed from the two directories `config.ResolveEnvPath` searches, by bare name: base dir first, the shadowed `env/` copy of the same name offered once, and a non-YAML file not suggested |
+| `TestEnvFlagPrefixFilters` | A partial name narrows the suggestions instead of returning every env file |
+| `TestEnvFlagWithPathDefersToShell` | A value carrying a directory resolves verbatim, so completion returns the default directive and hands back to the shell rather than offering bare names that would resolve elsewhere |
+| `TestRoleArgsComplete` | Every `[role]` positional offers `primary`/`backup`/`monitor` -- the ones built through `roleLeaf` and the ones assembled inline on both platform trees |
+| `TestPodFlagCompletesRoles` | `--pod` completes to the same role set as the positionals, not to filenames |
+| `TestPlatformFlagCompletes` | `convert --platform` offers exactly what `convertPlatform` accepts, minus the empty detect value |
+| `TestDirFlagCompletesDirectories` | `--dir` asks the shell to filter to directories, on both platform trees |
+| `TestNoArgsLeafOffersNoFiles` | A command built by `leaf` offers nothing, stopping cobra's filename fallback on the majority of commands in the tree. The list covers the no-arg commands that carry a flag or a `--gen` annotation too (`deploy`, `delete`, `down`, `diagnostics`, `check`, `status`, `show-all`, `up`): each used to hand-roll the literal `leaf` already builds, and so shipped without `NoFileCompletions` -- they now go through `leaf` and attach the extra afterwards |
+| `TestAllowCommandOffersNoFiles` | `--allow-command` offers no files on any platform: the value is a bare binary name, and paths are what its own help text warns against |
+| `TestFlagCompletionsRegistered` | The drift gate: every flag that should have a completion function still has one, since a renamed flag silently reverts to filename completion at a TAB press and no other test would notice |
+
 ---
 
 ## internal/convert
 
 The legacy bash env -> YAML converter: a shell-assignment parser, the variable
-mapping, and the YAML emitter. 30 tests.
+mapping, and the YAML emitter. 31 tests.
 
 ### convert_test.go
 
@@ -332,6 +368,7 @@ mapping, and the YAML emitter. 30 tests.
 | --- | --- |
 | `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `k8s.runtime` argv, and only the two expected advisories. The fixture sets `SOLBK_MSGNODE_CPU`, as every real legacy file does, so the drop is exercised here: it warns, and no `cpu` reaches the YAML |
 | `TestConvertUserPasswordsBecomeAdditionalUsers` | The one legacy variable with no like-for-like successor: `SOLBK_USR_PASS` becomes structured `admin.additionalUsers` entries with the least-privileged `accessLevel: none` plus a warning naming that choice, malformed entries are dropped with a warning naming their POSITION and never their text (a malformed entry is most likely a bare password), and `Convert` re-validating its own output proves the emitted level is a legal one |
+| `TestConvertAdminUserIsContainerOnly` | The one admin field that is not portable: `SOLBK_ADM_USER` is emitted only for docker/podman, and on a k8s target is dropped with a warning naming why (`validateK8s` refuses any non-`admin` value), stays out of the generic unmapped list because it is still read, and leaves a document that validates -- no "will not load as-is". A source that already said `admin` warns about nothing |
 | `TestConvertContainer` | A container env file maps the node table, container block, ulimits, network, and spool scaling |
 | `TestConvertPlatformDetection` | Podman markers, docker markers, and both-present all resolve to the expected section |
 | `TestConvertPodmanSection` | Podman rootless and quadlet dir land in the podman block, and no docker block is written |
@@ -535,7 +572,7 @@ only its own half.
 ## internal/k8s
 
 Everything driven through `kubectl`: the read-only permission preflight, prep, deploy,
-operator, day-2 ops, secrets, and the pod transport. 96 tests across 11 files.
+operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 
 ### names_test.go
 
@@ -570,13 +607,14 @@ operator, day-2 ops, secrets, and the pod transport. 96 tests across 11 files.
 
 | Test | What it covers |
 | --- | --- |
-| `TestCheckEnvNoSecretLeak` | The config report shows secrets as set/MISSING and never prints their values |
+| `TestCheckEnvNoSecretLeak` | The config report shows secrets as set/MISSING and never prints their values, and the operator image line carries the `image.registry` prefix the apply adds -- the report named a bare `Operator.Image` the deploy would never pull |
+| `TestCheckOperatorNS` | The line `CheckEnv` cannot print, since discovery needs a live cluster: a configured `k8s.operator.namespace` reports its origin with no cluster call, a scripted deployment row reports `discovered on the cluster`, and both "no operator row" and a refused lookup fall back to the default with wording that does not claim the operator is uninstalled. Under `--dry-run` the line skips instead of reporting an unresolved default |
 | `TestReachable` | The API-server probe argv, and failure when it errors |
 | `TestCheckStorageClass` | A suitable configured class passes with no default lookup; Immediate binding or no expansion is rejected; missing attributes reject; dry-run skips the assertions |
 | `TestResolveStorageClass` | A configured class short-circuits; a single default resolves; multiple defaults error; no default returns empty |
 | `TestCheckDryRun` | The whole preflight runs clean under Echo and emits the report plus the skip note |
 | `TestCheckAbortsWhenUnreachable` | Check aborts before CheckStorageClass wastes a round-trip when the API server is unreachable, and wraps the error with "cannot reach" |
-| `TestCheckEnvSparseConfig` | CheckEnv prints MISSING/none/not-configured fallbacks correctly when the corresponding config fields are unset, not just the all-set sample fixture |
+| `TestCheckEnvSparseConfig` | CheckEnv prints MISSING/none/not-configured fallbacks correctly when the corresponding config fields are unset, not just the all-set sample fixture -- including the watch fallback, which used to claim "(broker namespace only)" for the one input (no list + `watchBrokerNs: false`) that renders an empty `WATCH_NAMESPACE` and so makes the operator watch every namespace |
 
 ### prep_test.go
 
@@ -636,7 +674,8 @@ operator, day-2 ops, secrets, and the pod transport. 96 tests across 11 files.
 
 | Test | What it covers |
 | --- | --- |
-| `TestWatchNamespace` | `WATCH_NAMESPACE` joins: broker namespace appended by default, onto a configured list, or omitted when disabled |
+| `TestWatchNamespace` | `WATCH_NAMESPACE` joins: broker namespace appended by default, onto a configured list, or omitted when disabled -- plus the dedupe half, since a list that already named the broker namespace (the common case, `watchBrokerNs` defaults on) listed it twice in the report and the applied Deployment. Entries are trimmed, empties and trailing commas dropped, repeats inside the list collapsed, first occurrence winning. controller-runtime's map-keyed cache hid the repeat at runtime, so only these cases can catch a regression |
+| `TestOperatorImage` | The registry-prefix rule now shared by `RenderOperator` and `CheckEnv`: prefixed when `image.registry` is set, raw when it is not. Its own test rather than only being reached through the 119 KB bundle render, because the report and the apply drifted for exactly as long as each owned a copy |
 | `TestRenderOperatorSubstitutions` | Every substitution point lands (namespace, watch list, image with/without registry prefix, resources, pull secret) and no template marker survives |
 | `TestGenOperator` | Render-only uses the configured operator namespace, or the fixed default when unset |
 | `TestOperatorApply` | regcred is applied into the operator namespace first, then the bundle, both on stdin |
@@ -845,15 +884,18 @@ quoting, PATH resolution, and the pre-exec announcement. 25 tests across 2 files
 
 ### resolve_test.go
 
-PATH resolution and the pre-exec announcement -- the transparency half of the
+PATH resolution and the command announcement -- the transparency half of the
 execution guard, which lives here because this is where a binary is actually run.
+The announcement is injected (`Exec.Announce`) rather than written to a package
+variable, so what a run prints is decided by the CLI, in one place.
 
 | Test | What it covers |
 | --- | --- |
-| `TestExecEchoesResolvedPath` | Before running anything, `Exec` writes `exec: <absolute resolved path> <args>`. The allowlist guarantees the NAME; this line is what makes the LOCATION visible, at the moment it matters |
+| `TestExecVerboseAnnouncesEveryCommand` | Under `--verbose`, `Exec` writes `==> exec: <absolute resolved path> <args>` before each command -- the path, not the name as typed, with the arguments alongside -- and on *every* call, since a trail with one entry per binary would not answer "what did this run issue?" |
+| `TestExecIsSilentWithoutVerbose` | The default runner announces nothing, and neither does a bare `Exec{}`: nil `Announce` is the quiet default rather than a hole that falls back to stderr. The CLI names the binaries once in its preamble instead, which is what stopped the same resolved path landing between report lines on every command |
 | `TestExecEchoesOnEveryMethod` | All six `Runner` methods announce, not just `Run` -- and `Output`/`OutputInput`, which read cluster state, are the least visible to begin with |
-| `TestExecMissingBinaryIsActionable` | A name that resolves nowhere fails before any process starts, naming what was not found rather than a path the operator never typed |
-| `TestExecRefusesCurrentDirectoryResolution` | The pair to config's bare-name rule: a bare name must never resolve to a file in the working directory -- the binary unpacked beside a shared env file. Go reports it as `exec.ErrDot`; hosts that do not offer the cwd copy at all are logged and still asserted not to run it |
+| `TestResolveMissingBinaryIsActionable` | A name that resolves nowhere fails before any process starts, naming what was not found rather than a path the operator never typed. Asserted on `Resolve` (which the CLI preamble now shares) and again through `Exec.Run` |
+| `TestResolveRefusesCurrentDirectory` | The pair to config's bare-name rule: a bare name must never resolve to a file in the working directory -- the binary unpacked beside a shared env file. Go reports it as `exec.ErrDot`; hosts that do not offer the cwd copy at all are logged and still asserted not to run it |
 | `TestChildEnvNamesAreNotSystemVariables` | The variable names this tool passes to a child are never `PATH`, `LD_PRELOAD` or their relatives, and their values stay masked in display paths. The upstream half is container's `TestComposeSecretEnvNamesCannotBeSystemVars` |
 
 ---

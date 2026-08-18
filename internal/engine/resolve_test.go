@@ -12,38 +12,68 @@ import (
 	"testing"
 )
 
-// captureResolve swaps the pre-exec announcement sink for a buffer and returns it.
-func captureResolve(t *testing.T) *bytes.Buffer {
+// tracePrefix is the per-call announcement --verbose installs. It carries the house
+// `==> ` prefix so the line reads as output rather than as stray debug text.
+const tracePrefix = "==> exec: "
+
+// verboseExec builds the runner --verbose produces, announcing into a buffer.
+func verboseExec(t *testing.T) (Exec, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
-	prev := ResolveOut
-	ResolveOut = &buf
-	t.Cleanup(func() { ResolveOut = prev })
-	return &buf
+	return NewExec(&buf, true), &buf
 }
 
-// TestExecEchoesResolvedPath: before running anything, Exec announces the binary it
-// actually resolved. The allowlist in config guarantees the NAME is one this tool
-// drives; this line is what makes the LOCATION visible, at the moment it matters.
-// It goes to stderr so it never contaminates a rendered artifact on stdout.
-func TestExecEchoesResolvedPath(t *testing.T) {
-	buf := captureResolve(t)
+// TestExecVerboseAnnouncesEveryCommand: under --verbose, Exec announces the binary it
+// actually resolved before running it. The allowlist in config guarantees the NAME is
+// one this tool drives; this line is what makes the LOCATION visible at the moment it
+// matters. It goes to the injected writer (stderr in production) so it never
+// contaminates a rendered artifact on stdout.
+func TestExecVerboseAnnouncesEveryCommand(t *testing.T) {
+	e, buf := verboseExec(t)
 	name, args := helperCommand("echo", "hello")
-	if err := (Exec{}).Run(context.Background(), name, args...); err != nil {
+	if err := e.Run(context.Background(), name, args...); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	line := buf.String()
-	if !strings.HasPrefix(line, "exec: ") {
-		t.Fatalf("announcement = %q, want it to start with %q", line, "exec: ")
+	if !strings.HasPrefix(line, tracePrefix) {
+		t.Fatalf("announcement = %q, want it to start with %q", line, tracePrefix)
 	}
 	// The path, not the name as typed: an absolute path is the whole point.
-	path := strings.TrimPrefix(strings.SplitN(line, " ", 3)[1], "")
+	path := strings.Fields(strings.TrimPrefix(line, tracePrefix))[0]
 	if !filepath.IsAbs(strings.Trim(path, "'")) {
 		t.Errorf("announced %q, want an absolute resolved path", path)
 	}
 	// The remaining args are shown too, so the line reads as the whole command.
 	if !strings.Contains(line, "hello") {
 		t.Errorf("announcement = %q, want it to carry the arguments", line)
+	}
+	// Verbose means EVERY call, not the first: a trail with one entry per binary would
+	// not answer "what exactly did this run issue?", which is why the flag exists.
+	if err := e.Run(context.Background(), name, args...); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if got := strings.Count(buf.String(), tracePrefix); got != 2 {
+		t.Errorf("two calls announced %d lines, want 2", got)
+	}
+}
+
+// TestExecIsSilentWithoutVerbose pins the default: the runner announces nothing, because
+// the CLI lists the binaries an env file chose once in its preamble. Announcing per call
+// as well put the same resolved path between report lines on every command, which read as
+// debug output rather than as part of the report.
+func TestExecIsSilentWithoutVerbose(t *testing.T) {
+	var buf bytes.Buffer
+	name, args := helperCommand("echo", "hello")
+	if err := NewExec(&buf, false).Run(context.Background(), name, args...); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// And the bare Exec{} a test or a hand-built runner produces is silent too: nil
+	// Announce is the quiet default, not a hole that falls back to stderr.
+	if err := (Exec{}).Run(context.Background(), name, args...); err != nil {
+		t.Fatalf("bare Exec Run: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("the default runner announced %q, want nothing", buf.String())
 	}
 }
 
@@ -55,55 +85,61 @@ func TestExecEchoesOnEveryMethod(t *testing.T) {
 	name, args := helperCommand("echo", "x")
 	cases := []struct {
 		method string
-		call   func() error
+		call   func(Exec) error
 	}{
-		{"Run", func() error { return Exec{}.Run(context.Background(), name, args...) }},
-		{"RunInput", func() error { return Exec{}.RunInput(context.Background(), nil, name, args...) }},
-		{"RunEnv", func() error { return Exec{}.RunEnv(context.Background(), nil, name, args...) }},
-		{"RunInteractive", func() error { return Exec{}.RunInteractive(context.Background(), name, args...) }},
-		{"Output", func() error { _, err := Exec{}.Output(context.Background(), name, args...); return err }},
-		{"OutputInput", func() error {
-			_, err := Exec{}.OutputInput(context.Background(), nil, name, args...)
+		{"Run", func(e Exec) error { return e.Run(context.Background(), name, args...) }},
+		{"RunInput", func(e Exec) error { return e.RunInput(context.Background(), nil, name, args...) }},
+		{"RunEnv", func(e Exec) error { return e.RunEnv(context.Background(), nil, name, args...) }},
+		{"RunInteractive", func(e Exec) error { return e.RunInteractive(context.Background(), name, args...) }},
+		{"Output", func(e Exec) error { _, err := e.Output(context.Background(), name, args...); return err }},
+		{"OutputInput", func(e Exec) error {
+			_, err := e.OutputInput(context.Background(), nil, name, args...)
 			return err
 		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
-			buf := captureResolve(t)
-			if err := tc.call(); err != nil {
+			e, buf := verboseExec(t)
+			if err := tc.call(e); err != nil {
 				t.Fatalf("%s: %v", tc.method, err)
 			}
-			if !strings.HasPrefix(buf.String(), "exec: ") {
-				t.Errorf("%s announced %q, want an `exec: <path>` line", tc.method, buf.String())
+			if !strings.HasPrefix(buf.String(), tracePrefix) {
+				t.Errorf("%s announced %q, want a %q line", tc.method, buf.String(), tracePrefix)
 			}
 		})
 	}
 }
 
-// TestExecMissingBinaryIsActionable: a name that resolves nowhere fails before any
+// TestResolveMissingBinaryIsActionable: a name that resolves nowhere fails before any
 // process starts, naming what was not found. Reaching os/exec's own "file does not
-// exist" would name a path the operator never typed.
-func TestExecMissingBinaryIsActionable(t *testing.T) {
-	captureResolve(t)
-	err := Exec{}.Run(context.Background(), "solace-no-such-binary-exists", "x")
+// exist" would name a path the operator never typed. Asserted on Resolve, which the CLI
+// preamble now shares, and again through the Runner so the error still reaches a caller.
+func TestResolveMissingBinaryIsActionable(t *testing.T) {
+	const missing = "solace-no-such-binary-exists"
+	_, err := Resolve(missing)
 	if err == nil {
+		t.Fatal("resolving a binary that is not on PATH must fail")
+	}
+	runErr := Exec{}.Run(context.Background(), missing, "x")
+	if runErr == nil {
 		t.Fatal("running a binary that is not on PATH must fail")
 	}
-	for _, want := range []string{"solace-no-such-binary-exists", "not found on PATH"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %v, want it to contain %q", err, want)
+	for _, got := range []error{err, runErr} {
+		for _, want := range []string{missing, "not found on PATH"} {
+			if !strings.Contains(got.Error(), want) {
+				t.Errorf("error = %v, want it to contain %q", got, want)
+			}
 		}
 	}
 }
 
-// TestExecRefusesCurrentDirectoryResolution is the layer-6 guarantee that pairs
+// TestResolveRefusesCurrentDirectory is the layer-6 guarantee that pairs
 // with config's bare-name rule: even a bare, allowlisted name must not resolve to a
 // file sitting in the working directory. That is precisely the "binary shipped
 // alongside the env file" case -- an operator who unpacks a shared archive and runs
 // the tool from inside it. Go reports it as exec.ErrDot; this refuses rather than
-// running it.
-func TestExecRefusesCurrentDirectoryResolution(t *testing.T) {
-	captureResolve(t)
+// running it. Driven through Exec.Run, so what is pinned is that nothing executes.
+func TestResolveRefusesCurrentDirectory(t *testing.T) {
 	dir := t.TempDir()
 
 	// A file that LookPath would consider executable, named so it cannot collide
