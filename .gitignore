@@ -18,7 +18,7 @@ coverage.out
 coverage.html
 scripts/logs/
 # root-built binary from `go build .`
-/solace
-/solace.exe
+/solace-util
+/solace-util.exe
 bash/*
 solace-repl*

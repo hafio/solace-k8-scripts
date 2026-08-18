@@ -31,7 +31,24 @@ func (c *Cluster) Check(ctx context.Context) error {
 	if err := c.Reachable(ctx); err != nil {
 		return err
 	}
+	c.checkOperatorNS(ctx)
 	return c.CheckStorageClass(ctx)
+}
+
+// checkOperatorNS reports the namespace the operator actually runs in, which CheckEnv can
+// only print as "(derived at runtime)": the discovery needs a live cluster, so it happens
+// here, after Reachable. It never fails -- an operator that cannot be found means "not
+// installed yet", which the default covers and `prep operator` fixes. A configured
+// k8s.operator.namespace short-circuits in operatorNSOrigin, so the line costs a cluster
+// round-trip only when the value has to be discovered.
+func (c *Cluster) checkOperatorNS(ctx context.Context) {
+	w := c.out()
+	if c.isDryRun() {
+		fmt.Fprintln(w, "  operator ns    : skipped (dry-run)")
+		return
+	}
+	ns, origin := c.operatorNSOrigin(ctx)
+	fmt.Fprintf(w, "  operator ns    : %s (%s)\n", ns, origin)
 }
 
 // Reachable probes the API server (001's kubectl availability check, strengthened
@@ -71,13 +88,26 @@ func (c *Cluster) CheckEnv() {
 	if opNS == "" {
 		opNS = "(derived at runtime)"
 	}
+	// operatorImage, not Operator.Image: the apply prefixes image.registry, and a report
+	// naming an image the deploy will not pull is worse than no report. Same reason the
+	// broker line above goes through cfg.Image.Ref().
 	fmt.Fprintf(w, "  operator       : image=%s ns=%s cpu=%s mem=%s\n",
-		cfg.K8s.Operator.Image, opNS, orNone(cfg.K8s.Operator.CPU), orNone(cfg.K8s.Operator.Mem))
-	fmt.Fprintf(w, "  operator watch : %s\n", orValue(watchNamespace(cfg), "(broker namespace only)"))
+		operatorImage(cfg), opNS, orNone(cfg.K8s.Operator.CPU), orNone(cfg.K8s.Operator.Mem))
+	// An empty WATCH_NAMESPACE does not mean "the broker namespace" -- it means the
+	// operator watches every namespace in the cluster, which is the widest scope it has
+	// and the one an operator is least likely to have chosen on purpose. It is only
+	// reachable by setting watchBrokerNs: false with no watchNamespaces list, so the
+	// report says what that produces instead of the reassuring opposite.
+	fmt.Fprintf(w, "  operator watch : %s\n",
+		orValue(watchNamespace(cfg), "(empty -- the operator watches ALL namespaces)"))
 
 	fmt.Fprintf(w, "  storage        : class=%s msgNode=%s monNode=%s\n",
 		orValue(cfg.K8s.Storage.Class, "(cluster default)"), cfg.K8s.Storage.MsgNode, orNone(cfg.K8s.Storage.MonNode))
 
+	// user= is the literal "admin", not cfg.Admin.User: the operator reads the fixed
+	// username_admin_password key out of the credentials Secret (AdminSecret), so that is
+	// the broker's admin user whatever an env file says -- and validateK8s now refuses
+	// any other value rather than letting it look effective here.
 	fmt.Fprintf(w, "  admin          : user=admin secret=%s password=%s monitorPassword=%s extraUsers=%d\n",
 		orNone(cfg.K8s.AdminSecret), setOrMissing(cfg.Admin.Pass), setOrNone(cfg.Admin.MonitorPass != ""), len(cfg.Admin.AdditionalUsers))
 

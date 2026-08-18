@@ -480,7 +480,7 @@ func TestAllowCommandsRejects(t *testing.T) {
 // TestAllowCommandsRejectsEscalation: the escape hatch has a floor. Privilege
 // escalation is not something an env file may ask for OR an operator may grant here,
 // because granting it once on the command line elevates every command this tool
-// issues for the whole life of that env file -- while `sudo solace ...` elevates one
+// issues for the whole life of that env file -- while `sudo solace-util ...` elevates one
 // invocation the operator chose, at the moment they chose it. The category is
 // refused, not the word: blocking `sudo` while allowing `doas` would be a control in
 // name only.

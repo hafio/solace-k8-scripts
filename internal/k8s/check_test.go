@@ -27,8 +27,12 @@ func TestCheckEnvNoSecretLeak(t *testing.T) {
 			t.Errorf("CheckEnv leaked secret value %q:\n%s", secret, out)
 		}
 	}
-	// "cluster cmd" reports the resolved k8s.runtime, as 001-check-env.sh:23 did.
-	for _, want := range []string{"dev-broker", "solace", "HA redundancy", "password=set", "cluster cmd    : kubectl"} {
+	// "cluster cmd" reports the resolved k8s.runtime, as 001-check-env.sh:23 did. The
+	// operator image carries image.registry, because that is what the apply pulls: the
+	// report printed the bare Operator.Image while RenderOperator prefixed the registry,
+	// so an operator reading `check` was told the wrong image.
+	for _, want := range []string{"dev-broker", "solace", "HA redundancy", "password=set", "cluster cmd    : kubectl",
+		"image=registry.example.com/docker.io/solace/pubsubplus-eventbroker-operator:1.4.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("CheckEnv missing %q in:\n%s", want, out)
 		}
@@ -52,11 +56,69 @@ func TestCheckEnvSparseConfig(t *testing.T) {
 	c := NewCluster(&recRunner{}, cfg, nil, buf)
 	c.CheckEnv()
 	out := buf.String()
-	for _, want := range []string{"password=MISSING", "(not configured)", "(cluster default)", "monitorPassword=(none)"} {
+	// The watch fallback is the one negative here that used to state the opposite of the
+	// truth: no list plus watchBrokerNs: false renders an empty WATCH_NAMESPACE, which
+	// makes the operator watch every namespace, not just the broker's.
+	for _, want := range []string{"password=MISSING", "(not configured)", "(cluster default)", "monitorPassword=(none)",
+		"operator watch : (empty -- the operator watches ALL namespaces)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("CheckEnv sparse config missing %q in:\n%s", want, out)
 		}
 	}
+}
+
+// TestCheckOperatorNS covers the line CheckEnv cannot print: the operator namespace is
+// discovered from the cluster, so the report can only say "(derived at runtime)" until
+// after Reachable. Each branch names where the value came from, because "which namespace"
+// and "why that one" are different questions when a deploy lands in the wrong place.
+func TestCheckOperatorNS(t *testing.T) {
+	t.Run("configured namespace needs no cluster call", func(t *testing.T) {
+		cfg := haCfg()
+		cfg.K8s.Operator.Namespace = "chosen-ns"
+		rr := &recRunner{}
+		buf := &bytes.Buffer{}
+		NewCluster(rr, cfg, nil, buf).checkOperatorNS(context.Background())
+		if want := "  operator ns    : chosen-ns (k8s.operator.namespace)\n"; buf.String() != want {
+			t.Errorf("line = %q, want %q", buf.String(), want)
+		}
+		if len(rr.calls) != 0 {
+			t.Errorf("a configured namespace must not query the cluster; got %d calls", len(rr.calls))
+		}
+	})
+	t.Run("discovered on the cluster", func(t *testing.T) {
+		rr := &recRunner{out: []byte(
+			"NS            NAME\n" +
+				"my-op-ns      pubsubplus-eventbroker-operator\n")}
+		buf := &bytes.Buffer{}
+		NewCluster(rr, haCfg(), nil, buf).checkOperatorNS(context.Background())
+		if want := "  operator ns    : my-op-ns (discovered on the cluster)\n"; buf.String() != want {
+			t.Errorf("line = %q, want %q", buf.String(), want)
+		}
+	})
+	// An absent operator and an RBAC denial are indistinguishable here (discoverOperatorNS
+	// swallows the error), so the line must not claim the operator is uninstalled.
+	t.Run("not visible falls back to the default", func(t *testing.T) {
+		noOperatorRow := &recRunner{out: []byte("NS   NAME\nkube-system   coredns\n")}
+		lookupRefused := &recRunner{outErr: errFake}
+		for _, rr := range []*recRunner{noOperatorRow, lookupRefused} {
+			buf := &bytes.Buffer{}
+			NewCluster(rr, haCfg(), nil, buf).checkOperatorNS(context.Background())
+			want := "  operator ns    : " + defaultOperatorNS + " (default -- no operator Deployment visible to this context)\n"
+			if buf.String() != want {
+				t.Errorf("line = %q, want %q", buf.String(), want)
+			}
+		}
+	})
+	// Under --dry-run there is no cluster to ask, so the line skips rather than reporting
+	// the default as if it had been resolved -- the same note CheckStorageClass prints.
+	t.Run("dry-run skips the lookup", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		c := NewCluster(engine.Echo{W: buf}, haCfg(), nil, buf)
+		c.checkOperatorNS(context.Background())
+		if want := "  operator ns    : skipped (dry-run)\n"; buf.String() != want {
+			t.Errorf("line = %q, want %q", buf.String(), want)
+		}
+	})
 }
 
 func TestReachable(t *testing.T) {

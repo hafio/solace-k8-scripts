@@ -66,17 +66,20 @@ func (a *App) willExecute(cmd *cobra.Command) bool {
 // a binary this tool does not drive by default -- a `microk8s kubectl`, a site
 // wrapper -- runs only when the person at the keyboard names it, for that one
 // invocation. It cannot approve a privilege-escalation wrapper at all: elevate this
-// tool when you run it (`sudo solace ...`), never through an env file.
+// tool when you run it (`sudo solace-util ...`), never through an env file.
 //
 // It is a CLI flag and NOTHING else on purpose. There is no config key for it, no
 // environment variable, and no binding layer that could give an env file a way to
 // set it: an env file that could approve its own binary would make the allowlist
 // decorative. It is registered on the platform commands rather than on root so
-// `solace convert --allow-command ...` is a usage error too.
+// `solace-util convert --allow-command ...` is a usage error too.
 func addAllowCommandFlag(c *cobra.Command, app *App) {
 	c.PersistentFlags().StringArrayVar(&app.AllowCommand, "allow-command", nil,
 		"approve one extra binary for the config's platform command, for this run only "+
 			"(repeatable; a bare name, never a path). The env file cannot grant this")
+	// No file completion: the value is a bare binary name, and offering paths would
+	// coach exactly the mistake the help text above warns against.
+	registerFlagCompletion(c, "allow-command", cobra.NoFileCompletions)
 }
 
 // checkAllowCommand rejects --allow-command on an invocation that cannot execute
@@ -133,13 +136,16 @@ type opFunc func(*App) error
 // roleOpFunc is a leaf handler parameterized by a broker node role (p|b|m).
 type roleOpFunc func(*App, config.Role) error
 
-// leaf builds a no-arg subcommand that dispatches straight to fn.
+// leaf builds a no-arg subcommand that dispatches straight to fn. It takes no
+// arguments, so NoFileCompletions is what it should offer -- cobra's default is
+// to fall back to filenames, which would be wrong for every command built here.
 func leaf(app *App, use, short string, fn opFunc) *cobra.Command {
 	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		Args:  cobra.NoArgs,
-		RunE:  func(*cobra.Command, []string) error { return fn(app) },
+		Use:               use,
+		Short:             short,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		RunE:              func(*cobra.Command, []string) error { return fn(app) },
 	}
 }
 
@@ -147,9 +153,10 @@ func leaf(app *App, use, short string, fn opFunc) *cobra.Command {
 // default primary), normalizing it via config.ParseRole before dispatching.
 func roleLeaf(app *App, use, short string, fn roleOpFunc) *cobra.Command {
 	return &cobra.Command{
-		Use:   use + " [role]",
-		Short: short,
-		Args:  cobra.MaximumNArgs(1),
+		Use:       use + " [role]",
+		Short:     short,
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			role, err := config.ParseRole(firstArg(args))
 			if err != nil {

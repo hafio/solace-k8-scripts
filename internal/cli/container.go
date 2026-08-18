@@ -6,7 +6,7 @@ import (
 	"solace/internal/config"
 )
 
-// newContainerCmd builds the `solace docker` or `solace podman` subtree. Both
+// newContainerCmd builds the `solace-util docker` or `solace-util podman` subtree. Both
 // engines share one tree shape; only the deploy artifact (compose/run vs systemd
 // quadlet) and rootless handling differ, resolved downstream by app.Platform.
 func newContainerCmd(app *App, p config.Platform) *cobra.Command {
@@ -29,7 +29,7 @@ func newContainerCmd(app *App, p config.Platform) *cobra.Command {
 			if err := checkAllowCommand(cmd, app); err != nil {
 				return err
 			}
-			return app.load()
+			return app.load(cmd)
 		},
 	}
 	addAllowCommandFlag(c, app)
@@ -75,9 +75,10 @@ func newCtrPrepCmd(app *App) *cobra.Command {
 // other container command fails loud rather than being ignored.
 func newCtrDeployCmd(app *App) *cobra.Command {
 	c := genCapable(&cobra.Command{
-		Use:   "deploy [primary|backup|monitor]",
-		Short: "Deploy the broker on this host (role required in HA, ignored in standalone)",
-		Args:  cobra.MaximumNArgs(1),
+		Use:       "deploy [primary|backup|monitor]",
+		Short:     "Deploy the broker on this host (role required in HA, ignored in standalone)",
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			role, err := config.ParseRole(firstArg(args))
 			if err != nil {
@@ -113,10 +114,11 @@ func newCtrConfigCmd(app *App) *cobra.Command {
 	// primary-only and part of the cross-host handshake, so it fails loud on a
 	// backup/monitor host.
 	leader := &cobra.Command{
-		Use:   "leader [primary|backup|monitor]",
-		Short: "Assert the config-sync leader on the primary (HA only)",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return opCtrConfigLeader(app, firstArg(args)) },
+		Use:       "leader [primary|backup|monitor]",
+		Short:     "Assert the config-sync leader on the primary (HA only)",
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
+		RunE:      func(_ *cobra.Command, args []string) error { return opCtrConfigLeader(app, firstArg(args)) },
 	}
 	cfg.AddCommand(
 		leader,
@@ -137,20 +139,17 @@ func newCtrVerifyCmd(app *App) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(*cobra.Command, []string) error { return opCtrVerifyAll(app) },
 	}
-	diag := &cobra.Command{
-		Use:   "diagnostics",
-		Short: "Gather show-command output and a diagnostics bundle",
-		Args:  cobra.NoArgs,
-		RunE:  func(*cobra.Command, []string) error { return opCtrVerifyDiagnostics(app) },
-	}
+	diag := leaf(app, "diagnostics", "Gather show-command output and a diagnostics bundle", opCtrVerifyDiagnostics)
 	diag.Flags().IntVar(&app.days, "days", 1, "days of logs/diagnostics to gather")
+	registerFlagCompletion(diag, "days", cobra.NoFileCompletions)
 	// redundancy takes an optional role (empty -> detect). Run it on the primary
 	// and backup concurrently; the monitor is rejected loud.
 	redundancy := &cobra.Command{
-		Use:   "redundancy [primary|backup|monitor]",
-		Short: "Exercise failover on this node (HA only; run on primary and backup)",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return opCtrVerifyRedundancy(app, firstArg(args)) },
+		Use:       "redundancy [primary|backup|monitor]",
+		Short:     "Exercise failover on this node (HA only; run on primary and backup)",
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
+		RunE:      func(_ *cobra.Command, args []string) error { return opCtrVerifyRedundancy(app, firstArg(args)) },
 	}
 	v.AddCommand(
 		leaf(app, "login", "Test SEMP login", opCtrVerifyLogin),
@@ -162,9 +161,10 @@ func newCtrVerifyCmd(app *App) *cobra.Command {
 
 func newCtrGenCmd(app *App) *cobra.Command {
 	return renderOnly(genCapable(&cobra.Command{
-		Use:   "gen [primary|backup|monitor]",
-		Short: "Render the deploy artifact (quadlet/compose/run) to stdout without applying",
-		Args:  cobra.MaximumNArgs(1),
+		Use:       "gen [primary|backup|monitor]",
+		Short:     "Render the deploy artifact (quadlet/compose/run) to stdout without applying",
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			role, err := config.ParseRole(firstArg(args))
 			if err != nil {
@@ -202,6 +202,7 @@ func newCtrCopyCmd(app *App) *cobra.Command {
 		RunE:  func(_ *cobra.Command, args []string) error { return opCtrCopyInto(app, args) },
 	}
 	into.Flags().StringVar(&app.destDir, "dir", "", "destination directory inside the container")
+	registerFlagCompletion(into, "dir", completeDirs)
 	c.AddCommand(from, into)
 	return c
 }
@@ -215,21 +216,17 @@ func newCtrTeardownCmd(app *App) *cobra.Command {
 }
 
 func newCtrDeleteCmd(app *App) *cobra.Command {
-	c := &cobra.Command{
-		Use:   "delete",
-		Short: "Remove the broker container/unit (data folder kept by default)",
-		Args:  cobra.NoArgs,
-		RunE:  func(*cobra.Command, []string) error { return opCtrDelete(app) },
-	}
+	c := leaf(app, "delete", "Remove the broker container/unit (data folder kept by default)", opCtrDelete)
 	addDataFlags(c, app)
 	return c
 }
 
 func newCtrUpCmd(app *App) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "up [primary|backup|monitor]",
-		Short: "Orchestrate check -> prep host -> deploy <role>",
-		Args:  cobra.MaximumNArgs(1),
+		Use:       "up [primary|backup|monitor]",
+		Short:     "Orchestrate check -> prep host -> deploy <role>",
+		ValidArgs: config.RoleNames(),
+		Args:      cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			role, err := config.ParseRole(firstArg(args))
 			if err != nil {
@@ -243,12 +240,7 @@ func newCtrUpCmd(app *App) *cobra.Command {
 }
 
 func newCtrDownCmd(app *App) *cobra.Command {
-	c := &cobra.Command{
-		Use:   "down",
-		Short: "Orchestrate delete (data folder kept unless --purge)",
-		Args:  cobra.NoArgs,
-		RunE:  func(*cobra.Command, []string) error { return opCtrDown(app) },
-	}
+	c := leaf(app, "down", "Orchestrate delete (data folder kept unless --purge)", opCtrDown)
 	addDataFlags(c, app)
 	return c
 }

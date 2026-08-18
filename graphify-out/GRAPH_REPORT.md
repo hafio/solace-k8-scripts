@@ -1,39 +1,38 @@
-# Graph Report - solace-k8-scripts  (2026-08-16)
+# Graph Report - solace-k8-scripts  (2026-08-18)
 
 ## Corpus Check
-- 82 files · ~174,154 words
-- Verdict: corpus is large enough that graph structure adds value.
+- cluster-only mode — file stats not available
 
 ## Summary
-- 1704 nodes · 5140 edges · 61 communities (56 shown, 5 thin omitted)
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 784 edges (avg confidence: 0.8)
+- 1760 nodes · 5322 edges · 71 communities (65 shown, 6 thin omitted)
+- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 812 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c27a05aa`
+- Built from commit: `6f1ae9f3`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - bg
-- scripts.go
-- manager_test.go
-- context.Context
 - cli_test.go
-- testing.T
+- ctrCfg
+- Cluster
+- captureStdout
+- config_test.go
 - Commands
 - Manager
 - config.go
-- runner_test.go
+- testing.T
 - newTestOps
 - capRunner
 - NewCluster
 - eqArgs
 - convert_test.go
-- Test catalogue
-- newEchoMgr
-- command_test.go
-- NewTransport
+- internal/k8s
+- manager_test.go
+- Command
+- Cluster
 - dev.sh
 - prep_test.go
 - dev.ps1
@@ -43,13 +42,13 @@
 - Role
 - tierFor
 - github.com/spf13/cobra.Command
-- render.go
-- Go Module Definition
+- strings.Builder
+- solace
 - CheckCommand
 - Command reference
 - manager.go
-- Config
-- .AdditionalUsers
+- completion_test.go
+- cliScriptPath
 - .resolveSecretRefs
 - recRunner
 - Platform
@@ -59,45 +58,55 @@
 - kubectlTransport
 - load.go
 - secrets_test.go
-- Cluster
+- context.Context
 - coverage_test.go
 - .Run
-- cliScriptPath
-- EnvPairs
-- Cluster
+- hasCall
+- render.go
+- scripts.go
+- newRootCmd
 - scripts_test.go
-- .releaseToBackup
-- .LeaderLocal
+- Load
 - containerTransport
-- ranContains
-- container/preflight_test.go
-- .Login
+- Test catalogue
+- .LeaderLocal
+- internal/cli
+- internal/broker
+- internal/config
+- internal/container
+- Fixtures and doubles
+- NewManager
+- internal/engine
+- Config
+- .redundancyLocalPrimary
+- .releaseToBackup
+- Ops
 - .ServerCert
 - .Preflight
 
 ## God Nodes (most connected - your core abstractions)
-1. `Commands` - 115 edges
+1. `Commands` - 121 edges
 2. `ctrCfg()` - 82 edges
 3. `Role` - 81 edges
-4. `Config` - 76 edges
+4. `Config` - 79 edges
 5. `newCapMgr()` - 74 edges
 6. `newTestOps()` - 73 edges
 7. `bg()` - 70 edges
 8. `Manager` - 54 edges
 9. `matchCLI()` - 52 edges
-10. `Platform` - 51 edges
+10. `NewCluster()` - 51 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `TestFieldLabelWithoutColon()` --calls--> `field()`  [INFERRED]
-  internal/broker/coverage_test.go → internal/broker/broker.go
-- `activity()` --calls--> `countContains()`  [INFERRED]
-  internal/broker/verify_ops.go → internal/broker/broker.go
-- `matchCLI()` --calls--> `cliArg()`  [INFERRED]
-  internal/broker/broker_test.go → internal/broker/transport.go
-- `TestAdditionalUsersRunCLITransportError()` --calls--> `matchCLI()`  [INFERRED]
-  internal/broker/coverage_test.go → internal/broker/broker_test.go
-- `TestDisableDefaultVPNShowError()` --calls--> `matchCLI()`  [INFERRED]
-  internal/broker/coverage_test.go → internal/broker/broker_test.go
+- `TestCtrLoginOutcomes()` --calls--> `ctrLogin()`  [INFERRED]
+  internal/cli/cli_test.go → internal/cli/ops_container.go
+- `ctrManager()` --calls--> `confirmRestart()`  [INFERRED]
+  internal/cli/ops_container.go → internal/cli/helpers.go
+- `TestCtrLoginOutcomes()` --calls--> `ctrOps()`  [INFERRED]
+  internal/cli/cli_test.go → internal/cli/ops_container.go
+- `TestOpCtrConfigAllAborts()` --calls--> `opCtrConfigAll()`  [INFERRED]
+  internal/cli/cli_test.go → internal/cli/ops_container.go
+- `newCtrConfigCmd()` --calls--> `opCtrConfigAll()`  [INFERRED]
+  internal/cli/container.go → internal/cli/ops_container.go
 
 ## Import Cycles
 - None detected.
@@ -106,87 +115,87 @@
 - **Legacy Bash Script Family** — bash_000_env_sh, bash_010_deploy_operator_sh, bash_020_deploy_broker_sh, bash_059_execute_cli_sh [EXTRACTED 1.00]
 - **Solace Go CLI Architecture** — internal_config, internal_engine, internal_render, internal_broker, internal_k8s, internal_cli [EXTRACTED 1.00]
 
-## Communities (61 total, 5 thin omitted)
+## Communities (71 total, 6 thin omitted)
 
 ### Community 0 - "bg"
-Cohesion: 0.06
-Nodes (99): time.Duration, Ops, New(), TestNewDefaults(), Transport, TestConfirmFlagShortcuts(), TestCtrManagerConfirmWiring(), confirmDelete() (+91 more)
+Cohesion: 0.07
+Nodes (93): time.Duration, Ops, TestCtrManagerConfirmWiring(), containerWhat(), ctrLogin(), ctrManager(), ctrOps(), App (+85 more)
 
-### Community 1 - "scripts.go"
-Cohesion: 0.21
-Nodes (13): showCmd, disableDefaultVPNScript(), noReleaseActivityScript(), releaseActivityScript(), revertActivityConfigureScript(), revertActivityScript(), showRedundancyDetailScript(), showRedundancyScript() (+5 more)
+### Community 1 - "cli_test.go"
+Cohesion: 0.08
+Nodes (66): allowRuntime(), capture(), captureStderr(), fakeBinaryOnPath(), firstLine(), App, runCtr(), runRoot() (+58 more)
 
-### Community 2 - "manager_test.go"
-Cohesion: 0.10
-Nodes (69): assertMode(), containsStr(), ctrCfg(), hasCall(), maskedKeys(), newCapMgr(), TestContainerRunningMatchesNameExactly(), TestManagerCheckDNSFailsLoudInHA() (+61 more)
-
-### Community 3 - "context.Context"
+### Community 2 - "ctrCfg"
 Cohesion: 0.12
-Nodes (12): context.Context, Cluster, HARoles(), lbServiceName(), podName(), pvcName(), RestartOrder(), stsName() (+4 more)
+Nodes (39): ctrCfg(), newCapMgr(), TestContainerRunningMatchesNameExactly(), TestManagerCheckDNSFailsLoudInHA(), TestManagerCheckPodmanEUID(), TestManagerCheckReachableError(), TestManagerCheckStandaloneDNSWarnsOnly(), TestManagerCopy() (+31 more)
 
-### Community 4 - "cli_test.go"
+### Community 3 - "Cluster"
+Cohesion: 0.13
+Nodes (10): Cluster, HARoles(), lbServiceName(), podName(), pvcName(), stsName(), TestResourceNames(), filterLines() (+2 more)
+
+### Community 4 - "captureStdout"
+Cohesion: 0.13
+Nodes (24): opCall, opRunner, captureStdout(), failDisableDefaultUsersUpload(), k8sConfigAllRunner(), k8sUpOutputHook(), loadDirect(), opArgvMatch() (+16 more)
+
+### Community 5 - "config_test.go"
 Cohesion: 0.05
-Nodes (95): opCall, opRunner, TestAllowCommandApprovesAWrappedRuntime(), TestAllowCommandIsRegisteredOnPlatformTrees(), TestAllowCommandIsRepeatable(), TestAllowCommandRejectedWhereNothingExecutes(), TestAllowCommandRejectsBadValues(), TestEscalationIsRefusedEndToEnd() (+87 more)
-
-### Community 5 - "testing.T"
-Cohesion: 0.06
-Nodes (80): testing.T, assertContainerBlockDefaults(), assertContainerScaling(), envTree(), Config, haNodesConfig(), minimalK8s(), TestApplyDefaultsDocker() (+72 more)
+Nodes (65): assertContainerBlockDefaults(), assertContainerScaling(), envTree(), Config, haNodesConfig(), TestApplyBridgePortDefaults(), TestApplyDefaultsDocker(), TestApplyDefaultsK8s() (+57 more)
 
 ### Community 6 - "Commands"
 Cohesion: 0.02
-Nodes (115): Commands, solace, solace convert, solace docker, solace docker check, solace docker cli, solace docker config, solace docker config disable-default-users (+107 more)
+Nodes (121): Commands, solace-util, solace-util completion, solace-util completion bash, solace-util completion fish, solace-util completion powershell, solace-util completion zsh, solace-util convert (+113 more)
 
 ### Community 8 - "config.go"
-Cohesion: 0.11
-Nodes (22): Container, ContainerSecurity, DockerConfig, DomainCerts, Network, Node, Nodes, Operator (+14 more)
+Cohesion: 0.09
+Nodes (28): Admin, Container, ContainerSecurity, DockerConfig, DomainCerts, Image, Network, Node (+20 more)
 
-### Community 9 - "runner_test.go"
+### Community 9 - "testing.T"
 Cohesion: 0.12
-Nodes (26): bytes.Buffer, captureResolve(), TestExecEchoesOnEveryMethod(), TestExecEchoesResolvedPath(), TestExecMissingBinaryIsActionable(), TestExecRefusesCurrentDirectoryResolution(), captureStdout(), helperCommand() (+18 more)
+Nodes (34): testing.T, TestCommandArgsDoesNotAliasCommand(), TestCommandNameAndArgs(), TestCommandString(), TestCommandUnmarshalPropagatesDecodeErrors(), TestCommandUnmarshalRejectsOtherKinds(), TestRuntimeDefaults(), TestRuntimeExplicitValueSurvivesDefaults() (+26 more)
 
 ### Community 10 - "newTestOps"
-Cohesion: 0.13
-Nodes (28): appUsers(), Ops, newTestOps(), TestAdditionalUsersEmpty(), TestAdditionalUsersRejectsBadValues(), TestAdditionalUsersReportsExistingUser(), TestDisableDefaultUsersNoVPNs(), TestDomainCertsEmptySkips() (+20 more)
+Cohesion: 0.11
+Nodes (35): appUsers(), Ops, newTestOps(), TestAdditionalUsers(), TestAdditionalUsersEmpty(), TestAdditionalUsersRejectsBadValues(), TestAdditionalUsersReportsExistingUser(), TestDiagnostics() (+27 more)
 
 ### Community 11 - "capRunner"
-Cohesion: 0.15
-Nodes (20): capCall, capRunner, Manager, mgrOver(), TestCtrExecutorRefusesUnapprovedRuntime(), TestCtrTransportHonoursRuntime(), TestManagerHonoursRuntime(), TestManagerReachableProbesRuntimeThenCompose() (+12 more)
+Cohesion: 0.18
+Nodes (15): capCall, capRunner, New(), TestNewDefaults(), Transport, TestManagerLogsCLIShell(), NewTransport(), dockerCfg() (+7 more)
 
 ### Community 12 - "NewCluster"
 Cohesion: 0.13
-Nodes (32): TestCheckAbortsWhenUnreachable(), TestCheckDryRun(), TestCheckEnvNoSecretLeak(), TestCheckEnvSparseConfig(), TestCheckStorageClass(), TestReachable(), TestResolveStorageClass(), NewCluster() (+24 more)
+Nodes (32): TestCheckAbortsWhenUnreachable(), TestCheckDryRun(), TestCheckEnvNoSecretLeak(), TestCheckEnvSparseConfig(), TestCheckOperatorNS(), TestCheckStorageClass(), TestResolveStorageClass(), NewCluster() (+24 more)
 
 ### Community 13 - "eqArgs"
-Cohesion: 0.15
-Nodes (26): Cluster, newCluster(), TestApplyOnStdin(), TestDeleteStdin(), TestOperatorNSDefaultOnError(), TestOperatorNSDefaultWhenAbsent(), TestOperatorNSDerived(), TestOperatorNSExplicit() (+18 more)
+Cohesion: 0.17
+Nodes (25): TestReachable(), Cluster, newCluster(), TestApplyOnStdin(), TestDeleteStdin(), TestOperatorNSDefaultOnError(), TestOperatorNSDefaultWhenAbsent(), TestOperatorNSDerived() (+17 more)
 
 ### Community 14 - "convert_test.go"
 Cohesion: 0.07
-Nodes (54): doc, Result, vars, boolOf(), commentSafe(), Convert(), countMarkers(), emitYAML() (+46 more)
+Nodes (55): doc, Result, vars, boolOf(), commentSafe(), Convert(), countMarkers(), emitYAML() (+47 more)
 
-### Community 15 - "Test catalogue"
-Cohesion: 0.04
-Nodes (48): allowcommand_test.go, broker_test.go, check_test.go, cli_test.go, cluster_test.go, command_test.go, commanddoc_test.go, config_test.go (+40 more)
+### Community 15 - "internal/k8s"
+Cohesion: 0.17
+Nodes (12): check_test.go, cluster_test.go, deploy_test.go, internal/k8s, names_test.go, operator_test.go, ops_test.go, preflight_test.go (+4 more)
 
-### Community 16 - "newEchoMgr"
+### Community 16 - "manager_test.go"
 Cohesion: 0.10
-Nodes (22): fileExists(), NewManager(), Manager, newEchoMgr(), rootlessNoFileMgr(), setNoFile(), TestManagerCheckDryRun(), TestManagerDeletePodmanPurgeRootless() (+14 more)
+Nodes (35): bytes.Buffer, defaultGenPSK(), fileExists(), assertMode(), Manager, maskedKeys(), newEchoMgr(), rootlessNoFileMgr() (+27 more)
 
-### Community 17 - "command_test.go"
-Cohesion: 0.15
-Nodes (14): decodeRuntime(), TestCommandArgsDoesNotAliasCommand(), TestCommandNameAndArgs(), TestCommandString(), TestCommandUnmarshal(), TestCommandUnmarshalPropagatesDecodeErrors(), TestCommandUnmarshalRejectsOtherKinds(), TestRuntimeDefaults() (+6 more)
+### Community 17 - "Command"
+Cohesion: 0.20
+Nodes (5): decodeRuntime(), TestCommandUnmarshal(), Command, TestCharsetAgreesAcrossBothYAMLForms(), yaml.Node
 
-### Community 18 - "NewTransport"
-Cohesion: 0.10
-Nodes (16): bufio.Reader, GenSecrets(), Cluster, isBuiltinLabel(), joinManifests(), namespaceManifest(), roleName(), rolePlacementLabels() (+8 more)
+### Community 18 - "Cluster"
+Cohesion: 0.12
+Nodes (14): bufio.Reader, GenSecrets(), Cluster, isBuiltinLabel(), joinManifests(), namespaceManifest(), roleName(), rolePlacementLabels() (+6 more)
 
 ### Community 19 - "dev.sh"
 Cohesion: 0.19
 Nodes (20): finish(), log_init(), main(), NO_COLOR, dev.sh script, build_one(), cap(), die() (+12 more)
 
 ### Community 20 - "prep_test.go"
-Cohesion: 0.22
-Nodes (19): saCfg(), adminCfg(), Cluster, labelCluster(), TestCreateSecretsAdminOnly(), TestCreateSecretsPreflight(), TestCreateSecretsStopsOnPreflightFailure(), TestDeleteSecrets() (+11 more)
+Cohesion: 0.19
+Nodes (21): saCfg(), adminCfg(), Cluster, labelCluster(), TestCreateNamespaceApplyFails(), TestCreateSecretsAdminOnly(), TestCreateSecretsPreflight(), TestCreateSecretsStopsOnPreflightFailure() (+13 more)
 
 ### Community 21 - "dev.ps1"
 Cohesion: 0.19
@@ -213,15 +222,15 @@ Cohesion: 0.27
 Nodes (7): scalingTier, containerMem(), Config, TestContainerMem(), TestScalingTiers(), TestTierForRejectsOffTierValues(), tierFor()
 
 ### Community 27 - "github.com/spf13/cobra.Command"
-Cohesion: 0.07
-Nodes (78): opFunc, roleOpFunc, github.com/spf13/cobra.Command, github.com/spf13/pflag.FlagSet, io.Reader, io.Writer, os.File, TestFirstArg() (+70 more)
+Cohesion: 0.06
+Nodes (91): opFunc, roleOpFunc, github.com/spf13/cobra.Command, github.com/spf13/cobra.ShellCompDirective, github.com/spf13/pflag.FlagSet, io.Reader, io.Writer, os.File (+83 more)
 
-### Community 28 - "render.go"
+### Community 28 - "strings.Builder"
 Cohesion: 0.20
-Nodes (23): strings.Builder, PodAffinityTerm, boolStr(), BrokerCR(), cut(), parsePort(), parseToleration(), sortedKeys() (+15 more)
+Nodes (16): strings.Builder, PodAffinityTerm, cut(), parseToleration(), sortedKeys(), splitUser(), TestParseToleration(), writeKeyValueEntry() (+8 more)
 
 ### Community 31 - "CheckCommand"
-Cohesion: 0.18
+Cohesion: 0.19
 Nodes (15): commandRules, checkBinary(), CheckCommand(), checkFlagShape(), checkToken(), clusterRules(), composeRules(), execBase() (+7 more)
 
 ### Community 32 - "Command reference"
@@ -229,32 +238,32 @@ Cohesion: 0.50
 Nodes (3): Command reference, Global flags, Tree
 
 ### Community 33 - "manager.go"
-Cohesion: 0.21
-Nodes (9): defaultGenPSK(), exactName(), orNone(), platformTitle(), replacePSKLine(), secretSummary(), setOrMissing(), splitLimit() (+1 more)
+Cohesion: 0.19
+Nodes (10): exactName(), orNone(), platformTitle(), replacePSKLine(), secretSummary(), setOrMissing(), splitLimit(), TestReplacePSKLine() (+2 more)
 
-### Community 34 - "Config"
-Cohesion: 0.18
-Nodes (10): Image, Replication, Scaling, TLS, atoiPrefix(), Config, GenOperator(), RenderOperator() (+2 more)
+### Community 34 - "completion_test.go"
+Cohesion: 0.30
+Nodes (14): runComplete(), TestAllowCommandOffersNoFiles(), TestCompletionNeedsAShell(), TestCompletionNoDescriptions(), TestCompletionScriptsGenerate(), TestDirFlagCompletesDirectories(), TestEnvFlagCompletesEnvFiles(), TestEnvFlagPrefixFilters() (+6 more)
 
-### Community 35 - ".AdditionalUsers"
-Cohesion: 0.14
-Nodes (14): Admin, containsAnyFold(), countContains(), TestContainsAnyFold(), TestCountContains(), validCLILine(), validCLIPassword(), Ops (+6 more)
+### Community 35 - "cliScriptPath"
+Cohesion: 0.13
+Nodes (16): containsAnyFold(), countContains(), TestContainsAnyFold(), TestCountContains(), TestPathHelpers(), TestServerCert(), TestValidName(), validCLILine() (+8 more)
 
 ### Community 36 - ".resolveSecretRefs"
 Cohesion: 0.47
 Nodes (3): secretRef, Config, unsetOrEmpty()
 
 ### Community 37 - "recRunner"
-Cohesion: 0.18
-Nodes (8): TestCanIAnswerReadsTheLastLine(), isCanI(), TestTransportCopy(), TestTransportExecArgs(), TestTransportUpload(), TestTransportUploadQuotesDest(), recRunner, rrCall
+Cohesion: 0.17
+Nodes (10): TestCanIAnswerReadsTheLastLine(), NewTransport(), isCanI(), TestTransportCopy(), TestTransportEchoHidesUploadBody(), TestTransportExecArgs(), TestTransportUpload(), TestTransportUploadQuotesDest() (+2 more)
 
 ### Community 38 - "Platform"
-Cohesion: 0.20
-Nodes (13): keyValueEntries, Platform, TestValidateUnknownPlatform(), foldToEnvVar(), Config, missingErr(), platformKey(), requireAll() (+5 more)
+Cohesion: 0.24
+Nodes (10): keyValueEntries, Platform, foldToEnvVar(), Config, missingErr(), platformKey(), requireAll(), requireKeyValue() (+2 more)
 
 ### Community 39 - "Compose"
-Cohesion: 0.14
-Nodes (29): emitCtrArtifact(), Compose(), ContainerSecrets(), escapePercent(), ContainerSecret, healthCmd(), Quadlet(), quadletEscape() (+21 more)
+Cohesion: 0.19
+Nodes (22): boolStr(), BrokerCR(), Compose(), parsePort(), envLines(), healthCheckFixture(), load(), TestAdditionalUsersReachBothHalves() (+14 more)
 
 ### Community 40 - "execguard_test.go"
 Cohesion: 0.19
@@ -262,87 +271,123 @@ Nodes (15): decodeStrict(), Config, guardCommandOf(), guardConfig(), setGuardCom
 
 ### Community 41 - "haCfg"
 Cohesion: 0.18
-Nodes (16): haCfg(), TestHARoles(), TestProductKeyRoles(), TestResourceNames(), TestRestartOrder(), TestShowAll(), TestShowAllWrapsGetError(), TestCreateSecretsFailsWithoutAdminFields() (+8 more)
+Nodes (16): RestartOrder(), haCfg(), TestHARoles(), TestProductKeyRoles(), TestRestartOrder(), TestShowAll(), TestShowAllWrapsGetError(), TestCreateSecretsFailsWithoutAdminFields() (+8 more)
 
 ### Community 43 - "load.go"
-Cohesion: 0.19
-Nodes (12): TestApplyBridgePortDefaults(), TestDefaultK8sPortsMatchesOperator(), applyBridgePortDefaults(), applyContainerBlockDefaults(), defaultContainerPorts(), defaultK8sPorts(), Config, parseError() (+4 more)
+Cohesion: 0.23
+Nodes (10): applyBridgePortDefaults(), applyContainerBlockDefaults(), defaultContainerPorts(), defaultK8sPorts(), Config, parseError(), setDefault(), setDefaultCmd() (+2 more)
 
 ### Community 44 - "secrets_test.go"
 Cohesion: 0.15
-Nodes (18): TestCreateSecretsAllThree(), TestUpdateServerCertSecret(), AdminSecret(), dockerRegistrySecret(), operatorRegcred(), checkGolden(), decodeDataValue(), TestAdminSecretDecodes() (+10 more)
+Nodes (19): TestCreateSecretsAllThree(), TestUpdateServerCertSecret(), AdminSecret(), DockerRegistrySecret(), dockerRegistrySecret(), operatorRegcred(), checkGolden(), decodeDataValue() (+11 more)
 
-### Community 45 - "Cluster"
-Cohesion: 0.12
-Nodes (11): TestWarnAndStep(), App, step(), warn(), convertPlatform(), App, newConvertCmd(), runConvert() (+3 more)
+### Community 45 - "context.Context"
+Cohesion: 0.16
+Nodes (4): context.Context, Cluster, Cluster, Cluster
 
 ### Community 46 - "coverage_test.go"
 Cohesion: 0.06
-Nodes (47): matchCLI(), writeFile(), TestDiagnosticsMkdirError(), TestDiagnosticsRunError(), TestDiagnosticsTwoRolesNoBundle(), TestDisableDefaultUsersDisableError(), TestDisableDefaultUsersShowVPNError(), TestDisableDefaultVPNDisableError() (+39 more)
+Nodes (49): matchCLI(), ranContains(), TestExecCLI(), writeFile(), TestDiagnosticsMkdirError(), TestDiagnosticsRunError(), TestDiagnosticsTwoRolesNoBundle(), TestDisableDefaultUsersDisableError() (+41 more)
 
 ### Community 47 - ".Run"
-Cohesion: 0.18
-Nodes (11): Echo, Exec, os/exec.Cmd, TestChildEnvNamesAreNotSystemVariables(), command(), MaskEnv(), Quote(), quoteTok() (+3 more)
+Cohesion: 0.12
+Nodes (18): Echo, Exec, os/exec.Cmd, App, step(), TestChildEnvNamesAreNotSystemVariables(), TestExecEchoesOnEveryMethod(), TestExecIsSilentWithoutVerbose() (+10 more)
 
-### Community 48 - "cliScriptPath"
-Cohesion: 0.19
-Nodes (15): TestAdditionalUsers(), TestDiagnostics(), TestDisableDefaultUsers(), TestDisableDefaultVPN(), TestDomainCerts(), TestPathHelpers(), TestProductKeys(), TestRemoveDomainCerts() (+7 more)
+### Community 48 - "hasCall"
+Cohesion: 0.13
+Nodes (20): containsStr(), hasCall(), TestManagerDeleteDockerComposeDownWhenFileExists(), TestManagerDeleteDockerComposeNoFileFallsBackToStopRm(), TestManagerDeleteDockerPurgeRemovesDataDir(), TestManagerDeployPodmanWritesUnit(), TestManagerDescribe(), TestManagerDockerComposeCommandOverride() (+12 more)
 
-### Community 49 - "EnvPairs"
-Cohesion: 0.18
-Nodes (10): Config, NodeIdentity, containerSecretSpecs(), EnvFile(), EnvPairs(), groupKey(), itoa(), secretFilePath() (+2 more)
+### Community 49 - "render.go"
+Cohesion: 0.14
+Nodes (22): emitCtrArtifact(), Config, NodeIdentity, ContainerSecrets(), containerSecretSpecs(), EnvFile(), EnvPairs(), escapePercent() (+14 more)
 
-### Community 50 - "Cluster"
-Cohesion: 0.27
-Nodes (5): Cluster, orNone(), orValue(), setOrMissing(), setOrNone()
+### Community 50 - "scripts.go"
+Cohesion: 0.21
+Nodes (13): showCmd, disableDefaultVPNScript(), noReleaseActivityScript(), releaseActivityScript(), revertActivityConfigureScript(), revertActivityScript(), showRedundancyDetailScript(), showRedundancyScript() (+5 more)
 
-### Community 51 - "scripts_test.go"
-Cohesion: 0.16
-Nodes (13): disableDefaultUsersScript(), domainCertsScript(), gatherConfigsScript(), parseVPNNames(), sortedKeys(), TestDisableDefaultUsersScriptQuoting(), TestDomainCertsScriptSorted(), TestGatherConfigsScript() (+5 more)
+### Community 51 - "newRootCmd"
+Cohesion: 0.12
+Nodes (22): TestAllowCommandApprovesAWrappedRuntime(), TestAllowCommandIsRegisteredOnPlatformTrees(), TestAllowCommandIsRepeatable(), TestAllowCommandRejectedWhereNothingExecutes(), TestAllowCommandRejectsBadValues(), TestEscalationIsRefusedEndToEnd(), TestGenPathNeverExecutes(), TestHostileRuntimeIsRefusedByEveryVerb() (+14 more)
 
-### Community 52 - ".releaseToBackup"
+### Community 52 - "scripts_test.go"
+Cohesion: 0.14
+Nodes (14): additionalUsersScript(), assertLeaderScript(), disableDefaultUsersScript(), parseVPNNames(), productKeysScript(), TestAdditionalUsersScript(), TestAssertLeaderScript(), TestDisableDefaultUsersScriptQuoting() (+6 more)
+
+### Community 53 - "Load"
 Cohesion: 0.24
-Nodes (9): field(), TestField(), TestLastLines(), TestPrimaryRedundancyUp(), activity(), Ops, lastLines(), primaryRedundancyUp() (+1 more)
+Nodes (15): minimalK8s(), TestLoadBashEnvFileHint(), TestLoadNotYAMLHint(), TestLoadParseError(), TestLoadReadError(), TestLoadResolvesSecretRefs(), TestLoadSecretRefErrors(), TestLoadSuccess() (+7 more)
 
-### Community 53 - ".LeaderLocal"
-Cohesion: 0.23
-Nodes (7): assertLeaderScript(), TestAssertLeaderScript(), Ops, hostMatches(), roleName(), shortHost(), TestRoleName()
+### Community 55 - "Test catalogue"
+Cohesion: 0.18
+Nodes (10): convert_test.go, Coverage, internal/convert, internal/render, internal/tools/vulnjudge, main_test.go, render_test.go, Running the tests (+2 more)
 
-### Community 55 - "ranContains"
+### Community 56 - ".LeaderLocal"
+Cohesion: 0.21
+Nodes (8): TestLastLines(), TestLastLinesEqualCount(), Ops, hostMatches(), roleName(), shortHost(), TestRoleName(), lastLines()
+
+### Community 57 - "internal/cli"
 Cohesion: 0.40
-Nodes (5): ranContains(), TestDisableDefaultVPNShowError(), TestExecCLIRunError(), TestRemoveCLIWarnsOnFailure(), TestRemoveDomainCertsRunCLIError()
+Nodes (5): allowcommand_test.go, cli_test.go, commanddoc_test.go, completion_test.go, internal/cli
 
-### Community 56 - "container/preflight_test.go"
+### Community 58 - "internal/broker"
 Cohesion: 0.40
-Nodes (4): TestComposeSecretEnvIsTheOnlyChildEnvironment(), TestComposeSecretEnvNamesCannotBeSystemVars(), TestPreflightIsPreviewableUnderDryRun(), TestPreflightRunsBeforeAnything()
+Nodes (5): broker_test.go, coverage_test.go, internal/broker, scripts_test.go, verify_local_test.go
 
-### Community 57 - ".Login"
+### Community 59 - "internal/config"
+Cohesion: 0.40
+Nodes (5): command_test.go, config_test.go, execguard_test.go, internal/config, scaling_test.go
+
+### Community 60 - "internal/container"
+Cohesion: 0.40
+Nodes (5): internal/container, manager_test.go, preflight_test.go, runtime_test.go, transport_test.go
+
+### Community 61 - "Fixtures and doubles"
+Cohesion: 0.50
+Nodes (4): Fixtures and doubles, Injectable seams, Per-package doubles, Shared env fixtures
+
+### Community 62 - "NewManager"
+Cohesion: 0.26
+Nodes (12): NewManager(), TestManagerNilSinks(), Manager, mgrOver(), TestCtrExecutorRefusesUnapprovedRuntime(), TestCtrRuntimeDefaultArgvUnchanged(), TestCtrTransportHonoursRuntime(), TestManagerHonoursRuntime() (+4 more)
+
+### Community 63 - "internal/engine"
 Cohesion: 0.67
-Nodes (3): TestHTTPStatusHelpers(), httpStatusLines(), isHTTP2xx()
+Nodes (3): internal/engine, resolve_test.go, runner_test.go
 
-### Community 61 - ".ServerCert"
+### Community 65 - "Config"
+Cohesion: 0.18
+Nodes (14): Replication, Scaling, TLS, Config, orNone(), orValue(), setOrMissing(), setOrNone() (+6 more)
+
+### Community 66 - ".redundancyLocalPrimary"
+Cohesion: 0.26
+Nodes (9): field(), TestField(), TestHTTPStatusHelpers(), TestPrimaryRedundancyUp(), TestFieldLabelWithoutColon(), httpStatusLines(), isHTTP2xx(), primaryRedundancyUp() (+1 more)
+
+### Community 68 - "Ops"
+Cohesion: 0.29
+Nodes (6): Ops, domainCertsScript(), removeDomainCertsScript(), sortedKeys(), TestDomainCertsScriptSorted(), TestSortedKeys()
+
+### Community 69 - ".ServerCert"
 Cohesion: 0.47
 Nodes (4): concatFiles(), serverCertFile(), serverCertScript(), TestServerCertScript()
 
 ## Knowledge Gaps
-- **170 isolated node(s):** `solace`, `showCmd`, `Config`, `operatorTmplVars`, `Cluster` (+165 more)
+- **177 isolated node(s):** `check_test.go`, `cluster_test.go`, `deploy_test.go`, `names_test.go`, `operator_test.go` (+172 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Config` connect `Config` to `bg`, `manager_test.go`, `context.Context`, `cli_test.go`, `Manager`, `config.go`, `newTestOps`, `capRunner`, `NewCluster`, `convert_test.go`, `newEchoMgr`, `NewTransport`, `prep_test.go`, `verify_local_test.go`, `render.go`, `.AdditionalUsers`, `Compose`, `haCfg`, `kubectlTransport`, `secrets_test.go`, `Cluster`, `EnvPairs`, `containerTransport`?**
-  _High betweenness centrality (0.076) - this node is a cross-community bridge._
-- **Why does `Platform` connect `Platform` to `manager.go`, `manager_test.go`, `cli_test.go`, `testing.T`, `Manager`, `config.go`, `execguard_test.go`, `Compose`, `load.go`, `capRunner`, `Cluster`, `convert_test.go`, `newEchoMgr`, `containerTransport`, `tierFor`, `github.com/spf13/cobra.Command`, `CheckCommand`?**
-  _High betweenness centrality (0.069) - this node is a cross-community bridge._
-- **Why does `Role` connect `Role` to `bg`, `scripts.go`, `.AdditionalUsers`, `context.Context`, `Manager`, `Compose`, `kubectlTransport`, `cliScriptPath`, `EnvPairs`, `NewTransport`, `scripts_test.go`, `.releaseToBackup`, `.LeaderLocal`, `containerTransport`, `verify_local_test.go`, `.Login`, `github.com/spf13/cobra.Command`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `Config` connect `Config` to `bg`, `cli_test.go`, `ctrCfg`, `Cluster`, `captureStdout`, `Manager`, `config.go`, `newTestOps`, `capRunner`, `NewCluster`, `convert_test.go`, `manager_test.go`, `Cluster`, `prep_test.go`, `verify_local_test.go`, `strings.Builder`, `recRunner`, `Compose`, `haCfg`, `kubectlTransport`, `secrets_test.go`, `context.Context`, `.Run`, `hasCall`, `render.go`, `containerTransport`, `NewManager`?**
+  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+- **Why does `Platform` connect `Platform` to `ctrCfg`, `captureStdout`, `config_test.go`, `Manager`, `config.go`, `capRunner`, `convert_test.go`, `manager_test.go`, `tierFor`, `github.com/spf13/cobra.Command`, `CheckCommand`, `manager.go`, `Compose`, `execguard_test.go`, `load.go`, `.Run`, `render.go`, `Load`, `containerTransport`, `NewManager`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `bg()` connect `bg` to `context.Context`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Are the 9 inferred relationships involving `ctrCfg()` (e.g. with `TestComposeSecretEnvIsTheOnlyChildEnvironment()` and `TestComposeSecretEnvNamesCannotBeSystemVars()`) actually correct?**
   _`ctrCfg()` has 9 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `solace`, `showCmd`, `Config` to the rest of the system?**
-  _170 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `check_test.go`, `cluster_test.go`, `deploy_test.go` to the rest of the system?**
+  _177 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `bg` be split into smaller, more focused modules?**
-  _Cohesion score 0.06167176350662589 - nodes in this community are weakly interconnected._
-- **Should `manager_test.go` be split into smaller, more focused modules?**
-  _Cohesion score 0.09979296066252588 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06681896059394632 - nodes in this community are weakly interconnected._
+- **Should `cli_test.go` be split into smaller, more focused modules?**
+  _Cohesion score 0.08472344161545214 - nodes in this community are weakly interconnected._

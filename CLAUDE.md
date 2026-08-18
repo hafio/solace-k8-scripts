@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A single Go binary, `solace`, that deploys and operates Solace PubSub+ Event Brokers on Kubernetes (via the Solace EventBroker Operator / PubSubPlusEventBroker CRD), Docker, and Podman. You describe the broker once in a YAML env file and drive the whole lifecycle from one standardized command tree. **Unsupported** -- not a Solace product. See [README.md](README.md) for the full variable reference and lifecycle.
 
-## Go implementation (`solace` binary)
+## Go implementation (`solace-util` binary)
 
-The `solace` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,convert,cli}` + `main.go`,
+The `solace-util` binary presents one standardized lifecycle command tree across Kubernetes, Docker, and Podman. Build and the full lifecycle are in [README.md](README.md); package layout is `internal/{config,engine,render,broker,k8s,container,convert,cli}` + `main.go`,
 plus `internal/tools/vulnjudge` -- a dev-only command the `scan` task pipes govulncheck's
 JSON through, so a fixable vulnerability fails the gate and one with no released fix warns.
 
-`internal/convert` is the one-way migration aid behind `solace convert`: it parses a legacy
+`internal/convert` is the one-way migration aid behind `solace-util convert`: it parses a legacy
 bash env file (the pre-Go `bash/env/<name>` format), maps the `SOLBK_*`/`SOLOP_*`/
 `IMAGEREPO_*`/`REPL_*` variables onto the YAML schema, and emits only what the source
 actually set. It depends on `internal/config` (schema + validation) and nothing else, so
@@ -50,7 +50,7 @@ The only way to widen the allowlist is the operator's `--allow-command` flag, th
 through `config.Load`'s variadic tail into an **unexported** `Config.extraAllowed`. It has a
 floor: `neverAllowed` (sudo, doas, su, pkexec, run0, runas, gsudo) can be approved by nobody,
 because escalating *here* hands every command the tool issues to whoever wrote the env file
--- `sudo solace ...` elevates one invocation the operator chose instead. `AllowCommands`
+-- `sudo solace-util ...` elevates one invocation the operator chose instead. `AllowCommands`
 refuses them with that explanation, and `commandRules.allowed` strips the category again so
 the outcome does not depend on that being the only door. There is
 deliberately no schema key, no env var, and no binding layer -- an env file that could approve
@@ -62,9 +62,14 @@ mirror of `genCapable`).
 (`validateProbeCommand`): it is rendered into the compose/quadlet artifact and run by the
 container engine *inside* the broker, so it never becomes argv here.
 
-Two supporting layers: `engine.Exec` resolves argv[0] with `exec.LookPath`, treats
-`exec.ErrDot` as an error (never the current directory), and announces
-`exec: <resolved path> <args>` on stderr before running. And every mutating operation runs a
+Two supporting layers: `engine.Resolve` resolves argv[0] with `exec.LookPath` and treats
+`exec.ErrDot` as an error (never the current directory). It is shared by `engine.Exec`, which
+resolves immediately before running, and by the CLI, which resolves the binaries the env file
+names (`k8s.runtime`, `docker.runtime`, `podman.runtime`, `docker.compose`) once at load and
+prints them as `==> using <name>: <path>` -- the location the allowlist cannot guarantee,
+reported with the rest of the preamble rather than repeated on every call. `Exec` itself is
+silent unless `-v/--verbose` installs its `Announce` hook, which traces every command as
+`==> exec: <resolved path> <args>`. And every mutating operation runs a
 read-only preflight first -- `Cluster.Preflight` (`auth can-i <verb> <resource>`) and
 `Manager.Preflight` (`<runtime> info`) -- which stops before the first write, passes the CLI's
 own error through, adds one actionable hint, never authenticates on the operator's behalf, and
@@ -75,6 +80,16 @@ cobra tree by `internal/cli/commanddoc_test.go`. It is a golden: `test` fails wh
 stale, so any command, flag, or `Short` change means regenerating it in the same change with
 `go test ./internal/cli -update`. Never hand-edit it. The `--gen` column comes from the
 `genAnnotation` marker, so a command that honours `--gen` must be wrapped in `genCapable`.
+
+Shell completion is owned rather than inherited: `newCompletionCmd` replaces the one cobra
+would add during `Execute`, which never reached the golden because that renders the tree
+without executing it. Two conventions follow, both pinned by `completion_test.go`. A command
+taking a `[role]` sets `ValidArgs: config.RoleNames()` -- `leaf` and `roleLeaf` already do it,
+the inline ones must say so. A flag taking a value that is not a plain file path registers a
+completer next to where it is declared (`registerFlagCompletion`), or it silently falls back
+to filename completion. Completion never loads the env file: cobra skips the platform
+`PersistentPreRunE`, and keeping it that way is what stops a TAB press from parsing untrusted
+YAML or printing into the shell.
 
 ### Container platform (`internal/container`)
 

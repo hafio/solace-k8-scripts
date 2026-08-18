@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -568,29 +569,32 @@ func TestTreeStructure(t *testing.T) {
 		have[p] = true
 	}
 	wantLeaves := []string{
-		"solace k8s",
-		"solace docker",
-		"solace podman",
-		"solace k8s prep operator",
-		"solace k8s deploy",
-		"solace k8s config exec-cli",
-		"solace k8s verify diagnostics",
-		"solace k8s copy from",
-		"solace k8s copy into",
-		"solace k8s operator deploy",
-		"solace k8s gen",
-		"solace k8s replicas start",
-		"solace k8s restart",
-		"solace docker deploy",
-		"solace docker gen",
-		"solace docker describe",
-		"solace docker copy from",
-		"solace docker copy into",
-		"solace docker teardown domain-certs",
-		"solace podman gen",
-		"solace podman describe",
-		"solace podman teardown domain-certs",
-		"solace convert",
+		"solace-util k8s",
+		"solace-util docker",
+		"solace-util podman",
+		"solace-util k8s prep operator",
+		"solace-util k8s deploy",
+		"solace-util k8s config exec-cli",
+		"solace-util k8s verify diagnostics",
+		"solace-util k8s copy from",
+		"solace-util k8s copy into",
+		"solace-util k8s operator deploy",
+		"solace-util k8s gen",
+		"solace-util k8s replicas start",
+		"solace-util k8s restart",
+		"solace-util docker deploy",
+		"solace-util docker gen",
+		"solace-util docker describe",
+		"solace-util docker copy from",
+		"solace-util docker copy into",
+		"solace-util docker teardown domain-certs",
+		"solace-util podman gen",
+		"solace-util podman describe",
+		"solace-util podman teardown domain-certs",
+		"solace-util convert",
+		"solace-util completion",
+		"solace-util completion powershell",
+		"solace-util version",
 	}
 	for _, want := range wantLeaves {
 		if !have[want] {
@@ -1621,6 +1625,56 @@ func TestConvertErrorPaths(t *testing.T) {
 	})
 }
 
+// TestVersionPrintsStampedValue: `version` reports whatever the linker (the
+// dev scripts' -X flag) set the package var to, verbatim -- the contract the
+// release binaries depend on to match the git tag.
+func TestVersionPrintsStampedValue(t *testing.T) {
+	old := version
+	version = "v9.9.9-test"
+	t.Cleanup(func() { version = old })
+
+	out, err := runRoot(t, []string{"version"})
+	if err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	if !strings.Contains(out, "v9.9.9-test") {
+		t.Errorf("output = %q, want it to contain the stamped version", out)
+	}
+}
+
+// TestVersionDefaultsToDev: an unstamped build -- this package's own `go test`,
+// or a plain `go build .` -- reports "dev".
+func TestVersionDefaultsToDev(t *testing.T) {
+	out, err := runRoot(t, []string{"version"})
+	if err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	if !strings.HasPrefix(out, "solace-util dev ") {
+		t.Errorf("output = %q, want it to start with %q", out, "solace-util dev ")
+	}
+}
+
+// TestVersionIncludesToolchainAndPlatform: support triage needs the Go
+// toolchain and OS/arch that built the binary alongside the tag.
+func TestVersionIncludesToolchainAndPlatform(t *testing.T) {
+	out, err := runRoot(t, []string{"version"})
+	if err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	for _, want := range []string{runtime.Version(), runtime.GOOS, runtime.GOARCH} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output = %q, want it to contain %q", out, want)
+		}
+	}
+}
+
+// TestVersionRejectsArgs: NoArgs is enforced like every other bare leaf.
+func TestVersionRejectsArgs(t *testing.T) {
+	if _, err := runRoot(t, []string{"version", "extra"}); err == nil {
+		t.Error("version with an argument: want an error, got nil")
+	}
+}
+
 // TestBashEnvGivenToEnvFlag is the other half of the migration story: pointing
 // -e at a legacy bash file must say it is not YAML and name the converter.
 func TestBashEnvGivenToEnvFlag(t *testing.T) {
@@ -1629,7 +1683,7 @@ func TestBashEnvGivenToEnvFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("a bash env file should not load")
 	}
-	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace convert"} {
+	for _, want := range []string{"not valid YAML", "this looks like a legacy bash env file", "solace-util convert"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err.Error(), want)
 		}
@@ -1639,7 +1693,7 @@ func TestBashEnvGivenToEnvFlag(t *testing.T) {
 func TestExecute(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"solace", "--help"}
+	os.Args = []string{"solace-util", "--help"}
 	var err error
 	captureStdout(t, func() { err = Execute() })
 	if err != nil {
@@ -2300,4 +2354,179 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// fakeBinaryOnPath writes an executable stub named base into a fresh directory, puts
+// that directory at the front of PATH for this test, and returns the bare name plus the
+// absolute path engine.Resolve will find. It makes the announcement assertions hermetic:
+// no test host needs kubectl or docker installed, and the expected path is exact rather
+// than "something absolute".
+func fakeBinaryOnPath(t *testing.T, base string) (name, path string) {
+	t.Helper()
+	dir := t.TempDir()
+	file, body, mode := base, "#!/bin/sh\nexit 0\n", os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		// LookPath resolves a bare name through PATHEXT, which includes .BAT -- the
+		// same assumption engine's TestResolveRefusesCurrentDirectory makes.
+		file, body, mode = base+".bat", "@echo off\r\nexit /b 0\r\n", 0o666
+	}
+	path = filepath.Join(dir, file)
+	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return base, path
+}
+
+// allowRuntime approves a fake binary for this config the only way the allowlist can be
+// widened -- the operator's own --allow-command, here through its one entry point.
+func allowRuntime(t *testing.T, cfg *config.Config, names ...string) {
+	t.Helper()
+	if err := cfg.AllowCommands(names); err != nil {
+		t.Fatalf("AllowCommands(%v): %v", names, err)
+	}
+}
+
+// TestAnnounceCommandsNamesResolvedBinaries covers the preamble that replaced the
+// per-call `exec:` line: the binaries an env file chose are resolved and named ONCE, up
+// front, so the location the allowlist cannot guarantee is still visible without
+// repeating itself between report lines on every command.
+func TestAnnounceCommandsNamesResolvedBinaries(t *testing.T) {
+	t.Run("k8s names the cluster CLI", func(t *testing.T) {
+		name, path := fakeBinaryOnPath(t, "solace-fake-kube")
+		cfg, err := config.Load(writeStandaloneEnv(t), config.K8s)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		cfg.K8s.Runtime = config.Command{name}
+		allowRuntime(t, cfg, name)
+		a := &App{Cfg: cfg, Platform: config.K8s}
+		got := captureStderr(t, a.announceCommands)
+		if want := "==> using " + name + ": " + path + "\n"; got != want {
+			t.Errorf("announcement =\n%q\nwant\n%q", got, want)
+		}
+	})
+	// docker.compose defaults to the runtime's own `compose` subcommand, so argv[0] is
+	// one binary announced once -- naming it twice would read as two installs.
+	t.Run("docker names one binary when compose is derived", func(t *testing.T) {
+		name, path := fakeBinaryOnPath(t, "solace-fake-docker")
+		cfg, err := config.Load(writeCtrStandaloneEnv(t), config.Docker)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		cfg.Docker.Runtime = config.Command{name}
+		cfg.Docker.Compose = config.Command{name, "compose"}
+		allowRuntime(t, cfg, name)
+		a := &App{Cfg: cfg, Platform: config.Docker}
+		got := captureStderr(t, a.announceCommands)
+		if want := "==> using " + name + ": " + path + "\n"; got != want {
+			t.Errorf("announcement =\n%q\nwant\n%q", got, want)
+		}
+	})
+	// A host carrying only the standalone compose v1 binary runs two different
+	// binaries, and both locations matter.
+	t.Run("docker names a standalone compose binary too", func(t *testing.T) {
+		name, path := fakeBinaryOnPath(t, "solace-fake-docker")
+		compose, composePath := fakeBinaryOnPath(t, "solace-fake-compose")
+		cfg, err := config.Load(writeCtrStandaloneEnv(t), config.Docker)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		cfg.Docker.Runtime = config.Command{name}
+		cfg.Docker.Compose = config.Command{compose}
+		allowRuntime(t, cfg, name, compose)
+		a := &App{Cfg: cfg, Platform: config.Docker}
+		got := captureStderr(t, a.announceCommands)
+		want := "==> using " + name + ": " + path + "\n" +
+			"==> using " + compose + ": " + composePath + "\n"
+		if got != want {
+			t.Errorf("announcement =\n%q\nwant\n%q", got, want)
+		}
+	})
+	// A name that resolves nowhere is skipped in silence: this is a report, and turning
+	// it into a failure would break a command whose runner the operator never reaches.
+	// The first real execution still fails with engine.Resolve's own message.
+	t.Run("an unresolvable binary is skipped silently", func(t *testing.T) {
+		cfg, err := config.Load(writeStandaloneEnv(t), config.K8s)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		cfg.K8s.Runtime = config.Command{"solace-absent-kube"}
+		allowRuntime(t, cfg, "solace-absent-kube")
+		a := &App{Cfg: cfg, Platform: config.K8s}
+		if got := captureStderr(t, a.announceCommands); got != "" {
+			t.Errorf("announcement = %q, want nothing for a binary that resolves nowhere", got)
+		}
+	})
+}
+
+// TestBinaryAnnouncementWiring drives the preamble through the real command tree. The
+// stub is named `kubectl` so it is the schema default and needs no --allow-command --
+// which also keeps the negative cases honest, since --allow-command is itself refused on
+// a command that renders without executing.
+//
+// The negative half matters as much as the positive: --dry-run is documented to need no
+// kubectl/docker/podman installed at all, so resolving one there would contradict the
+// promise, and a --gen-*-only run changes nothing and runs nothing.
+func TestBinaryAnnouncementWiring(t *testing.T) {
+	const marker = "==> using "
+
+	t.Run("a real run announces before it works", func(t *testing.T) {
+		_, path := fakeBinaryOnPath(t, "kubectl")
+		env := writeStandaloneEnv(t)
+		// The stub answers every call with empty stdout, so `check` fails at the
+		// storage-class assertion -- after the announcement, which is what is asserted.
+		got := captureStderr(t, func() {
+			_, _ = runRoot(t, []string{"k8s", "check", "--env", env})
+		})
+		if want := marker + "kubectl: " + path; !strings.Contains(got, want) {
+			t.Errorf("stderr = %q, want it to carry %q", got, want)
+		}
+	})
+	t.Run("nothing is announced where nothing executes", func(t *testing.T) {
+		fakeBinaryOnPath(t, "kubectl")
+		env := writeStandaloneEnv(t)
+		for _, args := range [][]string{
+			{"k8s", "check", "--dry-run"},
+			{"k8s", "deploy", "--gen-only"},
+			{"k8s", "gen", "operator"},
+		} {
+			full := append(append([]string{}, args...), "--env", env)
+			got := captureStderr(t, func() { _, _ = runRoot(t, full) })
+			if strings.Contains(got, marker) {
+				t.Errorf("%v announced a binary it never runs: %q", args, got)
+			}
+		}
+	})
+}
+
+// TestVerboseFlagTracesEveryCommand: -v is the opt-in per-call trail that replaced the
+// unconditional `exec:` line. It answers "what exactly did this run issue?", which the
+// once-per-binary preamble deliberately does not.
+func TestVerboseFlagTracesEveryCommand(t *testing.T) {
+	fakeBinaryOnPath(t, "kubectl")
+	env := writeStandaloneEnv(t)
+
+	traced := captureStderr(t, func() {
+		_, _ = runRoot(t, []string{"k8s", "check", "-v", "--env", env})
+	})
+	if !strings.Contains(traced, "==> exec: ") || !strings.Contains(traced, "version -o json") {
+		t.Errorf("-v stderr = %q, want a `==> exec: <path> version -o json` line", traced)
+	}
+	// The default run stays quiet per call: the preamble already named the binary.
+	quiet := captureStderr(t, func() {
+		_, _ = runRoot(t, []string{"k8s", "check", "--env", env})
+	})
+	if strings.Contains(quiet, "==> exec: ") {
+		t.Errorf("a run without -v traced its commands: %q", quiet)
+	}
+	// And it is a no-op under --dry-run, where Echo already prints every command it
+	// would run -- passing both must still work rather than fight.
+	out, err := runRoot(t, []string{"k8s", "check", "--dry-run", "-v", "--env", env})
+	if err != nil {
+		t.Fatalf("--dry-run -v: %v", err)
+	}
+	if !strings.Contains(out, "+ kubectl version -o json") {
+		t.Errorf("--dry-run -v stdout = %q, want the echoed command", out)
+	}
 }

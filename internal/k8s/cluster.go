@@ -105,13 +105,24 @@ func (c *Cluster) output(ctx context.Context, args ...string) ([]byte, error) {
 // Under --dry-run the discovery output is empty, so it falls through to the default --
 // safe, because the rendered manifests already carry the namespace.
 func (c *Cluster) operatorNS(ctx context.Context) string {
-	if c.Cfg.K8s.Operator.Namespace != "" {
-		return c.Cfg.K8s.Operator.Namespace
+	ns, _ := c.operatorNSOrigin(ctx)
+	return ns
+}
+
+// operatorNSOrigin is the one definition of that three-branch rule, and also names where
+// the value came from. Every operation goes through operatorNS; only the `check` report
+// needs the origin, because CheckEnv can print no more than "(derived at runtime)" (it
+// takes no ctx and runs before Reachable). The not-found wording says "visible to this
+// context" rather than "not installed": discoverOperatorNS swallows its error by design,
+// so an absent operator and an RBAC denial arrive here identically.
+func (c *Cluster) operatorNSOrigin(ctx context.Context) (ns, origin string) {
+	if ns := c.Cfg.K8s.Operator.Namespace; ns != "" {
+		return ns, "k8s.operator.namespace"
 	}
 	if ns := c.discoverOperatorNS(ctx); ns != "" {
-		return ns
+		return ns, "discovered on the cluster"
 	}
-	return defaultOperatorNS
+	return defaultOperatorNS, "default -- no operator Deployment visible to this context"
 }
 
 // discoverOperatorNS greps `get deployment --all-namespaces` for the operator's

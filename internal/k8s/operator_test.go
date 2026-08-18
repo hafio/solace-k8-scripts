@@ -11,6 +11,12 @@ func boolPtr(b bool) *bool { return &b }
 // TestWatchNamespace pins the WATCH_NAMESPACE join logic (000-env.sh:85-89): the
 // broker namespace is appended by default, comma-joined onto any configured list, and
 // omitted when broker-ns watching is explicitly disabled.
+//
+// The dedupe cases are the fix for a report and a manifest that both listed the broker
+// namespace twice whenever the configured list already named it (the common case, since
+// watchBrokerNs defaults on). controller-runtime's map-keyed cache collapsed the repeat,
+// so only the printed and applied text was ever wrong -- which is precisely what makes a
+// regression here invisible without these cases.
 func TestWatchNamespace(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -22,6 +28,10 @@ func TestWatchNamespace(t *testing.T) {
 		{"appends onto configured list", "ns-a,ns-b", nil, "ns-a,ns-b,solace"},
 		{"disabled keeps only the list", "ns-a,ns-b", boolPtr(false), "ns-a,ns-b"},
 		{"disabled with empty list is empty", "", boolPtr(false), ""},
+		{"broker ns already listed is not repeated", "ns-a,solace", nil, "ns-a,solace"},
+		{"repeat inside the list is dropped", "ns-a,ns-b,ns-a", nil, "ns-a,ns-b,solace"},
+		{"entries are trimmed, empties dropped", " ns-a , ,ns-b,", nil, "ns-a,ns-b,solace"},
+		{"disabled dedupes the list too", "solace,ns-b,solace", boolPtr(false), "solace,ns-b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -32,6 +42,23 @@ func TestWatchNamespace(t *testing.T) {
 				t.Errorf("watchNamespace = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestOperatorImage pins the registry-prefix rule now that RenderOperator and CheckEnv
+// share it: the report drifted from the apply for exactly as long as each had its own
+// idea of the reference, so the helper's two branches are worth their own test rather
+// than only being reached through the 119 KB bundle render.
+func TestOperatorImage(t *testing.T) {
+	cfg := haCfg()
+	cfg.K8s.Operator.Image = "solace/pubsubplus-eventbroker-operator:1.4.0"
+	cfg.Image.Registry = "registry.example.com"
+	if got, want := operatorImage(cfg), "registry.example.com/solace/pubsubplus-eventbroker-operator:1.4.0"; got != want {
+		t.Errorf("operatorImage with a registry = %q, want %q", got, want)
+	}
+	cfg.Image.Registry = ""
+	if got, want := operatorImage(cfg), "solace/pubsubplus-eventbroker-operator:1.4.0"; got != want {
+		t.Errorf("operatorImage without a registry = %q, want %q", got, want)
 	}
 }
 

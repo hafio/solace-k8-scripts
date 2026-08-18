@@ -37,52 +37,73 @@ type Runner interface {
 	OutputInput(ctx context.Context, in []byte, name string, args ...string) ([]byte, error)
 }
 
-// Exec is the real Runner backed by os/exec.
-type Exec struct{}
-
-// ResolveOut is where the pre-exec `exec:` line is written. It exists so a test can
-// capture the line; production leaves it nil and the line goes to stderr, which
-// keeps it out of any rendered artifact piped from stdout.
-var ResolveOut io.Writer
-
-func resolveOut() io.Writer {
-	if ResolveOut != nil {
-		return ResolveOut
-	}
-	return os.Stderr
-}
-
-// command resolves name through PATH and builds the exec.Cmd, announcing the
-// resolved binary on stderr before the caller runs it:
-//
-//	exec: /usr/bin/kubectl get pods -n solace
+// Resolve turns a command name into the absolute path this tool will execute. It is
+// the one definition of how that happens: Exec resolves through it immediately before
+// running, and the CLI resolves through it up front to name the binaries an env file
+// chose, so the path reported and the path run are produced by the same rule.
 //
 // Resolution is explicit rather than left to exec.Command so two things are true at
-// the moment they matter. First, an unexpected binary LOCATION is visible -- the
-// allowlist in config guarantees `kubectl` is what was asked for, and this line
-// shows which kubectl actually answered. Second, exec.ErrDot is an error here, not
-// a fallback: Go reports it when a bare name resolved relative to the current
-// directory, which is precisely the "attacker-supplied file shipped alongside the
-// config" case, so it is refused rather than run.
-func command(ctx context.Context, name string, args []string) (*exec.Cmd, error) {
+// the moment they matter. First, an unexpected binary LOCATION can be shown -- the
+// allowlist in config guarantees `kubectl` is what was asked for, and this is what
+// shows which kubectl actually answered. Second, exec.ErrDot is an error here, not a
+// fallback: Go reports it when a bare name resolved relative to the current directory,
+// which is precisely the "attacker-supplied file shipped alongside the config" case,
+// so it is refused rather than run.
+func Resolve(name string) (string, error) {
 	path, err := exec.LookPath(name)
-	if err != nil {
-		// LookPath returns the path it found ALONGSIDE ErrDot, so the message can
-		// name the file that would have run.
-		if errors.Is(err, exec.ErrDot) {
-			return nil, fmt.Errorf("refusing to run %q from the current directory: it resolved to %q, which is "+
-				"not on your PATH -- a binary shipped beside an env file must never run implicitly; "+
-				"install it, or add its directory to PATH", name, path)
-		}
-		return nil, fmt.Errorf("%s: not found on PATH: %w", name, err)
+	if err == nil {
+		return path, nil
 	}
-	fmt.Fprintln(resolveOut(), "exec: "+Quote(path, args...))
-	cmd := exec.CommandContext(ctx, path, args...)
-	return cmd, nil
+	// LookPath returns the path it found ALONGSIDE ErrDot, so the message can name the
+	// file that would have run.
+	if errors.Is(err, exec.ErrDot) {
+		return "", fmt.Errorf("refusing to run %q from the current directory: it resolved to %q, which is "+
+			"not on your PATH -- a binary shipped beside an env file must never run implicitly; "+
+			"install it, or add its directory to PATH", name, path)
+	}
+	return "", fmt.Errorf("%s: not found on PATH: %w", name, err)
 }
 
-func (Exec) Run(ctx context.Context, name string, args ...string) error {
-	cmd, err := command(ctx, name, args)
+// Exec is the real Runner backed by os/exec.
+type Exec struct {
+	// Announce, when set, is called with the resolved path and arguments before each
+	// command runs. nil is silent, and silent is the default: the CLI names the
+	// binaries an env file chose ONCE in its preamble, where they read as part of the
+	// output, and installs an announcer here only for --verbose -- where a per-call
+	// trail is the whole point rather than noise between report lines.
+	Announce func(path string, args []string)
+}
+
+// NewExec builds the runner the CLI uses. With verbose, every command is announced to
+// w as it runs, in the same `==> ` prefix the CLI's own progress lines use (the prefix
+// is duplicated here rather than shared, since cli imports engine and not the reverse).
+// Without it the runner says nothing: the preamble already reported what resolved.
+func NewExec(w io.Writer, verbose bool) Exec {
+	if !verbose {
+		return Exec{}
+	}
+	return Exec{Announce: func(path string, args []string) {
+		fmt.Fprintln(w, "==> exec: "+Quote(path, args...))
+	}}
+}
+
+// command resolves name and builds the exec.Cmd, announcing it first when an announcer
+// is installed:
+//
+//	==> exec: /usr/bin/kubectl get pods -n solace
+func (e Exec) command(ctx context.Context, name string, args []string) (*exec.Cmd, error) {
+	path, err := Resolve(name)
+	if err != nil {
+		return nil, err
+	}
+	if e.Announce != nil {
+		e.Announce(path, args)
+	}
+	return exec.CommandContext(ctx, path, args...), nil
+}
+
+func (e Exec) Run(ctx context.Context, name string, args ...string) error {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return err
 	}
@@ -94,8 +115,8 @@ func (Exec) Run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
-func (Exec) RunInput(ctx context.Context, in []byte, name string, args ...string) error {
-	cmd, err := command(ctx, name, args)
+func (e Exec) RunInput(ctx context.Context, in []byte, name string, args ...string) error {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return err
 	}
@@ -108,8 +129,8 @@ func (Exec) RunInput(ctx context.Context, in []byte, name string, args ...string
 	return nil
 }
 
-func (Exec) RunEnv(ctx context.Context, extraEnv []string, name string, args ...string) error {
-	cmd, err := command(ctx, name, args)
+func (e Exec) RunEnv(ctx context.Context, extraEnv []string, name string, args ...string) error {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return err
 	}
@@ -129,8 +150,8 @@ func (Exec) RunEnv(ctx context.Context, extraEnv []string, name string, args ...
 	return nil
 }
 
-func (Exec) RunInteractive(ctx context.Context, name string, args ...string) error {
-	cmd, err := command(ctx, name, args)
+func (e Exec) RunInteractive(ctx context.Context, name string, args ...string) error {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return err
 	}
@@ -143,8 +164,8 @@ func (Exec) RunInteractive(ctx context.Context, name string, args ...string) err
 	return nil
 }
 
-func (Exec) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd, err := command(ctx, name, args)
+func (e Exec) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return nil, err
 	}
@@ -157,8 +178,8 @@ func (Exec) Output(ctx context.Context, name string, args ...string) ([]byte, er
 	return out.Bytes(), nil
 }
 
-func (Exec) OutputInput(ctx context.Context, in []byte, name string, args ...string) ([]byte, error) {
-	cmd, err := command(ctx, name, args)
+func (e Exec) OutputInput(ctx context.Context, in []byte, name string, args ...string) ([]byte, error) {
+	cmd, err := e.command(ctx, name, args)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// Package k8s implements the Kubernetes platform of the solace CLI: the operator
+// Package k8s implements the Kubernetes platform of the solace-util CLI: the operator
 // bundle, cluster/broker lifecycle over kubectl, and the concrete broker.Transport
 // that wraps `kubectl exec/cp`. It is the Go port of the numbered bash scripts at
 // the repo root (001-069, 010-020 deploy, 110-120 delete, and the operational

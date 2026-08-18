@@ -29,6 +29,12 @@ func ParseRole(s string) (Role, error) {
 	}
 }
 
+// RoleNames returns the long role names in redundancy order, for completing the
+// [role] positionals and --pod. ParseRole stays the only validator -- the p|b|m
+// forms it also accepts are not worth suggesting, and a suggestion list that
+// drifted from it is pinned by TestRoleNamesParse.
+func RoleNames() []string { return []string{"primary", "backup", "monitor"} }
+
 // Letter returns the single-letter role, matching pod-name suffixes.
 func (r Role) Letter() string { return string(r) }
 

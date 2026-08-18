@@ -1,4 +1,4 @@
-# env/sample.yaml -- unified config for the `solace` CLI. Copy to env/<name>.yaml
+# env/sample.yaml -- unified config for the `solace-util` CLI. Copy to env/<name>.yaml
 # and edit; run any command with `-e <file>`. One file drives all three
 # platforms (k8s, docker, podman); each reads only the sections it needs.
 #
@@ -46,7 +46,10 @@ image:
                                     # a moving tag, Never for an air-gapped cluster
 
 admin:
-  user: admin                       # container admin username (k8s admin is "admin")
+  user: admin                       # container admin username. On k8s the operator reads
+                                    # the fixed username_admin_password key, so anything
+                                    # other than "admin" is refused at load rather than
+                                    # ignored -- the name is a docker/podman knob
   pass: CHANGE-ME-admin             # secret, mandatory on every platform
   # passEnv: SOLACE_ADMIN_PASS      # ...or name the variable holding it instead
   monitorPass: CHANGE-ME-monitor    # k8s monitor user secret
@@ -109,7 +112,7 @@ tls:
 #   maxSubscriptions: 50000
 #   maxGuaranteedMsgMB: 10
 
-# replication: parsed from the legacy REPL_* variables by `solace convert` and kept
+# replication: parsed from the legacy REPL_* variables by `solace-util convert` and kept
 # in the schema, but NO command in this binary reads it yet -- the block is
 # currently inert. Configure data replication with the standalone
 # solace-replication-generator.html, or push a CLI script with `config exec-cli`.
@@ -161,8 +164,11 @@ k8s:
   # operator:                       # cluster-scoped EventBroker Operator
   #   image: docker.io/solace/pubsubplus-eventbroker-operator:1.4.0
   #   namespace: pubsubplus-operator-system  # omit to discover the running one
-  #   watchNamespaces: ""           # comma-separated list; empty = the broker ns only
-  #   watchBrokerNs: true           # also watch k8s.namespace
+  #   watchNamespaces: ""           # comma-separated list, de-duplicated; empty = the
+                                    # broker ns only, since watchBrokerNs adds it
+  #   watchBrokerNs: true           # also watch k8s.namespace. Setting this false with
+                                    # an empty watchNamespaces leaves WATCH_NAMESPACE
+                                    # empty, which watches EVERY namespace
   #   cpu: 500m
   #   mem: 512Mi
   loadBalancer:
@@ -219,7 +225,7 @@ docker:
                                     # such as `lima nerdctl` needs the operator to
                                     # approve it per run: --allow-command lima.
                                     # sudo/doas/su/pkexec are NEVER approvable here;
-                                    # run `sudo solace docker deploy` instead, so the
+                                    # run `sudo solace-util docker deploy` instead, so the
                                     # privilege belongs to one invocation you chose.
   mode: compose                     # compose (the only value; run mode was removed)
   # compose: docker compose         # the compose invocation. Omitted -> the runtime

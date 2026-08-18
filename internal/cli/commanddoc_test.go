@@ -68,7 +68,7 @@ func renderCommandDocs(root *cobra.Command) []byte {
 	var b strings.Builder
 
 	b.WriteString("# Command reference\n\n")
-	b.WriteString("Every command `solace` exposes, with its arguments and flags.\n\n")
+	b.WriteString("Every command `solace-util` exposes, with its arguments and flags.\n\n")
 	b.WriteString("**Generated from the command tree -- do not edit by hand.** Regenerate after any\n")
 	b.WriteString("command, flag, or description change:\n\n")
 	b.WriteString("```\ngo test ./internal/cli -update\n```\n\n")

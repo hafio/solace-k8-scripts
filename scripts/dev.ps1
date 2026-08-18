@@ -1,5 +1,5 @@
 <#
-scripts/dev.ps1 - build/vet/test/cov/scan/dist tasks for the `solace` Go CLI.
+scripts/dev.ps1 - build/vet/test/cov/scan/dist tasks for the `solace-util` Go CLI.
 
 Mirror of scripts/dev.sh (behaviourally identical: same task names, same
 gating, same footer format). The USER runs this; CI calls task names only.
@@ -23,7 +23,20 @@ $RepoRoot  = Split-Path -Parent $ScriptDir
 $LogDir    = Join-Path $ScriptDir 'logs'
 $DistDir   = Join-Path $RepoRoot  'dist'
 $CovDir    = Join-Path $RepoRoot  'coverage'
-$BinName   = 'solace'
+$BinName   = 'solace-util'
+
+# Version stamp: on a tag push git describe is exactly the pushed tag, so
+# `solace-util version` matches the GitHub release. --always falls back to the
+# short hash when no tag is reachable; "dev" when git is unavailable or this
+# is not a repo. Computed once per run: dist builds four legs from one commit.
+# 2>$null, not 2>&1: on PS 5.1 piping a native command's stderr wraps each
+# line as a NativeCommandError.
+$Version = $null
+if (Get-Command git -ErrorAction SilentlyContinue) {
+  $Version = (& git -C $RepoRoot describe --tags --dirty --always 2>$null)
+  if ($LASTEXITCODE -ne 0) { $Version = $null }
+}
+if (-not $Version) { $Version = 'dev' }
 
 # govulncheck is a go.mod `tool` dependency, so its version is pinned by go.sum
 # rather than by a variable here. Bump it with:
@@ -128,7 +141,7 @@ function Build-One($os, $arch) {
   $oldGoos = $env:GOOS; $oldGoarch = $env:GOARCH; $oldCgo = $env:CGO_ENABLED
   $env:CGO_ENABLED = '0'; $env:GOOS = $os; $env:GOARCH = $arch
   try {
-    return (Cap go build -trimpath -ldflags '-s -w' -o $out .)
+    return (Cap go build -trimpath -ldflags "-s -w -X solace/internal/cli.version=$Version" -o $out .)
   } finally {
     $env:GOOS = $oldGoos; $env:GOARCH = $oldGoarch; $env:CGO_ENABLED = $oldCgo
   }
@@ -227,7 +240,7 @@ function Show-Usage {
   $raceDesc = ($RaceFlag -join ' ')
   $targetsDesc = (($DistTargets | ForEach-Object { "$($_.os)/$($_.arch)" }) -join ', ')
   Write-Host @"
-dev.ps1 - build/test/scan tooling for the solace CLI
+dev.ps1 - build/test/scan tooling for the solace-util CLI
 
 Usage: dev.ps1 <task> [task...]
 
@@ -235,7 +248,8 @@ Tasks:
   tidy     go mod tidy
   vet      go vet ./...
   build    compile -> dist\$BinName-<os>-<arch>[.exe]; TARGET_OS/TARGET_ARCH
-           pick the target, unset means host
+           pick the target, unset means host; stamps ``solace-util version``
+           from git describe (falls back to "dev")
   test     go test $raceDesc -count=1 ./...
   cov      coverage profile -> coverage/coverage.html + printed total
   scan     govulncheck (fatal on a fixable vulnerability this module calls;

@@ -143,6 +143,18 @@ func (c *Config) validateK8s() error {
 			"derived from scaling.maxConnections (one of %s) -- drop the key. "+
 			"k8s.msgNode.mem is unaffected: it still overrides the tier's default memory", scalingTierList)
 	}
+	if u := c.Admin.User; u != "" && u != "admin" {
+		// Rejected rather than ignored, for the same reason as msgNode.cpu above: this is
+		// the login an operator believes is in effect. The operator reads the fixed
+		// username_admin_password key out of the credentials Secret (k8s/secrets.go,
+		// verified against a live cluster), and creates the admin user itself, so nothing
+		// on this platform can honour another name. An unset value is skipped: ApplyDefaults
+		// fills "admin", so empty means "will be defaulted" as it does for every other
+		// setDefault field.
+		return fmt.Errorf("admin.user %q is not supported on Kubernetes: the operator reads the fixed "+
+			"username_admin_password key out of k8s.adminSecret, so the broker admin user is always "+
+			"'admin' -- drop the key (it applies to docker and podman, where the username is yours to choose)", u)
+	}
 	switch c.K8s.UpdateStrategy {
 	case "automatedRolling", "manualPodRestart":
 	default:

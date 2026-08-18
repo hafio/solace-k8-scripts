@@ -54,7 +54,7 @@ var execBinaries = map[Platform][]string{
 // neverAllowed are binaries --allow-command may not approve, at any time, by anyone.
 // They are all privilege-escalation wrappers, and the reason is not that escalating
 // is wrong -- rootful podman genuinely needs root -- but that escalating HERE is the
-// wrong place for it. `sudo solace podman deploy` elevates one process the operator
+// wrong place for it. `sudo solace-util podman deploy` elevates one process the operator
 // chose, visibly, at the moment they typed it. A `runtime: sudo podman` elevates
 // every command this tool issues for the lifetime of an env file, decided by whoever
 // wrote that file, and the operator who approves it once on the command line cannot
