@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"solace/internal/config"
+	"solace/internal/engine"
 )
 
 // sampleEnv is the shared fixture: the user template doubles as a valid config
@@ -21,12 +22,18 @@ import (
 // resolves to the repo's env/sample.yaml.
 const sampleEnv = "../../env/sample.yaml"
 
-// withEnv appends the sample --env so a command reaching PersistentPreRunE loads
+// withEnv appends the sample --env so a command reaching PreRunE loads
 // a valid config instead of the missing env.yaml. The value carries a separator,
 // so it resolves verbatim rather than through the base-dir/env lookup.
 func withEnv(args ...string) []string {
 	return append(append([]string{}, args...), "--env", sampleEnv)
 }
+
+// echoRunner installs engine.Echo as the App's runner. It replaces the retired
+// --dry-run flag: the flag is gone from the CLI, but the property these tests
+// assert -- which argv a command would issue -- is unchanged, so the seam that
+// used to be a user-facing mode is now a test-only one.
+func echoRunner(a *App) { a.NewRunner = func(*App) engine.Runner { return engine.Echo{W: os.Stdout} } }
 
 // smokeAdminPass is a distinctive admin password used only by the standalone test
 // env, so TestSecretsNeverEchoed can prove it never reaches stdout.
@@ -36,7 +43,8 @@ const smokeAdminPass = "SMOKE-PW-do-not-log-1234"
 // file and returns its path. The HA sample sets tls.serverSecret with absent cert
 // files and defines all three nodes, which makes the secret-bearing prep steps fail
 // and the HA-only config/verify steps poll or exercise failover -- unsuitable for a
-// clean --dry-run pass. This env has no TLS and no nodes, so those steps self-skip.
+// clean run over the echo seam. This env has no TLS and no nodes, so those steps
+// self-skip.
 func writeStandaloneEnv(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "standalone.yaml")
@@ -46,7 +54,7 @@ func writeStandaloneEnv(t *testing.T) string {
 		"  tag: \"10.10.1.128\"\n" +
 		"admin:\n" +
 		"  pass: " + smokeAdminPass + "\n" +
-		"k8s:\n" +
+		"kubernetes:\n" +
 		"  name: dev-broker\n" +
 		"  namespace: solace\n" +
 		"  adminSecret: solace-admin-secret\n" +
@@ -60,30 +68,34 @@ func writeStandaloneEnv(t *testing.T) string {
 	return path
 }
 
-// runStandalone runs a k8s command under --dry-run against the standalone env.
+// runStandalone runs a k8s command over the echo seam against the standalone env.
 func runStandalone(t *testing.T, path string, args ...string) (string, error) {
 	t.Helper()
-	full := append(append([]string{}, args...), "--dry-run", "--env", path)
-	return runRoot(t, full)
+	full := append(append([]string{}, args...), "--env", path)
+	return runRootWith(t, full, echoRunner)
 }
 
-// runCtr runs a container (docker/podman) command under --dry-run against the
-// given env path. It is the container-facing name for the same "append
-// --dry-run --env" run that runStandalone performs, kept distinct for
-// readability at container call sites (against both the HA sample and a
-// container-standalone env).
+// runCtr runs a container (docker/podman) command over the echo seam against the
+// given env path. It is the container-facing name for the same run that
+// runStandalone performs, kept distinct for readability at container call sites
+// (against both the HA sample and a container-standalone env).
 func runCtr(t *testing.T, path string, args ...string) (string, error) {
 	t.Helper()
 	return runStandalone(t, path, args...)
 }
 
 // writeCtrStandaloneEnv writes a minimal single-broker (redundancy: no) env that is
-// valid for docker and podman: only nodes.primary.name is mandatory (data dir,
-// network mode, and docker.mode all default). It carries no TLS, domainCerts, or
-// productKeys, so the config steps that gate on those self-skip and none of them
-// reach a poll loop -- keeping every dry-run pass fast and deterministic. The
-// k8s-shaped writeStandaloneEnv cannot be reused: it has no nodes: block, which
-// fails container validation (nodes.primary.name is required).
+// valid for docker and podman: only nodes.primary.name is mandatory (data dir and
+// network mode default). It carries no TLS, domainCerts, or productKeys, so the
+// config steps that gate on those self-skip and none of them reach a poll loop --
+// keeping every run over the echo seam fast and deterministic. The k8s-shaped
+// writeStandaloneEnv cannot be reused: it has no nodes: block, which fails
+// container validation (nodes.primary.name is required).
+//
+// An env file must declare its platform section -- even an empty one -- or
+// resolvePlatform refuses it ("declares no platform section"). This fixture
+// declares BOTH docker: {} and podman: {} so the one file still serves either
+// platform; every caller is therefore ambiguous and must pass --platform.
 func writeCtrStandaloneEnv(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ctr-standalone.yaml")
@@ -95,7 +107,9 @@ func writeCtrStandaloneEnv(t *testing.T) string {
 		"  pass: " + smokeAdminPass + "\n" +
 		"nodes:\n" +
 		"  primary:\n" +
-		"    name: pri-host\n"
+		"    name: pri-host\n" +
+		"docker: {}\n" +
+		"podman: {}\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write container standalone env: %v", err)
 	}
@@ -103,9 +117,9 @@ func writeCtrStandaloneEnv(t *testing.T) string {
 }
 
 // loadDirect writes yamlBody to a temp file and loads it for platform p, for
-// tests that need a *config.Config to build an App directly (bypassing
-// config.Load's implicit --dry-run wiring in App.load) so a fake Runner other
-// than engine.Echo can be attached -- see opRunner below.
+// tests that need a *config.Config to build an App directly (bypassing App.load
+// and its runner-selection entirely) so a fake Runner other than engine.Echo can
+// be attached -- see opRunner below.
 func loadDirect(t *testing.T, yamlBody string, p config.Platform) *config.Config {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "direct.yaml")
@@ -121,18 +135,19 @@ func loadDirect(t *testing.T, yamlBody string, p config.Platform) *config.Config
 
 // --- fake engine.Runner for direct op-function calls ------------------------
 //
-// opK8sConfigAll/opK8sUp/opK8sPrepAll/opK8sDown/opCtrConfigAll etc. are unexported
-// opFunc-shaped handlers that take only an *App, so a test in this package can call
-// them directly rather than through cobra/runRoot. Doing so is what makes two
-// things possible that engine.Echo cannot provide: (1) targeted fault injection --
-// Echo's Run/Output methods never return an error, so the ordering property "step
-// N fails, step N+1 never runs" has no double to exercise it without this, mirroring
-// internal/container's capRunner/failOn (transport_test.go); and (2) canned Output
-// content -- Echo always returns (nil, nil), which makes a poll-based HA state
-// machine (config-sync leader, redundancy) exhaust its real PollInterval x
-// PollAttempts budget (broker.New's 2s x 60 defaults) before timing out, since the
-// CLI layer has no seam to shorten it. Supplying a healthy transcript lets the
-// state machine succeed on its first check instead.
+// opK8sDeployAll/opK8sPrepAll/opK8sRemoveAll/opCtrVerifyRedundancy etc. are
+// unexported handlers that take only an *App (or an *App plus a role arg), so a
+// test in this package can call them directly rather than through cobra/runRoot.
+// Doing so is what makes two things possible that engine.Echo cannot provide: (1)
+// targeted fault injection -- Echo's Run/Output methods never return an error, so
+// the ordering property "step N fails, step N+1 never runs" has no double to
+// exercise it without this, mirroring internal/container's capRunner/failOn
+// (transport_test.go); and (2) canned Output content -- Echo always returns (nil,
+// nil), which makes a poll-based HA state machine (config-sync leader,
+// redundancy) exhaust its real PollInterval x PollAttempts budget (broker.New's 2s
+// x 60 defaults) before timing out, since the CLI layer has no seam to shorten it.
+// Supplying a healthy transcript lets the state machine succeed on its first check
+// instead.
 type opCall struct {
 	method string // Run | RunInput | RunEnv | RunInteractive | Output | OutputInput
 	name   string
@@ -279,9 +294,9 @@ func opFailOn(substr string) func(opCall) error {
 
 // opFailOnCount builds a fail hook that errors only on the nth (1-indexed) call
 // whose name or args contain substr, succeeding every other one -- for
-// opK8sUp/opK8sDown's repeated, textually-identical steps (every `apply -f -` /
-// `delete ... --ignore-not-found` call looks the same; only its position in the
-// sequence identifies which step it belongs to).
+// opK8sDeployAll/opK8sRemoveAll's repeated, textually-identical steps (every
+// `apply -f -` / `delete ... --ignore-not-found` call looks the same; only its
+// position in the sequence identifies which step it belongs to).
 func opFailOnCount(substr string, n int) func(opCall) error {
 	count := 0
 	return func(c opCall) error {
@@ -371,10 +386,11 @@ func runRoot(t *testing.T, args []string) (string, error) {
 
 // runRootWith is runRoot, but lets a test configure the App before Execute --
 // e.g. setting Interactive/PromptIn to deterministically drive the confirm-prompt
-// branches (confirmDelete/confirmPurge/confirmRestart, the placement-labelling
-// gate in opK8sUp) that a real terminal would otherwise gate on the test
-// process's own, environment-dependent stdin. configure may be nil, in which case
-// this is exactly runRoot.
+// branches (confirmDelete/confirmLayer/confirmRestart) that a real terminal would
+// otherwise gate on the test process's own, environment-dependent stdin, or
+// installing echoRunner to capture the argv a command would issue instead of
+// running it for real. configure may be nil, in which case this is exactly
+// runRoot.
 func runRootWith(t *testing.T, args []string, configure func(*App)) (string, error) {
 	t.Helper()
 	var runErr error
@@ -419,13 +435,13 @@ func collectPaths(c *cobra.Command, acc *[]string) {
 	}
 }
 
-// runStatusStderr runs `k8s status --dry-run` with the given flags and returns
-// what reached stderr, where the resolved-env-file line is echoed.
+// runStatusStderr runs `status broker` over the echo seam with the given flags and
+// returns what reached stderr, where the resolved-env-file line is echoed.
 func runStatusStderr(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var runErr error
 	errOut := captureStderr(t, func() {
-		_, runErr = runRoot(t, append([]string{"k8s", "status", "--dry-run"}, args...))
+		_, runErr = runRootWith(t, append([]string{"status", "broker", "--platform", "kubernetes"}, args...), echoRunner)
 	})
 	return errOut, runErr
 }
@@ -554,13 +570,14 @@ func TestWarnAndStep(t *testing.T) {
 	}
 }
 
+// TestTreeStructure covers the one flat tree: the platform is resolved rather than
+// typed as the first word of a command (platform.go), so every command lives
+// directly off root (or off a verb group) regardless of which platform it applies
+// to. The sample below is representative, not exhaustive: a top-level leaf, a
+// group's child, a couple of multi-level paths, and at least one command from
+// each applicability class (shared, kubernetes-only, container-only).
 func TestTreeStructure(t *testing.T) {
 	root := newRootCmd(&App{})
-
-	// Top-level platforms.
-	for _, p := range []string{"k8s", "docker", "podman"} {
-		findCmd(t, root, p) // fails the test if absent
-	}
 
 	var paths []string
 	collectPaths(root, &paths)
@@ -569,31 +586,19 @@ func TestTreeStructure(t *testing.T) {
 		have[p] = true
 	}
 	wantLeaves := []string{
-		"solace-util k8s",
-		"solace-util docker",
-		"solace-util podman",
-		"solace-util k8s prep operator",
-		"solace-util k8s deploy",
-		"solace-util k8s config exec-cli",
-		"solace-util k8s verify diagnostics",
-		"solace-util k8s copy from",
-		"solace-util k8s copy into",
-		"solace-util k8s operator deploy",
-		"solace-util k8s gen",
-		"solace-util k8s replicas start",
-		"solace-util k8s restart",
-		"solace-util docker deploy",
-		"solace-util docker gen",
-		"solace-util docker describe",
-		"solace-util docker copy from",
-		"solace-util docker copy into",
-		"solace-util docker teardown domain-certs",
-		"solace-util podman gen",
-		"solace-util podman describe",
-		"solace-util podman teardown domain-certs",
+		"solace-util check deploy",             // group's child, shared
+		"solace-util deploy broker",            // group's child, shared
+		"solace-util prepare namespace",        // group's child, kubernetes-only
+		"solace-util remove operator",          // group's child, kubernetes-only
+		"solace-util generate operator",        // group's child, kubernetes-only
+		"solace-util config apply server-cert", // three-level path, shared
+		"solace-util config leader",            // two-level path, shared
+		"solace-util copy from",
+		"solace-util copy into",
+		"solace-util status broker",
 		"solace-util convert",
-		"solace-util completion",
-		"solace-util completion powershell",
+		"solace-util auto-complete",
+		"solace-util auto-complete powershell",
 		"solace-util version",
 	}
 	for _, want := range wantLeaves {
@@ -603,29 +608,97 @@ func TestTreeStructure(t *testing.T) {
 	}
 }
 
+// TestEveryRunnableCommandIsWired pins the wiring that replaced the two
+// PersistentPreRunE hooks: a command that runs something must carry the shared
+// pre-run (which resolves the platform and loads the env file) and the
+// --allow-command flag that goes with executing. Missing either is invisible
+// until that one command is run, so it is checked structurally instead. The verb
+// groups (check, deploy, config, remove, ...) carry no RunE at all -- they print
+// help and act on nothing -- so this walk never touches them.
+func TestEveryRunnableCommandIsWired(t *testing.T) {
+	root := newRootCmd(&App{})
+
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		path := c.CommandPath()
+		// A verb group carries a RunE only to print help or reject an unknown noun
+		// (group(), commands.go) -- it reaches no external command, so it must NOT
+		// carry the pre-run or --allow-command.
+		excluded := c.Annotations[groupAnnotation] == "true" ||
+			path == "solace-util convert" ||
+			path == "solace-util version" ||
+			path == "solace-util auto-complete" ||
+			strings.HasPrefix(path, "solace-util auto-complete ")
+		if c.RunE != nil && !excluded {
+			if c.PreRunE == nil {
+				t.Errorf("%s: has RunE but no PreRunE (missing wireExec)", path)
+			}
+			if c.Flags().Lookup("allow-command") == nil {
+				t.Errorf("%s: has RunE but no --allow-command flag (missing wireExec)", path)
+			}
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+
+	if root.PersistentFlags().Lookup("allow-command") != nil {
+		t.Error("root carries --allow-command as a persistent flag; it must be per-command (wireExec), never inherited")
+	}
+	convert := findCmd(t, root, "convert")
+	if convert.Flags().Lookup("allow-command") != nil {
+		t.Error("convert has an --allow-command flag; it loads no env file and executes nothing")
+	}
+}
+
+// TestGroupCommandsPrintHelpAndDoNothing pins the no-implicit-actions rule
+// (commands.go): a verb that owns objects has no RunE, so running it bare prints
+// its own help and touches nothing. Proof that it touches nothing is that it
+// succeeds with no --env at all -- a runnable leaf would fail resolving the
+// missing default env.yaml, but a bare group never reaches PreRunE.
+func TestGroupCommandsPrintHelpAndDoNothing(t *testing.T) {
+	for _, name := range []string{
+		"check", "smoke", "prepare", "deploy", "config", "start", "stop",
+		"restart", "status", "logs", "copy", "generate", "remove",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := runRoot(t, []string{name}); err != nil {
+				t.Errorf("%s (bare) err = %v, want nil (prints help, does not act)", name, err)
+			}
+		})
+	}
+	// config's own object groups (apply/delete/disable) behave the same way.
+	for _, path := range [][]string{{"config", "apply"}, {"config", "delete"}, {"config", "disable"}} {
+		t.Run(strings.Join(path, " "), func(t *testing.T) {
+			if _, err := runRoot(t, path); err != nil {
+				t.Errorf("%v (bare) err = %v, want nil (prints help, does not act)", path, err)
+			}
+		})
+	}
+}
+
+// TestFlagsRegistered covers flag registration on the flat tree. Each command is
+// one static shape on every platform (platform.go), so a platform-scoped flag
+// like --restart is registered on `deploy broker` unconditionally and only its
+// applicability (flagOnlyOn) narrows by platform.
 func TestFlagsRegistered(t *testing.T) {
 	root := newRootCmd(&App{})
 	cases := []struct {
 		path  []string
 		flags []string
 	}{
-		{[]string{"k8s", "delete"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"k8s", "down"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"docker", "delete"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"docker", "down"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"podman", "delete"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"podman", "down"}, []string{"purge", "clear-data", "keep-data"}},
-		{[]string{"k8s", "deploy"}, []string{"keep-yaml"}},
-		{[]string{"k8s", "verify", "diagnostics"}, []string{"days"}},
-		{[]string{"docker", "verify", "diagnostics"}, []string{"days"}},
-		{[]string{"k8s", "config", "exec-cli"}, []string{"pod"}},
-		{[]string{"k8s", "copy", "from"}, []string{"pod"}},
-		{[]string{"k8s", "copy", "into"}, []string{"pod", "dir"}},
-		{[]string{"docker", "copy", "into"}, []string{"dir"}},
-		{[]string{"docker", "deploy"}, []string{"restart"}},
-		{[]string{"docker", "up"}, []string{"restart"}},
-		{[]string{"podman", "deploy"}, []string{"restart"}},
-		{[]string{"podman", "up"}, []string{"restart"}},
+		{[]string{"deploy", "broker"}, []string{"restart"}},
+		{[]string{"deploy", "all"}, []string{"restart"}},
+		{[]string{"remove", "broker"}, []string{"delete-data", "no-prompt"}},
+		{[]string{"remove", "operator"}, []string{"delete-crd", "no-prompt"}},
+		{[]string{"remove", "all"}, []string{"delete-data", "no-prompt"}},
+		{[]string{"diagnostics"}, []string{"days"}},
+		{[]string{"cli"}, []string{"input", "pod"}},
+		{[]string{"copy", "from"}, []string{"pod"}},
+		{[]string{"copy", "into"}, []string{"pod", "dir"}},
+		{[]string{"status", "broker"}, []string{"all", "detail"}},
+		{[]string{"status", "operator"}, []string{"detail"}},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.path, "/"), func(t *testing.T) {
@@ -640,12 +713,12 @@ func TestFlagsRegistered(t *testing.T) {
 }
 
 func TestHelpNoConfig(t *testing.T) {
-	// --help short-circuits before PersistentPreRunE, so no env is needed.
+	// --help short-circuits before PreRunE, so no env is needed.
 	cases := [][]string{
 		{"--help"},
-		{"k8s", "--help"},
-		{"docker", "--help"},
-		{"podman", "--help"},
+		{"deploy", "--help"},
+		{"config", "--help"},
+		{"status", "--help"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -656,22 +729,20 @@ func TestHelpNoConfig(t *testing.T) {
 	}
 }
 
-func TestGenWired(t *testing.T) {
+// TestGenerateWired covers `generate`'s named-artifact leaves: none of them
+// contact the cluster or the container engine, so a plain runRoot (no echo seam)
+// is enough.
+func TestGenerateWired(t *testing.T) {
 	cases := []struct {
 		name   string
 		args   []string
 		prefix string
 	}{
-		{"k8s deploy --gen-only", []string{"k8s", "deploy", "--gen-only"}, "apiVersion:"},
-		{"k8s gen broker", []string{"k8s", "gen", "broker"}, "apiVersion:"},
-		{"k8s gen default", []string{"k8s", "gen"}, "apiVersion:"},
-		{"docker deploy primary --gen-only", []string{"docker", "deploy", "primary", "--gen-only"}, "services:"},
-		{"docker gen primary", []string{"docker", "gen", "primary"}, "services:"},
-		{"docker gen primary --gen-secrets-only", []string{"docker", "gen", "primary", "--gen-secrets-only"}, "# docker secrets"},
-		{"docker gen primary --gen-env-only", []string{"docker", "gen", "primary", "--gen-env-only"}, "routername="},
-		{"podman deploy primary --gen-only", []string{"podman", "deploy", "primary", "--gen-only"}, "[Unit]"},
-		{"podman gen primary", []string{"podman", "gen", "primary"}, "[Unit]"},
-		{"podman gen primary --gen-secrets-only", []string{"podman", "gen", "primary", "--gen-secrets-only"}, "# podman secrets"},
+		{"kubernetes generate broker", []string{"generate", "broker", "--platform", "kubernetes"}, "apiVersion:"},
+		{"docker generate broker", []string{"generate", "broker", "--platform", "docker"}, "services:"},
+		{"docker generate secrets", []string{"generate", "secrets", "--platform", "docker"}, "# docker secrets"},
+		{"podman generate broker", []string{"generate", "broker", "--platform", "podman"}, "[Unit]"},
+		{"podman generate secrets", []string{"generate", "secrets", "--platform", "podman"}, "# podman secrets"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -689,60 +760,56 @@ func TestGenWired(t *testing.T) {
 	}
 }
 
-// TestCtrWiredDryRun drives every container command that is safe under --dry-run
-// against the HA sample env: each reaches its real handler over the Echo runner and
-// returns no error, with the expected "+ <runtime> ..." (or systemctl/mkdir/chown)
-// echo landing on stdout. Poll-driven steps (config leader / verify redundancy,
-// which fail over or wait) and secret-bearing prep are covered by the guard,
-// standalone, and error tests instead, so nothing here blocks on a poll loop. The
-// sample is docker compose mode and rootful podman, so status/delete take the
-// compose path and podman systemctl carries no --user.
+// TestCtrWiredDryRun drives every container command that is safe to run against
+// the HA sample env over the echo seam: each reaches its real handler and returns
+// no error, with the expected "+ <runtime> ..." (or systemctl/mkdir/chown) echo
+// landing on stdout. Poll-driven steps (config leader / smoke redundancy, which
+// fail over or wait) and secret-bearing prep are covered by the guard, standalone,
+// and error tests instead, so nothing here blocks on a poll loop. The sample is
+// docker compose mode and rootful podman, so status/remove take the compose path
+// and podman systemctl carries no --user.
 func TestCtrWiredDryRun(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"docker check", []string{"docker", "check"}, "+ docker version"},
-		{"podman check", []string{"podman", "check"}, "+ podman version"},
-		{"docker status", []string{"docker", "status"}, "+ docker ps"},
-		{"podman status", []string{"podman", "status"}, "+ podman ps"},
-		{"docker describe", []string{"docker", "describe"}, "+ docker inspect"},
-		{"docker inspect alias", []string{"docker", "inspect"}, "+ docker inspect"},
-		{"podman describe shows the unit", []string{"podman", "describe"}, "+ systemctl cat"},
-		{"docker copy from", []string{"docker", "copy", "from", "a.log"}, "+ docker cp"},
-		{"docker copy into", []string{"docker", "copy", "into", "a.cli", "--dir", "/tmp"}, "+ docker cp"},
-		{"docker logs", []string{"docker", "logs"}, "+ docker logs -f"},
-		{"docker cli", []string{"docker", "cli"}, "+ docker exec -it"},
-		{"docker shell", []string{"docker", "shell"}, "+ docker exec -it"},
-		{"docker prep", []string{"docker", "prep"}, "+ mkdir -p"},
-		{"docker prep host", []string{"docker", "prep", "host"}, "+ chown"},
-		{"docker deploy primary", []string{"docker", "deploy", "primary"}, "+ docker compose"},
-		{"docker up primary", []string{"docker", "up", "primary"}, "+ docker compose"},
-		{"podman deploy primary", []string{"podman", "deploy", "primary"}, "+ systemctl daemon-reload"},
-		{"podman up primary", []string{"podman", "up", "primary"}, "+ systemctl daemon-reload"},
-		{"docker delete", []string{"docker", "delete", "--yes", "--keep-data"}, "+ docker compose"},
-		{"docker down", []string{"docker", "down", "--yes", "--keep-data"}, "+ docker compose"},
-		{"podman delete", []string{"podman", "delete", "--yes", "--keep-data"}, "+ systemctl"},
+		{"docker check deploy", []string{"check", "deploy", "--platform", "docker"}, "+ docker version"},
+		{"podman check deploy", []string{"check", "deploy", "--platform", "podman"}, "+ podman version"},
+		{"docker status broker", []string{"status", "broker", "--platform", "docker"}, "+ docker ps"},
+		{"podman status broker", []string{"status", "broker", "--platform", "podman"}, "+ podman ps"},
+		{"docker copy from", []string{"copy", "from", "a.log", "--platform", "docker"}, "+ docker cp"},
+		{"docker copy into", []string{"copy", "into", "a.cli", "--dir", "/tmp", "--platform", "docker"}, "+ docker cp"},
+		{"docker logs broker", []string{"logs", "broker", "--platform", "docker"}, "+ docker logs -f"},
+		{"docker cli", []string{"cli", "--platform", "docker"}, "+ docker exec -it"},
+		{"docker shell", []string{"shell", "--platform", "docker"}, "+ docker exec -it"},
+		{"docker prepare all", []string{"prepare", "all", "--platform", "docker"}, "+ mkdir -p"},
+		{"docker prepare host", []string{"prepare", "host", "--platform", "docker"}, "+ chown"},
+		{"docker deploy broker primary", []string{"deploy", "broker", "primary", "--platform", "docker"}, "+ docker compose"},
+		{"docker deploy all primary", []string{"deploy", "all", "primary", "--platform", "docker"}, "+ docker compose"},
+		{"podman deploy broker primary", []string{"deploy", "broker", "primary", "--platform", "podman"}, "+ systemctl daemon-reload"},
+		{"podman deploy all primary", []string{"deploy", "all", "primary", "--platform", "podman"}, "+ systemctl daemon-reload"},
+		{"docker remove broker", []string{"remove", "broker", "--no-prompt", "--platform", "docker"}, "+ docker compose"},
+		{"podman remove broker", []string{"remove", "broker", "--no-prompt", "--platform", "podman"}, "+ systemctl"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := runCtr(t, sampleEnv, tc.args...)
 			if err != nil {
-				t.Fatalf("%s --dry-run err = %v, want nil", tc.name, err)
+				t.Fatalf("%s err = %v, want nil", tc.name, err)
 			}
 			if !strings.Contains(out, tc.want) {
-				t.Errorf("%s --dry-run stdout = %q, want it to contain %q", tc.name, out, tc.want)
+				t.Errorf("%s stdout = %q, want it to contain %q", tc.name, out, tc.want)
 			}
 		})
 	}
 }
 
 // TestCtrRoleGuards covers the fail-loud / self-skip role guards on the two
-// node-local HA state machines (config leader, verify redundancy). None reach a
-// poll loop: the HA cases are rejected before polling (wrong node or bad role) and
-// the standalone cases return nil via skipIfStandalone, so every case resolves
-// immediately under --dry-run.
+// node-local HA state machines (config leader, smoke redundancy). None reach a
+// poll loop: the HA cases are rejected before polling (wrong node, unknown host,
+// or bad role) and the standalone cases return nil via skipIfStandalone, so every
+// case resolves immediately over the echo seam.
 func TestCtrRoleGuards(t *testing.T) {
 	ha := sampleEnv
 	standalone := writeCtrStandaloneEnv(t)
@@ -752,12 +819,13 @@ func TestCtrRoleGuards(t *testing.T) {
 		args    []string
 		wantErr string // "" -> expect nil (self-skip path)
 	}{
-		{"config leader on monitor", ha, []string{"docker", "config", "leader", "monitor"}, "must run on the primary node"},
-		{"config leader on backup", ha, []string{"podman", "config", "leader", "backup"}, "this host is the backup node"},
-		{"verify redundancy on monitor", ha, []string{"docker", "verify", "redundancy", "monitor"}, "cannot run on the monitor node"},
-		{"config leader bad role", ha, []string{"docker", "config", "leader", "bogus"}, "invalid node role"},
-		{"config leader standalone skip", standalone, []string{"docker", "config", "leader"}, ""},
-		{"verify redundancy standalone skip", standalone, []string{"podman", "verify", "redundancy"}, ""},
+		{"config leader on monitor", ha, []string{"config", "leader", "monitor", "--platform", "docker"}, "must run on the primary node"},
+		{"config leader on backup", ha, []string{"config", "leader", "backup", "--platform", "podman"}, "this host is the backup node"},
+		{"smoke redundancy on monitor", ha, []string{"smoke", "redundancy", "monitor", "--platform", "docker"}, "cannot run on the monitor node"},
+		{"smoke redundancy unknown host", ha, []string{"smoke", "redundancy", "--platform", "docker"}, "cannot determine node role"},
+		{"config leader bad role", ha, []string{"config", "leader", "bogus", "--platform", "docker"}, "invalid node role"},
+		{"config leader standalone skip", standalone, []string{"config", "leader", "--platform", "docker"}, ""},
+		{"smoke redundancy standalone skip", standalone, []string{"smoke", "redundancy", "--platform", "podman"}, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -779,24 +847,21 @@ func TestCtrRoleGuards(t *testing.T) {
 }
 
 // TestCtrConfigDryRun covers the post-deploy config steps that run cleanly on a
-// container-standalone env under --dry-run: the VPN/user hardening and exec-cli
-// echo their exec commands, while the cert/key- and product-key-gated steps
-// self-skip (none configured). config leader is excluded -- it is HA-only and
-// covered by TestCtrRoleGuards. None of these steps polls.
+// container-standalone env over the echo seam: the VPN/user hardening and cli
+// --input echo their exec commands, while the cert/key-gated steps self-skip
+// (none configured). config leader is excluded -- it is HA-only and covered by
+// TestCtrRoleGuards. None of these steps polls.
 func TestCtrConfigDryRun(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
 	cases := []struct {
 		name string
 		args []string
 	}{
-		{"config all", []string{"docker", "config"}},
-		{"config disable-default-vpn", []string{"docker", "config", "disable-default-vpn"}},
-		{"config disable-default-users", []string{"docker", "config", "disable-default-users"}},
-		{"config domain-certs (skip)", []string{"docker", "config", "domain-certs"}},
-		{"config exec-cli", []string{"docker", "config", "exec-cli", "setup.cli"}},
-		// opCtrTeardownDomainCerts' k8s sibling was already smoke-tested; this
-		// closes the parity gap (it was never invoked by any test).
-		{"teardown domain-certs (skip)", []string{"docker", "teardown", "domain-certs"}},
+		{"config disable default-vpn", []string{"config", "disable", "default-vpn", "--platform", "docker"}},
+		{"config disable default-users", []string{"config", "disable", "default-users", "--platform", "docker"}},
+		{"config apply domain-certs (skip)", []string{"config", "apply", "domain-certs", "--platform", "docker"}},
+		{"cli --input runs a script", []string{"cli", "--input", "setup.cli", "--platform", "docker"}},
+		{"config delete domain-certs (skip)", []string{"config", "delete", "domain-certs", "--platform", "docker"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -807,10 +872,20 @@ func TestCtrConfigDryRun(t *testing.T) {
 	}
 }
 
-// TestCtrErrorPaths covers the actionable failures of the container config/verify
-// steps on a container-standalone env under --dry-run: the cert and product-key
-// steps demand configuration that is absent, exec-cli requires a file, and a login
-// over the Echo runner cannot succeed against a non-existent broker. None polls.
+// TestCtrExecCLIPathSeparator covers opCtrExecCLI's used-as-is branch: a file
+// argument containing a path separator is not joined under the cliScripts folder.
+// The bare-filename (join) branch is covered by TestCtrConfigDryRun.
+func TestCtrExecCLIPathSeparator(t *testing.T) {
+	path := writeCtrStandaloneEnv(t)
+	if _, err := runCtr(t, path, "cli", "--input", "sub/dir/x.cli", "--platform", "docker"); err != nil {
+		t.Fatalf("cli --input with a path arg err = %v, want nil", err)
+	}
+}
+
+// TestCtrErrorPaths covers the actionable failures of the container config/check
+// steps on a container-standalone env over the echo seam: the cert and
+// product-key steps demand configuration that is absent, and a login over the
+// echo runner cannot succeed against a non-existent broker. None polls.
 func TestCtrErrorPaths(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
 	cases := []struct {
@@ -818,10 +893,9 @@ func TestCtrErrorPaths(t *testing.T) {
 		args    []string
 		wantErr string
 	}{
-		{"config server-cert (no tls)", []string{"docker", "config", "server-cert"}, "must both be set"},
-		{"config product-keys (none)", []string{"docker", "config", "product-keys"}, "no product keys configured"},
-		{"config exec-cli (no file)", []string{"docker", "config", "exec-cli"}, "CLI script file is required"},
-		{"verify login (echo runner)", []string{"docker", "verify", "login"}, "SEMP login failed"},
+		{"config apply server-cert (no tls)", []string{"config", "apply", "server-cert", "--platform", "docker"}, "must both be set"},
+		{"config apply product-keys (none)", []string{"config", "apply", "product-keys", "--platform", "docker"}, "no product keys configured"},
+		{"check semp-login (echo runner)", []string{"check", "semp-login", "--platform", "docker"}, "SEMP login failed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -836,30 +910,30 @@ func TestCtrErrorPaths(t *testing.T) {
 	}
 }
 
-// TestCtrVerifyDiagnosticsDryRun is isolated because Diagnostics does an
+// TestCtrDiagnosticsDryRun is isolated because Diagnostics does an
 // os.MkdirAll(diagDir) side-effect; t.Chdir(t.TempDir()) keeps the created dir out
 // of the package directory. The container-standalone env's path is absolute, so it
-// survives the chdir. On the Echo runner it echoes the node-local gather/download
+// survives the chdir. Over the echo seam it echoes the node-local gather/download
 // sequence without polling.
-func TestCtrVerifyDiagnosticsDryRun(t *testing.T) {
+func TestCtrDiagnosticsDryRun(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
 	t.Chdir(t.TempDir())
-	out, err := runCtr(t, path, "docker", "verify", "diagnostics")
+	out, err := runCtr(t, path, "diagnostics", "--platform", "docker")
 	if err != nil {
-		t.Fatalf("verify diagnostics --dry-run err = %v, want nil", err)
+		t.Fatalf("diagnostics err = %v, want nil", err)
 	}
 	if !strings.Contains(out, "+ docker") {
-		t.Errorf("verify diagnostics --dry-run stdout = %q, want a '+ docker ...' echo", out)
+		t.Errorf("diagnostics stdout = %q, want a '+ docker ...' echo", out)
 	}
 }
 
 // TestCtrRoleArgCount pins that the role-taking commands reject a second
-// positional (cobra.MaximumNArgs(1)). Arg validation runs before PersistentPreRunE,
-// so no env is loaded; --dry-run is a safety net in case that order ever changes.
+// positional (cobra.MaximumNArgs(1)). Arg validation runs before PreRunE, so no
+// env is loaded.
 func TestCtrRoleArgCount(t *testing.T) {
 	cases := [][]string{
-		{"docker", "config", "leader", "primary", "extra"},
-		{"docker", "verify", "redundancy", "primary", "extra"},
+		{"config", "leader", "primary", "extra", "--platform", "docker"},
+		{"smoke", "redundancy", "primary", "extra", "--platform", "docker"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -871,12 +945,12 @@ func TestCtrRoleArgCount(t *testing.T) {
 }
 
 // TestCtrRoleHelp confirms the role-taking commands expose --help (which
-// short-circuits before PersistentPreRunE, so no env is needed). runRoot discards
+// short-circuits before PreRunE, so no env is needed). runRoot discards
 // cobra's help output, so the assertion is purely that Execute returns no error.
 func TestCtrRoleHelp(t *testing.T) {
 	cases := [][]string{
-		{"docker", "config", "leader", "--help"},
-		{"podman", "verify", "redundancy", "--help"},
+		{"config", "leader", "--help", "--platform", "docker"},
+		{"smoke", "redundancy", "--help", "--platform", "podman"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -888,82 +962,82 @@ func TestCtrRoleHelp(t *testing.T) {
 }
 
 // TestK8sWiredDryRun drives every k8s command that is safe to run against the HA
-// sample env under --dry-run: each reaches its real handler over the Echo runner and
-// returns no error. wantEcho commands shell out to kubectl (so a `+ kubectl ...` line
-// lands on stdout); the skip-path commands (no configured labels / domain certs)
-// return cleanly without touching the runner. Steps that need a live cluster to make
-// sense on the HA sample (config leader/all -> redundancy poll, verify -> failover,
-// server-cert/secrets -> absent cert files) are exercised in the standalone and error
-// tests instead.
+// sample env over the echo seam: each reaches its real handler and returns no
+// error. wantEcho commands shell out to kubectl (so a `+ kubectl ...` line lands
+// on stdout); the skip-path commands (no configured labels / domain certs) return
+// cleanly without touching the runner. Steps that need a live cluster to make
+// sense on the HA sample (config leader -> redundancy poll, smoke redundancy ->
+// failover, server-cert/secrets -> absent cert files) are exercised in the
+// standalone and error tests instead.
 func TestK8sWiredDryRun(t *testing.T) {
 	cases := []struct {
 		name     string
 		args     []string
 		wantEcho bool
 	}{
-		{"check", []string{"k8s", "check"}, true},
-		{"status", []string{"k8s", "status"}, true},
-		{"show-all", []string{"k8s", "show-all"}, true},
-		{"describe lb", []string{"k8s", "describe", "lb"}, true},
-		{"describe broker", []string{"k8s", "describe", "broker"}, true},
-		{"logs", []string{"k8s", "logs"}, true},
-		{"cli", []string{"k8s", "cli"}, true},
-		{"shell", []string{"k8s", "shell"}, true},
-		{"replicas start", []string{"k8s", "replicas", "start"}, true},
-		{"replicas stop", []string{"k8s", "replicas", "stop"}, true},
-		{"inspect alias", []string{"k8s", "inspect", "lb"}, true},
-		// restart deletes pods, so it takes the same --yes gate delete does.
-		{"restart all", []string{"k8s", "restart", "--yes"}, true},
-		{"restart one role", []string{"k8s", "restart", "backup", "--yes"}, true},
-		// roleWord's remaining two cases (Backup is covered by "restart one role"
-		// above): a swapped case would misname which pod the prompt is about to
-		// bounce, so both must actually be reached, not assumed from Backup's.
-		{"restart monitor role", []string{"k8s", "restart", "monitor", "--yes"}, true},
-		{"restart primary role explicit", []string{"k8s", "restart", "primary", "--yes"}, true},
-		{"deploy", []string{"k8s", "deploy"}, true},
-		{"prep operator", []string{"k8s", "prep", "operator"}, true},
-		{"prep namespace", []string{"k8s", "prep", "namespace"}, true},
-		{"prep labels", []string{"k8s", "prep", "labels"}, false}, // no placement labels configured
-		{"operator deploy", []string{"k8s", "operator", "deploy"}, true},
-		{"operator delete", []string{"k8s", "operator", "delete"}, true},
-		{"operator status", []string{"k8s", "operator", "status"}, true},
-		{"operator logs", []string{"k8s", "operator", "logs"}, true},
-		{"operator describe", []string{"k8s", "operator", "describe"}, true},
-		{"config disable-default-vpn", []string{"k8s", "config", "disable-default-vpn"}, true},
-		{"config disable-default-users", []string{"k8s", "config", "disable-default-users"}, true},
-		{"config domain-certs", []string{"k8s", "config", "domain-certs"}, false}, // none configured
-		{"config exec-cli", []string{"k8s", "config", "exec-cli", "setup.cli", "--pod", "p"}, true},
-		{"copy from", []string{"k8s", "copy", "from", "somefile", "--pod", "p"}, true},
-		{"copy into", []string{"k8s", "copy", "into", "somefile", "--pod", "p"}, true},
-		{"teardown secrets", []string{"k8s", "teardown", "secrets"}, true},
-		{"teardown namespace", []string{"k8s", "teardown", "namespace"}, true},
-		{"teardown domain-certs", []string{"k8s", "teardown", "domain-certs"}, false}, // none configured
-		// delete/down carry --yes --keep-data so neither confirm helper reads os.Stdin.
-		{"delete", []string{"k8s", "delete", "--yes", "--keep-data"}, true},
-		{"down", []string{"k8s", "down", "--yes", "--keep-data"}, true},
+		{"check deploy", []string{"check", "deploy"}, true},
+		{"status broker", []string{"status", "broker"}, true},
+		{"status broker --all", []string{"status", "broker", "--all"}, true},
+		{"status broker --detail", []string{"status", "broker", "--detail"}, true},
+		{"logs broker", []string{"logs", "broker"}, true},
+		{"cli", []string{"cli"}, true},
+		{"shell", []string{"shell"}, true},
+		{"start broker", []string{"start", "broker"}, true},
+		{"stop broker", []string{"stop", "broker"}, true},
+		// restart deletes pods, so it takes the same --no-prompt gate remove does.
+		{"restart broker (all)", []string{"restart", "broker", "--no-prompt"}, true},
+		{"restart broker backup", []string{"restart", "broker", "backup", "--no-prompt"}, true},
+		// roleWord's remaining two cases (backup is covered above): a swapped case
+		// would misname which pod the prompt is about to bounce, so both must
+		// actually be reached, not assumed from backup's.
+		{"restart broker monitor", []string{"restart", "broker", "monitor", "--no-prompt"}, true},
+		{"restart broker primary explicit", []string{"restart", "broker", "primary", "--no-prompt"}, true},
+		{"deploy broker", []string{"deploy", "broker"}, true},
+		{"deploy operator", []string{"deploy", "operator"}, true},
+		{"prepare namespace", []string{"prepare", "namespace"}, true},
+		{"prepare labels", []string{"prepare", "labels"}, false}, // no placement labels configured
+		{"restart operator", []string{"restart", "operator"}, true},
+		{"status operator", []string{"status", "operator"}, true},
+		{"status operator --detail", []string{"status", "operator", "--detail"}, true},
+		{"logs operator", []string{"logs", "operator"}, true},
+		{"config disable default-vpn", []string{"config", "disable", "default-vpn"}, true},
+		{"config disable default-users", []string{"config", "disable", "default-users"}, true},
+		{"config apply domain-certs", []string{"config", "apply", "domain-certs"}, false}, // none configured
+		{"cli --input --pod", []string{"cli", "--input", "setup.cli", "--pod", "p"}, true},
+		{"copy from", []string{"copy", "from", "somefile", "--pod", "p"}, true},
+		{"copy into", []string{"copy", "into", "somefile", "--pod", "p"}, true},
+		// Every remove confirms now, secrets and namespace included, so they carry
+		// --no-prompt here for the same reason broker/all/operator do.
+		{"remove secrets", []string{"remove", "secrets", "--no-prompt"}, true},
+		{"remove namespace", []string{"remove", "namespace", "--no-prompt"}, true},
+		{"config delete domain-certs", []string{"config", "delete", "domain-certs"}, false}, // none configured
+		// remove broker/all/operator carry --no-prompt so no confirm helper reads os.Stdin.
+		{"remove broker", []string{"remove", "broker", "--no-prompt"}, true},
+		{"remove all", []string{"remove", "all", "--no-prompt"}, true},
+		{"remove operator", []string{"remove", "operator", "--no-prompt"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			args := append([]string{}, tc.args...)
-			args = append(args, "--dry-run")
-			out, err := runRoot(t, withEnv(args...))
+			args = append(args, "--platform", "kubernetes")
+			out, err := runRootWith(t, withEnv(args...), echoRunner)
 			if err != nil {
-				t.Fatalf("%s --dry-run err = %v, want nil", tc.name, err)
+				t.Fatalf("%s err = %v, want nil", tc.name, err)
 			}
 			if tc.wantEcho && !strings.Contains(out, "+ kubectl") {
-				t.Errorf("%s --dry-run stdout = %q, want a '+ kubectl ...' echo", tc.name, out)
+				t.Errorf("%s stdout = %q, want a '+ kubectl ...' echo", tc.name, out)
 			}
 			if !tc.wantEcho && strings.Contains(out, "+ kubectl") {
-				t.Errorf("%s --dry-run stdout = %q, want no kubectl echo (skip path)", tc.name, out)
+				t.Errorf("%s stdout = %q, want no kubectl echo (skip path)", tc.name, out)
 			}
 		})
 	}
 }
 
 // TestK8sStandaloneDryRun covers the commands whose behavior branches on redundancy:
-// on a standalone env the HA-only steps self-skip (config leader / verify redundancy)
-// and the secret-bearing prep steps have no TLS to guard, so config/prep/up all run
-// clean under --dry-run.
+// on a standalone env the HA-only steps self-skip (config leader / smoke redundancy)
+// and the secret-bearing prepare steps have no TLS to guard, so config/prepare/deploy
+// all run clean over the echo seam.
 func TestK8sStandaloneDryRun(t *testing.T) {
 	path := writeStandaloneEnv(t)
 	cases := []struct {
@@ -971,12 +1045,11 @@ func TestK8sStandaloneDryRun(t *testing.T) {
 		args     []string
 		wantEcho bool
 	}{
-		{"config all", []string{"k8s", "config"}, true},
-		{"config leader (skipped)", []string{"k8s", "config", "leader"}, false},
-		{"verify redundancy (skipped)", []string{"k8s", "verify", "redundancy"}, false},
-		{"prep secrets", []string{"k8s", "prep", "secrets"}, true},
-		{"prep all", []string{"k8s", "prep"}, true},
-		{"up", []string{"k8s", "up"}, true},
+		{"config leader (skipped)", []string{"config", "leader", "--platform", "kubernetes"}, false},
+		{"smoke redundancy (skipped)", []string{"smoke", "redundancy", "--platform", "kubernetes"}, false},
+		{"prepare secrets", []string{"prepare", "secrets", "--platform", "kubernetes"}, true},
+		{"prepare all", []string{"prepare", "all", "--platform", "kubernetes"}, true},
+		{"deploy all", []string{"deploy", "all", "--platform", "kubernetes"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -994,175 +1067,286 @@ func TestK8sStandaloneDryRun(t *testing.T) {
 	}
 }
 
-// TestK8sVerifyDiagnosticsDryRun is isolated because Diagnostics does an
-// os.MkdirAll(diagDir) side-effect; t.Chdir(t.TempDir()) keeps the created dir out of
-// the package directory. On the HA sample it echoes the gather/download sequence for
-// all three nodes without polling.
-func TestK8sVerifyDiagnosticsDryRun(t *testing.T) {
-	// Resolve the sample env to an absolute path before chdir; the relative sampleEnv
-	// is anchored on the package dir, which t.Chdir moves us out of.
-	absEnv, err := filepath.Abs(sampleEnv)
+// TestDeployAllDoesNotApplyOperator pins the deliberate behavior change from the
+// old `up`: the operator is cluster-scoped and shared between brokers, so
+// `deploy all` no longer installs it -- only `deploy operator` does. A standalone
+// env keeps this off the HA leader-assertion poll, which the echo seam cannot
+// satisfy.
+func TestDeployAllDoesNotApplyOperator(t *testing.T) {
+	path := writeStandaloneEnv(t)
+	out, err := runStandalone(t, path, "deploy", "all", "--platform", "kubernetes")
 	if err != nil {
-		t.Fatalf("abs sample env: %v", err)
+		t.Fatalf("deploy all err = %v, want nil", err)
 	}
-	t.Chdir(t.TempDir())
-	out, err := runRoot(t, []string{"k8s", "verify", "diagnostics", "--dry-run", "--env", absEnv})
-	if err != nil {
-		t.Fatalf("verify diagnostics --dry-run err = %v, want nil", err)
-	}
-	if !strings.Contains(out, "+ kubectl") {
-		t.Errorf("verify diagnostics --dry-run stdout = %q, want a '+ kubectl ...' echo", out)
+	// The marker is the CRD permission probe OperatorApply issues before anything
+	// else. The operator's DEPLOYMENT NAME is not usable here: `check deploy` reads
+	// it back to report whether the operator is installed, so it appears in the
+	// echo of a run that installed nothing.
+	if strings.Contains(out, "customresourcedefinitions") {
+		t.Errorf("deploy all applied the operator bundle:\n%s", out)
 	}
 }
 
-// TestK8sGenOperatorWired covers the operator render-only paths (`gen operator` and
-// `operator deploy --gen`): both emit the embedded bundle to stdout with every
-// template marker resolved. The bundle's first line is not stable enough for a
-// prefix check, so this asserts on known interior content.
-func TestK8sGenOperatorWired(t *testing.T) {
-	cases := []struct {
-		name string
-		args []string
-	}{
-		{"gen operator", []string{"k8s", "gen", "operator"}},
-		{"operator deploy --gen-only", []string{"k8s", "operator", "deploy", "--gen-only"}},
+// TestCheckDeployWarnsWhenOperatorAbsent covers opK8sCheck's operator probe:
+// `check deploy` is read-only, so a missing operator is reported as a warning
+// rather than failing the check itself. That warning is what stands in for the
+// operator install `deploy all` no longer performs.
+//
+// It cannot go through the echo seam: Echo's Output never returns an error, so the
+// probe would always read as "installed". This drives opK8sCheck directly with the
+// fault-injecting opRunner instead, failing exactly the CRD lookup and canning the
+// StorageClass answers the check needs to get that far.
+func TestCheckDeployWarnsWhenOperatorAbsent(t *testing.T) {
+	cfg := loadDirect(t, "redundancy: no\n"+
+		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n"+
+		"admin:\n  pass: "+smokeAdminPass+"\n"+
+		"kubernetes:\n  name: dev-broker\n  namespace: solace\n"+
+		"  storage:\n    class: standard\n    msgNode: 30Gi\n", config.K8s)
+
+	isCRDLookup := func(c opCall) bool {
+		for i, a := range c.args {
+			if a == "crd" && i+1 < len(c.args) {
+				return true
+			}
+		}
+		return false
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := runRoot(t, withEnv(tc.args...))
+	rr := &opRunner{
+		fail: func(c opCall) error {
+			if isCRDLookup(c) {
+				return fmt.Errorf("the server doesn't have a resource type \"crd\"")
+			}
+			return nil
+		},
+		output: func(c opCall) []byte {
+			// The StorageClass probe reads one custom column at a time; answer both
+			// with the values CheckStorageClass demands so it passes and the run
+			// reaches the operator probe under test.
+			for _, a := range c.args {
+				if strings.Contains(a, "volumeBindingMode") {
+					return []byte("WaitForFirstConsumer\n")
+				}
+				if strings.Contains(a, "allowVolumeExpansion") {
+					return []byte("true\n")
+				}
+			}
+			return nil
+		},
+	}
+	a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
+
+	var err error
+	errOut := captureStderr(t, func() { err = opK8sCheck(a) })
+	if err != nil {
+		t.Fatalf("check deploy err = %v, want nil: a missing operator warns, it does not fail the check", err)
+	}
+	if !strings.Contains(errOut, "does not look installed") {
+		t.Errorf("check deploy stderr = %q, want a warning about the missing operator", errOut)
+	}
+}
+
+// TestStartStopRestartBroker covers the day-2 start/stop/restart verbs on both
+// platform families: Kubernetes scales the statefulset(s), containers start/stop
+// the container in place.
+func TestStartStopRestartBroker(t *testing.T) {
+	t.Run("kubernetes", func(t *testing.T) {
+		for _, args := range [][]string{{"start", "broker"}, {"stop", "broker"}} {
+			out, err := runRootWith(t, append(withEnv(args...), "--platform", "kubernetes"), echoRunner)
 			if err != nil {
-				t.Fatalf("%s err = %v, want nil", tc.name, err)
+				t.Fatalf("%v err = %v, want nil", args, err)
 			}
-			if !strings.Contains(out, "kind: Deployment") || !strings.Contains(out, "pubsubplus-eventbroker-operator") {
-				t.Errorf("%s stdout missing expected operator-bundle content (first line %q)", tc.name, firstLine(out))
+			if !strings.Contains(out, "+ kubectl") {
+				t.Errorf("%v stdout = %q, want a kubectl echo", args, out)
 			}
-			if strings.Contains(out, "{{") {
-				t.Errorf("%s stdout still contains an unresolved template marker {{", tc.name)
+		}
+		out, err := runRootWith(t, append(withEnv("restart", "broker", "--no-prompt"), "--platform", "kubernetes"), echoRunner)
+		if err != nil {
+			t.Fatalf("restart broker err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ kubectl") {
+			t.Errorf("restart broker stdout = %q, want a kubectl echo", out)
+		}
+	})
+	t.Run("docker", func(t *testing.T) {
+		path := writeCtrStandaloneEnv(t)
+		for _, args := range [][]string{{"start", "broker"}, {"stop", "broker"}, {"restart", "broker"}} {
+			full := append(append([]string{}, args...), "--env", path, "--platform", "docker")
+			out, err := runRootWith(t, full, echoRunner)
+			if err != nil {
+				t.Fatalf("%v err = %v, want nil", args, err)
+			}
+			if !strings.Contains(out, "+ docker") {
+				t.Errorf("%v stdout = %q, want a docker echo", args, out)
+			}
+		}
+	})
+}
+
+// TestCLICommand covers `cli`'s two shapes: bare, it opens an interactive session;
+// with --input, it uploads and runs a script instead. Both are the same command
+// now, distinguished by a flag rather than by being separate subcommands.
+func TestCLICommand(t *testing.T) {
+	t.Run("bare cli opens a session", func(t *testing.T) {
+		out, err := runRootWith(t, append(withEnv("cli"), "--platform", "kubernetes"), echoRunner)
+		if err != nil {
+			t.Fatalf("cli err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ kubectl") {
+			t.Errorf("cli stdout = %q, want a kubectl exec echo", out)
+		}
+	})
+	t.Run("--input runs a script", func(t *testing.T) {
+		out, err := runRootWith(t, append(withEnv("cli", "--input", "setup.cli"), "--platform", "kubernetes"), echoRunner)
+		if err != nil {
+			t.Fatalf("cli --input err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ kubectl") {
+			t.Errorf("cli --input stdout = %q, want a kubectl exec echo", out)
+		}
+	})
+}
+
+// TestStatusBrokerFlags covers how --all and --detail compose on `status broker`:
+// they widen the report along independent axes (every broker in the cluster vs.
+// this env file's one; the static description vs. the running summary) rather
+// than one replacing the other.
+func TestStatusBrokerFlags(t *testing.T) {
+	t.Run("kubernetes --all lists every broker", func(t *testing.T) {
+		out, err := runRootWith(t, append(withEnv("status", "broker", "--all"), "--platform", "kubernetes"), echoRunner)
+		if err != nil {
+			t.Fatalf("status broker --all err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ kubectl") {
+			t.Errorf("status broker --all stdout = %q, want a kubectl echo", out)
+		}
+	})
+	t.Run("kubernetes --detail adds the static description", func(t *testing.T) {
+		out, err := runRootWith(t, append(withEnv("status", "broker", "--detail"), "--platform", "kubernetes"), echoRunner)
+		if err != nil {
+			t.Fatalf("status broker --detail err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ kubectl") {
+			t.Errorf("status broker --detail stdout = %q, want a kubectl echo", out)
+		}
+	})
+	t.Run("container --detail adds the inspection", func(t *testing.T) {
+		path := writeCtrStandaloneEnv(t)
+		out, err := runRootWith(t, []string{"status", "broker", "--detail", "--env", path, "--platform", "docker"}, echoRunner)
+		if err != nil {
+			t.Fatalf("status broker --detail (docker) err = %v, want nil", err)
+		}
+		if !strings.Contains(out, "+ docker") {
+			t.Errorf("status broker --detail (docker) stdout = %q, want a docker echo", out)
+		}
+	})
+}
+
+// TestRemoveBrokerLayerContract covers the retained-layer contract on `remove
+// broker`: persistent data is kept unless asked for by name, and --no-prompt alone
+// (which only answers the delete-the-broker question) must not also answer the
+// delete-the-data question.
+func TestRemoveBrokerLayerContract(t *testing.T) {
+	path := writeStandaloneEnv(t)
+	run := func(configure func(*App), args ...string) string {
+		t.Helper()
+		full := append(append([]string{}, args...), "--env", path, "--platform", "kubernetes")
+		return captureStderr(t, func() {
+			_, err := runRootWith(t, full, configure)
+			if err != nil {
+				t.Fatalf("%v err = %v, want nil", args, err)
 			}
 		})
 	}
+	t.Run("--no-prompt keeps data", func(t *testing.T) {
+		errOut := run(echoRunner, "remove", "broker", "--no-prompt")
+		if !strings.Contains(errOut, "PVCs kept") {
+			t.Errorf("remove broker --no-prompt stderr = %q, want data kept", errOut)
+		}
+	})
+	t.Run("--delete-data deletes it", func(t *testing.T) {
+		errOut := run(echoRunner, "remove", "broker", "--no-prompt", "--delete-data")
+		if !strings.Contains(errOut, "PVCs deleted") {
+			t.Errorf("remove broker --delete-data stderr = %q, want data deleted", errOut)
+		}
+	})
+	t.Run("non-interactive keeps data", func(t *testing.T) {
+		errOut := run(func(a *App) {
+			a.Interactive = func() bool { return false }
+			echoRunner(a)
+		}, "remove", "broker", "--no-prompt")
+		if !strings.Contains(errOut, "PVCs kept") {
+			t.Errorf("remove broker --no-prompt stderr = %q, want data kept by default", errOut)
+		}
+	})
 }
 
-// TestSecretsNeverEchoed is the §3 smoke check: a secret-bearing command under
-// --dry-run must show its stdin as a byte count, never the secret value. `verify
-// login` puts the admin credential on curl's stdin; the login itself fails under Echo
-// (no broker), which is fine -- the assertion is purely that the password does not
-// reach stdout.
-func TestSecretsNeverEchoed(t *testing.T) {
+// TestRemoveOperatorLayerContract mirrors TestRemoveBrokerLayerContract for the
+// operator's CRDs: kept by default (their removal cascades to every broker in the
+// cluster), deleted only when named.
+func TestRemoveOperatorLayerContract(t *testing.T) {
 	path := writeStandaloneEnv(t)
-	out, _ := runStandalone(t, path, "k8s", "verify", "login")
-	if !strings.Contains(out, "bytes on stdin") {
-		t.Errorf("verify login --dry-run stdout = %q, want a 'bytes on stdin' redaction", out)
+	run := func(args ...string) string {
+		t.Helper()
+		full := append(append([]string{}, args...), "--env", path, "--platform", "kubernetes")
+		return captureStderr(t, func() {
+			_, err := runRootWith(t, full, echoRunner)
+			if err != nil {
+				t.Fatalf("%v err = %v, want nil", args, err)
+			}
+		})
 	}
-	if strings.Contains(out, smokeAdminPass) {
-		t.Error("verify login --dry-run leaked the admin password to stdout")
-	}
-}
-
-// TestK8sErrorPaths covers the k8s handler error and rejection boundaries: config
-// validation failures surfaced before any runner call, a failed SEMP login turned
-// into a non-zero exit, a missing exec-cli argument, a bad --pod role, --gen rejected
-// on non-artifact commands, and the mutually-exclusive data flags.
-func TestK8sErrorPaths(t *testing.T) {
-	standalone := writeStandaloneEnv(t)
-	t.Run("server-cert without cert/key", func(t *testing.T) {
-		_, err := runStandalone(t, standalone, "k8s", "config", "server-cert")
-		if err == nil || !strings.Contains(err.Error(), "must both be set") {
-			t.Fatalf("config server-cert err = %v, want 'must both be set'", err)
+	t.Run("kept by default", func(t *testing.T) {
+		errOut := run("remove", "operator", "--no-prompt")
+		if !strings.Contains(errOut, "CRDs kept") {
+			t.Errorf("remove operator stderr = %q, want CRDs kept", errOut)
 		}
 	})
-	t.Run("product-keys without keys", func(t *testing.T) {
-		_, err := runStandalone(t, standalone, "k8s", "config", "product-keys")
-		if err == nil || !strings.Contains(err.Error(), "no product keys configured") {
-			t.Fatalf("config product-keys err = %v, want 'no product keys configured'", err)
-		}
-	})
-	t.Run("additional-users without users", func(t *testing.T) {
-		_, err := runStandalone(t, standalone, "k8s", "config", "additional-users")
-		if err == nil || !strings.Contains(err.Error(), "no additional users configured") {
-			t.Fatalf("config additional-users err = %v, want 'no additional users configured'", err)
-		}
-	})
-	t.Run("verify login failure", func(t *testing.T) {
-		_, err := runStandalone(t, standalone, "k8s", "verify", "login")
-		if err == nil || !strings.Contains(err.Error(), "SEMP login failed") {
-			t.Fatalf("verify login err = %v, want 'SEMP login failed'", err)
-		}
-	})
-	t.Run("verify all reaches login on standalone", func(t *testing.T) {
-		_, err := runStandalone(t, standalone, "k8s", "verify")
-		if err == nil || !strings.Contains(err.Error(), "SEMP login failed") {
-			t.Fatalf("verify err = %v, want 'SEMP login failed' (redundancy skipped)", err)
-		}
-	})
-	t.Run("exec-cli without a file", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "config", "exec-cli", "--dry-run"))
-		if err == nil || !strings.Contains(err.Error(), "CLI script file is required") {
-			t.Fatalf("exec-cli (no file) err = %v, want 'CLI script file is required'", err)
-		}
-	})
-	t.Run("exec-cli with a bad --pod role", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "config", "exec-cli", "setup.cli", "--pod", "bogus", "--dry-run"))
-		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("exec-cli --pod bogus err = %v, want 'invalid node role'", err)
-		}
-	})
-	t.Run("copy from with a bad --pod role", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "copy", "from", "somefile", "--pod", "bogus", "--dry-run"))
-		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("copy from --pod bogus err = %v, want 'invalid node role'", err)
-		}
-	})
-	t.Run("copy into with a bad --pod role", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "copy", "into", "somefile", "--pod", "bogus", "--dry-run"))
-		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("copy into --pod bogus err = %v, want 'invalid node role'", err)
-		}
-	})
-	t.Run("--gen-only rejected on delete", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "delete", "--gen-only"))
-		if err == nil || !strings.Contains(err.Error(), "--gen-only is only valid") {
-			t.Fatalf("delete --gen-only err = %v, want '--gen-only is only valid'", err)
-		}
-	})
-	t.Run("--gen-only rejected on status", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "status", "--gen-only"))
-		if err == nil || !strings.Contains(err.Error(), "--gen-only is only valid") {
-			t.Fatalf("status --gen-only err = %v, want '--gen-only is only valid'", err)
-		}
-	})
-	t.Run("--gen-env-only has no k8s artifact", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "deploy", "--gen-env-only"))
-		if err == nil || !strings.Contains(err.Error(), "no Kubernetes equivalent") {
-			t.Fatalf("deploy --gen-env-only err = %v, want 'no Kubernetes equivalent'", err)
-		}
-	})
-	t.Run("purge and keep-data are mutually exclusive", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "delete", "--purge", "--keep-data"))
-		if err == nil {
-			t.Fatal("delete --purge --keep-data err = nil, want a mutually-exclusive parse error")
+	t.Run("--delete-crd deletes them", func(t *testing.T) {
+		errOut := run("remove", "operator", "--no-prompt", "--delete-crd")
+		if !strings.Contains(errOut, "CRDs deleted") {
+			t.Errorf("remove operator --delete-crd stderr = %q, want CRDs deleted", errOut)
 		}
 	})
 }
 
-// TestConfirmFlagShortcuts covers the non-interactive short-circuits of the confirm
-// helpers: --yes confirms a delete, and the data-retention decision is driven by the
-// explicit flags without ever reading stdin (§: --yes never implies purge).
+// TestRemoveFlagsCompose pins that the two flags answer DIFFERENT questions and so
+// must combine rather than conflict: --delete-data says what to do with the data,
+// --no-prompt says not to ask about any of it, and a fully unattended removal that
+// also drops the data needs both. They were briefly mutually exclusive, which made
+// exactly that case impossible to express.
+func TestRemoveFlagsCompose(t *testing.T) {
+	path := writeStandaloneEnv(t)
+	errOut := captureStderr(t, func() {
+		_, err := runRootWith(t, []string{"remove", "broker", "--delete-data", "--no-prompt",
+			"--env", path, "--platform", "kubernetes"}, func(a *App) {
+			a.Interactive = func() bool { return false }
+			echoRunner(a)
+		})
+		if err != nil {
+			t.Fatalf("remove broker --delete-data --no-prompt err = %v, want nil", err)
+		}
+	})
+	if !strings.Contains(errOut, "PVCs deleted") {
+		t.Errorf("stderr = %q, want the data deleted with nothing asked", errOut)
+	}
+}
+
 func TestConfirmFlagShortcuts(t *testing.T) {
-	if !confirmDelete(&App{Yes: true}, "broker x") {
-		t.Error("confirmDelete with --yes = false, want true")
+	if !confirmDelete(&App{noPrompt: true}, "broker x") {
+		t.Error("confirmDelete with --no-prompt = false, want true")
 	}
-	if confirmPurge(&App{keepData: true}) {
-		t.Error("confirmPurge with --keep-data = true, want false")
+	if confirmLayer(&App{noPrompt: true}, layerData) {
+		t.Error("confirmLayer with --no-prompt = true, want false (kept)")
 	}
-	if !confirmPurge(&App{purge: true}) {
-		t.Error("confirmPurge with --purge = false, want true")
+	if !confirmLayer(&App{deleteLayer: true}, layerData) {
+		t.Error("confirmLayer with --delete-data = false, want true")
 	}
 }
 
 // TestConfirmNonTTY covers the unattended branches. Pointing os.Stdin at a pipe (not a
 // character device) makes isTTY deterministically false, so confirmDelete refuses
-// without --yes and confirmPurge keeps data -- with no prompt read, on any host.
+// without --no-prompt and confirmLayer keeps the retained layer -- with no prompt
+// read, on any host.
 func TestConfirmNonTTY(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -1177,10 +1361,10 @@ func TestConfirmNonTTY(t *testing.T) {
 	var deleted bool
 	_ = captureStderr(t, func() { deleted = confirmDelete(&App{}, "broker x") })
 	if deleted {
-		t.Error("confirmDelete non-TTY without --yes = true, want false")
+		t.Error("confirmDelete non-TTY without --no-prompt = true, want false")
 	}
-	if confirmPurge(&App{}) {
-		t.Error("confirmPurge non-TTY = true, want false (keep)")
+	if confirmLayer(&App{}, layerData) {
+		t.Error("confirmLayer non-TTY = true, want false (kept)")
 	}
 }
 
@@ -1202,8 +1386,8 @@ func TestPromptYesNo(t *testing.T) {
 	}
 }
 
-// TestPromptYes pins the strict purge confirmation: only an exact (trimmed,
-// case-insensitive) "yes" accepts; a bare "y" is not enough.
+// TestPromptYes pins the strict layer-deletion confirmation: only an exact
+// (trimmed, case-insensitive) "yes" accepts; a bare "y" is not enough.
 func TestPromptYes(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -1224,110 +1408,70 @@ func TestErrorPaths(t *testing.T) {
 	t.Run("bad env path", func(t *testing.T) {
 		// A value with a separator names one file: no env/ retry, so the error
 		// lists that single candidate.
-		_, err := runRoot(t, []string{"k8s", "status", "--env", "/no/such/file.yaml"})
+		_, err := runRoot(t, []string{"status", "broker", "--env", "/no/such/file.yaml", "--platform", "kubernetes"})
 		if err == nil || !strings.Contains(err.Error(), "not found: looked for") {
 			t.Fatalf("bad --env err = %v, want a not-found error", err)
 		}
 	})
 	t.Run("bad container role", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("docker", "deploy", "bogus"))
+		_, err := runRoot(t, withEnv("deploy", "broker", "bogus", "--platform", "docker"))
 		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("docker deploy bogus err = %v, want 'invalid node role'", err)
+			t.Fatalf("docker deploy broker bogus err = %v, want 'invalid node role'", err)
 		}
 	})
-	t.Run("bad container gen role", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("docker", "gen", "bogus"))
+	t.Run("bad container generate role", func(t *testing.T) {
+		_, err := runRoot(t, withEnv("generate", "broker", "bogus", "--platform", "docker"))
 		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("docker gen bogus err = %v, want 'invalid node role'", err)
+			t.Fatalf("docker generate broker bogus err = %v, want 'invalid node role'", err)
 		}
 	})
-	t.Run("bad container up role", func(t *testing.T) {
+	t.Run("bad container deploy-all role", func(t *testing.T) {
 		// ParseRole runs in RunE before any host operation, so the bogus role is
-		// rejected without the (non-dry-run) Check/PrepHost/Deploy ever executing.
-		_, err := runRoot(t, withEnv("docker", "up", "bogus"))
+		// rejected without the (real) Check/PrepHost/Deploy ever executing.
+		_, err := runRoot(t, withEnv("deploy", "all", "bogus", "--platform", "docker"))
 		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("docker up bogus err = %v, want 'invalid node role'", err)
+			t.Fatalf("docker deploy all bogus err = %v, want 'invalid node role'", err)
 		}
 	})
 	t.Run("bad k8s role leaf", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "logs", "bogus"))
+		_, err := runRoot(t, withEnv("logs", "broker", "bogus", "--platform", "kubernetes"))
 		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("k8s logs bogus err = %v, want 'invalid node role'", err)
+			t.Fatalf("k8s logs broker bogus err = %v, want 'invalid node role'", err)
 		}
 	})
-	t.Run("unknown gen target", func(t *testing.T) {
-		_, err := runRoot(t, withEnv("k8s", "gen", "bogus"))
-		if err == nil || !strings.Contains(err.Error(), "unknown gen target") {
-			t.Fatalf("k8s gen bogus err = %v, want 'unknown gen target'", err)
+	t.Run("unknown generate target", func(t *testing.T) {
+		// The refusal is group()'s own, not cobra's: cobra would print help and
+		// exit 0 for an unknown word on a verb that owns objects.
+		_, err := runRoot(t, withEnv("generate", "bogus", "--platform", "kubernetes"))
+		if err == nil || !strings.Contains(err.Error(), "bogus") {
+			t.Fatalf("generate bogus err = %v, want a refusal naming the unknown word", err)
 		}
 	})
 }
 
-// TestDockerRunModeRejected pins the removal of run mode: an env file carrying
-// the old value must fail with the reason and the fix, not a bare enum error.
-func TestDockerRunModeRejected(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "runmode.yaml")
-	content := "" +
-		"redundancy: no\n" +
-		"image:\n" +
-		"  repo: solace-pubsub-standard\n" +
-		"  tag: \"10.10.1.128\"\n" +
-		"admin:\n" +
-		"  pass: " + smokeAdminPass + "\n" +
-		"docker:\n" +
-		"  mode: run\n" +
-		"  container:\n" +
-		"    dataDir: /opt/solace/data\n" +
-		"nodes:\n" +
-		"  primary:\n" +
-		"    name: solace-primary\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write temp env: %v", err)
-	}
-	_, err := runRoot(t, []string{"docker", "gen", "primary", "--env", path})
-	if err == nil || !strings.Contains(err.Error(), "was removed") {
-		t.Fatalf("docker.mode: run err = %v, want the removal message", err)
-	}
-	if !strings.Contains(err.Error(), "docker.compose") {
-		t.Errorf("removal message should point at docker.compose, got: %v", err)
-	}
-}
-
-// TestK8sGenSecretsWired covers the newly opt-in-renderable Secret manifests, via
-// both the gen target and the flag. It uses the standalone env rather than the HA
-// sample, whose tls.serverSecret points at cert files that do not exist in a
-// checkout -- the same reason the secret-bearing prep steps are absent from
-// TestK8sWiredDryRun.
+// TestK8sGenSecretsWired covers the renderable Secret manifests via `generate
+// secrets`. It uses the standalone env rather than the HA sample, whose
+// tls.serverSecret points at cert files that do not exist in a checkout.
 func TestK8sGenSecretsWired(t *testing.T) {
 	path := writeStandaloneEnv(t)
-	for _, args := range [][]string{
-		{"k8s", "gen", "secrets"},
-		{"k8s", "prep", "secrets", "--gen-secrets-only"},
-		{"k8s", "prep", "secrets", "--gen-only"},
-		{"k8s", "deploy", "--gen-secrets-only"},
-	} {
-		name := strings.Join(args, " ")
-		t.Run(name, func(t *testing.T) {
-			out, err := runRoot(t, append(append([]string{}, args...), "--env", path))
-			if err != nil {
-				t.Fatalf("%s err = %v, want nil", name, err)
-			}
-			if !strings.HasPrefix(out, "apiVersion: v1") {
-				t.Errorf("%s should render Secret manifests, got %q", name, firstLine(out))
-			}
-			// The manifests carry the value base64-encoded, so the raw password must
-			// not appear -- but the rendering is still secret-bearing by design.
-			if !strings.Contains(out, "kind: Secret") {
-				t.Errorf("%s output is not a Secret manifest:\n%s", name, out)
-			}
-		})
+	out, err := runRoot(t, []string{"generate", "secrets", "--env", path, "--platform", "kubernetes"})
+	if err != nil {
+		t.Fatalf("generate secrets err = %v, want nil", err)
+	}
+	if !strings.HasPrefix(out, "apiVersion: v1") {
+		t.Errorf("generate secrets should render Secret manifests, got %q", firstLine(out))
+	}
+	// The manifests carry the value base64-encoded, so the raw password must not
+	// appear -- but the rendering is still secret-bearing by design.
+	if !strings.Contains(out, "kind: Secret") {
+		t.Errorf("generate secrets output is not a Secret manifest:\n%s", out)
 	}
 }
 
 // TestGenSecretsRefusesEmptyValue: the printed script tells the operator to run
 // it, so it must not be printable when running it would create an empty secret --
-// `gen --gen-secrets-only` refuses on the same precondition `deploy` does. The HA
-// sample with its PSK cleared is exactly the pre-`prep host` state.
+// `generate secrets` refuses on the same precondition `deploy broker` does. The HA
+// sample with its PSK cleared is exactly the pre-`prepare host` state.
 func TestGenSecretsRefusesEmptyValue(t *testing.T) {
 	body, err := os.ReadFile(sampleEnv)
 	if err != nil {
@@ -1344,128 +1488,51 @@ func TestGenSecretsRefusesEmptyValue(t *testing.T) {
 	}
 
 	for _, platform := range []string{"docker", "podman"} {
-		_, err := runRoot(t, []string{platform, "gen", "primary", "--gen-secrets-only", "--env", path})
+		_, err := runRoot(t, []string{"generate", "secrets", "--env", path, "--platform", platform})
 		if err == nil || !strings.Contains(err.Error(), "nodes.psk") {
-			t.Errorf("%s --gen-secrets-only with an empty PSK err = %v, want it to name nodes.psk", platform, err)
+			t.Errorf("%s generate secrets with an empty PSK err = %v, want it to name nodes.psk", platform, err)
 		}
 	}
 	// The deploy artifact only references secrets by name, so it stays renderable.
-	if _, err := runRoot(t, []string{"docker", "gen", "primary", "--gen-only", "--env", path}); err != nil {
-		t.Errorf("--gen-only should not need the secret values: %v", err)
-	}
-}
-
-// TestGenFlagsAreExclusive covers checkGenFlags' combination arm: each flag
-// selects a different artifact, so a pair is a user mistake rather than a
-// silent precedence rule.
-func TestGenFlagsAreExclusive(t *testing.T) {
-	path := writeCtrStandaloneEnv(t)
-	_, err := runRoot(t, []string{"docker", "gen", "--gen-only", "--gen-secrets-only", "--env", path})
-	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
-		t.Fatalf("combined gen flags err = %v, want 'cannot be combined'", err)
-	}
-}
-
-// TestCtrGenFlagsRejectedOnNonArtifactCommands is the container half of the
-// safety check the k8s tree already had: a gen flag on a destructive or
-// read-only command must fail loud, never be ignored -- being ignored on
-// `delete` would run the real delete while the user believed they asked for a
-// dry render.
-func TestCtrGenFlagsRejectedOnNonArtifactCommands(t *testing.T) {
-	path := writeCtrStandaloneEnv(t)
-	for _, platform := range []string{"docker", "podman"} {
-		for _, cmd := range []string{"delete", "down", "status", "check"} {
-			for _, flag := range []string{"--gen-only", "--gen-secrets-only", "--gen-env-only"} {
-				name := platform + " " + cmd + " " + flag
-				t.Run(name, func(t *testing.T) {
-					_, err := runRoot(t, []string{platform, cmd, flag, "--env", path})
-					if err == nil || !strings.Contains(err.Error(), "is only valid on artifact commands") {
-						t.Fatalf("%s err = %v, want the artifact-command rejection", name, err)
-					}
-				})
-			}
-		}
+	if _, err := runRoot(t, []string{"generate", "broker", "--env", path, "--platform", "docker"}); err != nil {
+		t.Errorf("generate broker should not need the secret values: %v", err)
 	}
 }
 
 // TestGenNeverLeaksSecrets is the end-to-end guard for the secret
 // externalization: the deploy artifacts a user prints, shares, or commits must
-// reference the admin password by name, while --gen-secrets-only is the one
+// reference the admin password by name, while `generate secrets` is the one
 // rendering allowed to carry it.
 func TestGenNeverLeaksSecrets(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
 	for _, platform := range []string{"docker", "podman"} {
-		for _, flag := range []string{"--gen-only", "--gen-env-only"} {
-			out, err := runRoot(t, []string{platform, "gen", flag, "--env", path})
+		for _, args := range [][]string{{"generate", "broker"}} {
+			out, err := runRoot(t, append(append([]string{}, args...), "--env", path, "--platform", platform))
 			if err != nil {
-				t.Fatalf("%s gen %s: %v", platform, flag, err)
+				t.Fatalf("%s %v: %v", platform, args, err)
 			}
 			if strings.Contains(out, smokeAdminPass) {
-				t.Errorf("%s gen %s leaked the admin password:\n%s", platform, flag, out)
+				t.Errorf("%s %v leaked the admin password:\n%s", platform, args, out)
 			}
 		}
-		out, err := runRoot(t, []string{platform, "gen", "--gen-secrets-only", "--env", path})
+		out, err := runRoot(t, []string{"generate", "secrets", "--env", path, "--platform", platform})
 		if err != nil {
-			t.Fatalf("%s gen --gen-secrets-only: %v", platform, err)
+			t.Fatalf("%s generate secrets: %v", platform, err)
 		}
 		if !strings.Contains(out, smokeAdminPass) {
-			t.Errorf("%s --gen-secrets-only must carry the value it creates the secret from:\n%s", platform, out)
+			t.Errorf("%s generate secrets must carry the value it creates the secret from:\n%s", platform, out)
 		}
 	}
 }
 
-// TestCtrVerifyAll covers opCtrVerifyAll's three role/redundancy arms without ever
-// reaching the primary/backup poll path (which would block under Echo): (a) an HA
-// env whose node table does not name this host -> LocalRole fails loud; (b) an HA
-// env whose monitor row is this very host -> the monitor-skip branch runs, then the
-// SEMP login fails over the Echo runner; (c) a standalone env -> redundancy is
-// skipped and the login fails the same way. The primary/backup RedundancyLocal("")
-// line is exercised directly in the broker tests instead.
-func TestCtrVerifyAll(t *testing.T) {
-	t.Run("HA host not in node table -> LocalRole error", func(t *testing.T) {
-		_, err := runCtr(t, sampleEnv, "docker", "verify")
-		if err == nil || !strings.Contains(err.Error(), "cannot determine node role") {
-			t.Fatalf("verify (HA, unknown host) err = %v, want 'cannot determine node role'", err)
-		}
-	})
-
-	t.Run("HA monitor host -> skip redundancy, login fails", func(t *testing.T) {
-		host, err := os.Hostname()
-		if err != nil {
-			t.Skipf("os.Hostname unavailable: %v", err)
-		}
-		path := filepath.Join(t.TempDir(), "ha-monitor.yaml")
-		content := "redundancy: yes\n" +
-			"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-			"admin:\n  pass: " + smokeAdminPass + "\n" +
-			"nodes:\n" +
-			"  primary:\n    name: ctr-verifyall-primary\n    ip: 10.0.0.11\n" +
-			"  backup:\n    name: ctr-verifyall-backup\n    ip: 10.0.0.12\n" +
-			"  monitor:\n    name: '" + host + "'\n    ip: 10.0.0.13\n"
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write ha-monitor env: %v", err)
-		}
-		_, err = runCtr(t, path, "docker", "verify")
-		if err == nil || !strings.Contains(err.Error(), "SEMP login failed") {
-			t.Fatalf("verify (HA, this host is monitor) err = %v, want 'SEMP login failed' (redundancy skipped)", err)
-		}
-	})
-
-	t.Run("standalone -> skip redundancy, login fails", func(t *testing.T) {
-		path := writeCtrStandaloneEnv(t)
-		_, err := runCtr(t, path, "docker", "verify")
-		if err == nil || !strings.Contains(err.Error(), "SEMP login failed") {
-			t.Fatalf("verify (standalone) err = %v, want 'SEMP login failed' (redundancy skipped)", err)
-		}
-	})
-}
-
-// TestCtrConfigAllArms drives opCtrConfigAll with every optional step configured, so
-// the three gated arms (server-cert, domain-certs, product-keys) all run rather than
-// self-skip. ServerCert reads the real temp cert/key files; DomainCerts/ProductKeys
-// need no real files under Echo (uploads are cp; the CLI output is empty). The key
-// material rides Upload's stdin, so the assertion also proves it never reaches stdout.
-func TestCtrConfigAllArms(t *testing.T) {
+// TestConfigStepsDoNotLeakSecrets drives each config apply/disable step against a
+// container fixture carrying every optional value (server cert/key, a domain CA, a
+// product key) and asserts none of them prints the private key material to
+// stdout. `config` no longer aggregates these into one run-everything step (there
+// is no re-runnable ordering to assume), so each is exercised through its own
+// command instead of one combined call -- replacing the old direct-call coverage
+// of the now-deleted opCtrConfigAll.
+func TestConfigStepsDoNotLeakSecrets(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.ToSlash(filepath.Join(dir, "tls.crt"))
 	keyPath := filepath.ToSlash(filepath.Join(dir, "tls.key"))
@@ -1476,35 +1543,338 @@ func TestCtrConfigAllArms(t *testing.T) {
 	if err := os.WriteFile(keyPath, []byte(keyMaterial+"\n"), 0o600); err != nil {
 		t.Fatalf("write key: %v", err)
 	}
-	path := filepath.Join(dir, "cfgall.yaml")
+	path := filepath.Join(dir, "cfgsteps.yaml")
 	content := "redundancy: no\n" +
 		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
 		"admin:\n  pass: " + smokeAdminPass + "\n" +
 		"tls:\n  cert: " + certPath + "\n  certKey: " + keyPath + "\n" +
 		"nodes:\n  primary:\n    name: pri-host\n" +
-		"k8s:\n" +
+		"docker: {}\n" +
+		"broker:\n" +
 		"  domainCerts:\n    folder: " + filepath.ToSlash(dir) + "\n    files:\n      myca: myca.pem\n" +
 		"  productKeys:\n    - KEY-1\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write cfgall env: %v", err)
+		t.Fatalf("write env: %v", err)
 	}
 
-	out, err := runCtr(t, path, "docker", "config")
-	if err != nil {
-		t.Fatalf("config all (every arm) err = %v, want nil", err)
-	}
-	if strings.Contains(out, keyMaterial) {
-		t.Error("config all leaked the server-certificate private key to stdout")
+	for _, args := range [][]string{
+		{"config", "apply", "server-cert"},
+		{"config", "apply", "domain-certs"},
+		{"config", "apply", "product-keys"},
+		{"config", "disable", "default-vpn"},
+		{"config", "disable", "default-users"},
+	} {
+		full := append(append([]string{}, args...), "--platform", "docker")
+		out, err := runCtr(t, path, full...)
+		if err != nil {
+			t.Fatalf("%v err = %v, want nil", args, err)
+		}
+		if strings.Contains(out, keyMaterial) {
+			t.Errorf("%v leaked the server-certificate private key to stdout", args)
+		}
 	}
 }
 
-// TestCtrExecCLIPathSeparator covers opCtrExecCLI's used-as-is branch: a file
-// argument containing a path separator is not joined under the cliScripts folder.
-// The bare-filename (join) branch is covered by TestCtrConfigDryRun.
-func TestCtrExecCLIPathSeparator(t *testing.T) {
-	path := writeCtrStandaloneEnv(t)
-	if _, err := runCtr(t, path, "docker", "config", "exec-cli", "sub/dir/x.cli"); err != nil {
-		t.Fatalf("exec-cli with a path arg err = %v, want nil", err)
+// writeK8sDeployAllEnv builds a minimal, valid k8s env with redundancy
+// overridable, so opK8sDeployAll's HA-only final Leader() branch can be
+// exercised (writeStandaloneEnv is fixed at redundancy: no).
+func writeK8sDeployAllEnv(t *testing.T, redundancy string) *config.Config {
+	t.Helper()
+	yamlBody := "redundancy: " + redundancy + "\n" +
+		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
+		"admin:\n  pass: " + smokeAdminPass + "\n" +
+		"kubernetes:\n" +
+		"  name: dev-broker\n" +
+		"  namespace: solace\n" +
+		"  adminSecret: solace-admin-secret\n" +
+		"  updateStrategy: automatedRolling\n" +
+		"  storage:\n    class: standard\n    msgNode: 30Gi\n"
+	return loadDirect(t, yamlBody, config.K8s)
+}
+
+// k8sDeployAllOutputHook supplies the canned Output content opK8sDeployAll's
+// happy path needs once a fake (non-Echo) Runner is in play:
+// k8s.Cluster.isDryRun() is a concrete type assertion on engine.Echo, so a fake
+// Runner takes CheckStorageClass's real validation branch (unlike engine.Echo,
+// which skips it) -- it needs a WaitForFirstConsumer/true StorageClass answer to
+// pass, and Leader (HA only) needs a healthy `show redundancy` transcript to
+// avoid its real poll budget.
+func k8sDeployAllOutputHook(c opCall) []byte {
+	switch {
+	case opArgvMatch(c, "volumeBindingMode"):
+		return []byte("WaitForFirstConsumer")
+	case opArgvMatch(c, "allowVolumeExpansion"):
+		return []byte("true")
+	case opArgvMatch(c, ".show-rd.cli"):
+		return []byte(healthyShowRD)
+	default:
+		return nil
+	}
+}
+
+// TestOpK8sDeployAllAssertsLeaderOnHA covers opK8sDeployAll's final branch: on an
+// HA config, `deploy all` must assert the config-sync leader as its last step, not
+// just deploy the broker and stop. It is unreachable via runRoot/engine.Echo --
+// Echo's fixed empty output never satisfies Leader's poll, which would otherwise
+// run for broker.New's real 2s x 60 budget -- so this drives opK8sDeployAll
+// directly over a fake Runner.
+func TestOpK8sDeployAllAssertsLeaderOnHA(t *testing.T) {
+	cfg := writeK8sDeployAllEnv(t, "yes")
+	rr := &opRunner{output: k8sDeployAllOutputHook}
+	a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
+	var deployErr error
+	captureStdout(t, func() { deployErr = opK8sDeployAll(a) })
+	if deployErr != nil {
+		t.Fatalf("opK8sDeployAll (HA) err = %v, want nil", deployErr)
+	}
+	if !rr.hasCall("assert-leader") {
+		t.Error("opK8sDeployAll did not assert the config-sync leader after deploying an HA broker")
+	}
+}
+
+// TestOpK8sDeployAllAborts covers opK8sDeployAll's four error-return arms (Check,
+// CreateNamespace, CreateSecrets, DeployBroker), each in a separate sub-test that
+// fails exactly that step and asserts no later step's command was issued. Unlike
+// the retired opK8sUp, there is no operator-apply step: the operator is
+// cluster-scoped and installed on its own (`deploy operator`).
+func TestOpK8sDeployAllAborts(t *testing.T) {
+	t.Run("check fails -> nothing else runs", func(t *testing.T) {
+		cfg := writeK8sDeployAllEnv(t, "no")
+		rr := &opRunner{fail: opFailOn("version"), output: k8sDeployAllOutputHook}
+		a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
+		var err error
+		captureStdout(t, func() { err = opK8sDeployAll(a) })
+		if err == nil {
+			t.Fatal("opK8sDeployAll = nil, want the injected Check failure to abort")
+		}
+		if rr.hasCall("apply") {
+			t.Error("opK8sDeployAll issued an apply command after Check failed")
+		}
+	})
+
+	steps := []string{"create-namespace", "create-secrets", "deploy-broker"}
+	for i, step := range steps {
+		n := i + 1
+		t.Run(step+" fails -> the next step never runs", func(t *testing.T) {
+			cfg := writeK8sDeployAllEnv(t, "no")
+			rr := &opRunner{fail: opFailOnCount("apply", n), output: k8sDeployAllOutputHook}
+			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
+			var err error
+			captureStdout(t, func() { err = opK8sDeployAll(a) })
+			if err == nil {
+				t.Fatalf("opK8sDeployAll = nil, want the injected %s failure to abort", step)
+			}
+			if got := rr.callCount("apply"); got != n {
+				t.Errorf("opK8sDeployAll issued %d apply command(s) after %s failed, want exactly %d (no later step ran)", got, step, n)
+			}
+		})
+	}
+}
+
+// TestPrepLabelsIsInteractiveOnly pins the one command in the tree that cannot be
+// scripted, and why. The env file names the label each broker role wants; which
+// MACHINE carries it is chosen from a prompt, with no flag to express it. So a
+// non-interactive run is refused up front rather than failing deep in the picker on
+// an unreadable stdin -- and with nothing configured there is no question to ask,
+// so that case stays a no-op even without a terminal.
+func TestPrepLabelsIsInteractiveOnly(t *testing.T) {
+	t.Run("refused without a terminal when labels are configured", func(t *testing.T) {
+		cfg := loadDirect(t, "redundancy: no\n"+
+			"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n"+
+			"admin:\n  pass: "+smokeAdminPass+"\n"+
+			"kubernetes:\n  name: dev-broker\n  namespace: solace\n"+
+			"  storage:\n    class: standard\n    msgNode: 30Gi\n"+
+			"  placement:\n    labelsPrimary: [\"solace-node: primary\"]\n", config.K8s)
+		rr := &opRunner{}
+		a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr,
+			Interactive: func() bool { return false }}
+		err := opK8sPrepLabels(a)
+		if err == nil || !strings.Contains(err.Error(), "needs a terminal") {
+			t.Fatalf("prepare labels err = %v, want a refusal naming the missing terminal", err)
+		}
+		if len(rr.calls) != 0 {
+			t.Errorf("prepare labels touched the cluster before refusing: %+v", rr.calls)
+		}
+	})
+	t.Run("no-op without a terminal when nothing is configured", func(t *testing.T) {
+		cfg := writeK8sDeployAllEnv(t, "no")
+		rr := &opRunner{}
+		a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr,
+			Interactive: func() bool { return false }}
+		var err error
+		captureStderr(t, func() { err = opK8sPrepLabels(a) })
+		if err != nil {
+			t.Fatalf("prepare labels with no labels configured err = %v, want nil", err)
+		}
+		if len(rr.calls) != 0 {
+			t.Errorf("prepare labels should touch nothing when unconfigured: %+v", rr.calls)
+		}
+	})
+}
+
+// TestDeployAllNeverLabelsNodes: labelling is interactive, so it is out of the
+// scripted path entirely. `deploy all` used to run it when placement was configured
+// and stdin happened to be a terminal, which made the same command interactive or
+// not depending on where it ran.
+func TestDeployAllNeverLabelsNodes(t *testing.T) {
+	cfg := loadDirect(t, "redundancy: no\n"+
+		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n"+
+		"admin:\n  pass: "+smokeAdminPass+"\n"+
+		"kubernetes:\n  name: dev-broker\n  namespace: solace\n"+
+		"  storage:\n    class: standard\n    msgNode: 30Gi\n"+
+		"  placement:\n    labelsPrimary: [\"solace-node: primary\"]\n", config.K8s)
+	rr := &opRunner{output: func(c opCall) []byte {
+		for _, a := range c.args {
+			if strings.Contains(a, "volumeBindingMode") {
+				return []byte("WaitForFirstConsumer\n")
+			}
+			if strings.Contains(a, "allowVolumeExpansion") {
+				return []byte("true\n")
+			}
+		}
+		return nil
+	}}
+	a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr,
+		Interactive: func() bool { return true }}
+	var err error
+	captureStdout(t, func() { err = opK8sDeployAll(a) })
+	if err != nil {
+		t.Fatalf("deploy all err = %v, want nil", err)
+	}
+	for _, c := range rr.calls {
+		if len(c.args) > 1 && c.args[0] == "label" {
+			t.Errorf("deploy all labelled a node: %v", c.args)
+		}
+	}
+}
+
+// TestOpK8sPrepAllAborts covers both of opK8sPrepAll's error-return arms
+// (CreateNamespace, CreateSecrets): the same abort-ordering property as
+// opK8sDeployAll. Those two ARE the whole sequence -- the operator is installed by
+// its own command, and node labelling is interactive so it is not in `all` at all.
+func TestOpK8sPrepAllAborts(t *testing.T) {
+	steps := []string{"create-namespace", "create-secrets"}
+	for i, step := range steps {
+		n := i + 1
+		t.Run(step+" fails -> the next step never runs", func(t *testing.T) {
+			cfg := writeK8sDeployAllEnv(t, "no")
+			rr := &opRunner{fail: opFailOnCount("apply", n)}
+			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
+			var err error
+			captureStdout(t, func() { err = opK8sPrepAll(a) })
+			if err == nil {
+				t.Fatalf("opK8sPrepAll = nil, want the injected %s failure to abort", step)
+			}
+			if got := rr.callCount("apply"); got != n {
+				t.Errorf("opK8sPrepAll issued %d apply command(s) after %s failed, want exactly %d", got, step, n)
+			}
+		})
+	}
+}
+
+// TestOpK8sRemoveAllAborts covers opK8sRemoveAll's two error-return arms
+// (DeleteBroker, DeleteSecrets): it must not remove the namespace out from under a
+// broker- or secrets-deletion that actually failed, leaving orphaned state -- a
+// real correctness property of the teardown order, not just error forwarding.
+func TestOpK8sRemoveAllAborts(t *testing.T) {
+	steps := []struct {
+		name string
+		n    int
+	}{
+		{"delete-broker", 1},
+		{"delete-secrets", 2},
+	}
+	for _, s := range steps {
+		t.Run(s.name+" fails -> delete-namespace never runs", func(t *testing.T) {
+			cfg := writeK8sDeployAllEnv(t, "no")
+			rr := &opRunner{fail: opFailOnCount("delete", s.n)}
+			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr, noPrompt: true}
+			var err error
+			captureStdout(t, func() { err = opK8sRemoveAll(a) })
+			if err == nil {
+				t.Fatalf("opK8sRemoveAll = nil, want the injected %s failure to abort", s.name)
+			}
+			if got := rr.callCount("delete"); got != s.n {
+				t.Errorf("opK8sRemoveAll issued %d delete command(s) after %s failed, want exactly %d (delete-namespace never ran)", got, s.name, s.n)
+			}
+		})
+	}
+}
+
+// TestOpCtrVerifyRedundancyRunsRedundancyLocal covers opCtrVerifyRedundancy's
+// actual failover exercise arm (RedundancyLocal) rather than only the skip/reject
+// arms already covered by TestCtrRoleGuards. It sets this host as the primary and
+// supplies a canned `show redundancy` transcript over a fake Runner, since
+// engine.Echo's fixed empty output would otherwise send RedundancyLocal into its
+// real poll loop (broker.New's 2s x 60 budget, which the CLI has no seam to
+// shorten).
+func TestOpCtrVerifyRedundancyRunsRedundancyLocal(t *testing.T) {
+	host, err := os.Hostname()
+	if err != nil {
+		t.Skipf("os.Hostname unavailable: %v", err)
+	}
+	yamlBody := "redundancy: yes\n" +
+		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
+		"admin:\n  pass: " + smokeAdminPass + "\n" +
+		"nodes:\n" +
+		"  primary:\n    name: '" + host + "'\n    ip: 10.0.0.11\n" +
+		"  backup:\n    name: ctr-redundancylocal-backup\n    ip: 10.0.0.12\n" +
+		"  monitor:\n    name: ctr-redundancylocal-monitor\n    ip: 10.0.0.13\n"
+	cfg := loadDirect(t, yamlBody, config.Docker)
+	rr := &opRunner{output: func(c opCall) []byte {
+		if opArgvMatch(c, ".show-rd.cli") {
+			// Non-empty but deliberately unhealthy (no Configuration/Redundancy
+			// Status lines): primaryRedundancyUp is false, so redundancyLocalPrimary
+			// returns its health error immediately -- proving RedundancyLocal ran,
+			// without ever entering a real poll loop.
+			return []byte("Activity Status: Local Active\n")
+		}
+		return nil
+	}}
+	a := &App{Cfg: cfg, Platform: config.Docker, Runner: rr}
+	captureStdout(t, func() { err = opCtrVerifyRedundancy(a, "") })
+	if err == nil || !strings.Contains(err.Error(), "redundancy configuration/status is not healthy") {
+		t.Fatalf("opCtrVerifyRedundancy (primary, active-but-unhealthy) err = %v, want the redundancy-unhealthy error", err)
+	}
+}
+
+// TestK8sSmokeRedundancyUnhealthy covers opK8sVerifyRedundancy's error-return: on
+// the HA sample over the echo seam, engine.Echo's empty `show redundancy` output
+// makes primaryRedundancyUp false, so Redundancy fails on its first check (no poll).
+func TestK8sSmokeRedundancyUnhealthy(t *testing.T) {
+	_, err := runRootWith(t, withEnv("smoke", "redundancy", "--platform", "kubernetes"), echoRunner)
+	if err == nil || !strings.Contains(err.Error(), "redundancy configuration/status is not healthy") {
+		t.Fatalf("k8s smoke redundancy (HA sample) err = %v, want the redundancy-unhealthy error", err)
+	}
+}
+
+// TestK8sConfigDeleteDomainCertsConfigured covers domainCANames' loop body: every
+// other test's domainCerts.files map is empty, so the map-to-slice conversion
+// feeding RemoveDomainCerts is trivially correct by vacuity. This configures one
+// CA and asserts `config delete domain-certs` actually issues a kubectl exec
+// rather than self-skipping.
+func TestK8sConfigDeleteDomainCertsConfigured(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "domaincerts.yaml")
+	content := "redundancy: no\n" +
+		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
+		"admin:\n  pass: " + smokeAdminPass + "\n" +
+		"kubernetes:\n" +
+		"  name: dev-broker\n" +
+		"  namespace: solace\n" +
+		"  adminSecret: solace-admin-secret\n" +
+		"  updateStrategy: automatedRolling\n" +
+		"  storage:\n    class: standard\n    msgNode: 30Gi\n" +
+		"broker:\n" +
+		"  domainCerts:\n    folder: certs\n    files:\n      myca: myca.pem\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	out, err := runRootWith(t, []string{"config", "delete", "domain-certs", "--env", path, "--platform", "kubernetes"}, echoRunner)
+	if err != nil {
+		t.Fatalf("config delete domain-certs (configured) err = %v, want nil", err)
+	}
+	if !strings.Contains(out, "+ kubectl") {
+		t.Errorf("config delete domain-certs (configured) stdout = %q, want a '+ kubectl ...' echo", out)
 	}
 }
 
@@ -1595,9 +1965,9 @@ func TestConvertRoundTrip(t *testing.T) {
 			t.Fatalf("convert err = %v, want nil", err)
 		}
 	})
-	out, err := runCtr(t, dst, "docker", "status")
+	out, err := runCtr(t, dst, "status", "broker", "--platform", "docker")
 	if err != nil {
-		t.Fatalf("docker status against the converted env err = %v, want nil", err)
+		t.Fatalf("docker status broker against the converted env err = %v, want nil", err)
 	}
 	if !strings.Contains(out, "+ docker") {
 		t.Errorf("converted env did not drive a real command:\n%s", out)
@@ -1606,9 +1976,12 @@ func TestConvertRoundTrip(t *testing.T) {
 
 func TestConvertErrorPaths(t *testing.T) {
 	src := writeBashEnv(t)
+	// convert reads the same --platform every other command does, so the rejection
+	// is config.ParsePlatform's own and names the platform rather than the flag --
+	// one word, one meaning, whichever command it was typed on.
 	t.Run("bad platform", func(t *testing.T) {
 		_, err := runRoot(t, []string{"convert", src, "--platform", "bogus"})
-		if err == nil || !strings.Contains(err.Error(), "invalid --platform") {
+		if err == nil || !strings.Contains(err.Error(), "invalid platform") {
 			t.Fatalf("err = %v, want an invalid-platform error", err)
 		}
 	})
@@ -1623,6 +1996,35 @@ func TestConvertErrorPaths(t *testing.T) {
 			t.Fatal("convert with no argument should fail")
 		}
 	})
+}
+
+// TestConvertParseError covers runConvert's convert.Convert error return: a
+// malformed legacy env file (an unterminated array assignment) is a real,
+// actionable failure a migrating user can actually hit.
+func TestConvertParseError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad-array.env")
+	if err := os.WriteFile(path, []byte("SOLBK_TLS_CERTCAS=(\n  \"/a\"\n"), 0o600); err != nil {
+		t.Fatalf("write malformed env: %v", err)
+	}
+	_, err := runRoot(t, []string{"convert", path})
+	if err == nil || !strings.Contains(err.Error(), "unterminated array") {
+		t.Fatalf("convert (unterminated array) err = %v, want it to name the parse failure", err)
+	}
+}
+
+// TestConvertWriteError covers runConvert's os.WriteFile error return: an -o path
+// in a directory that does not exist is a real mistake a migrating user can make.
+func TestConvertWriteError(t *testing.T) {
+	src := writeBashEnv(t)
+	dst := filepath.Join(t.TempDir(), "missing-subdir", "out.yaml")
+	_, err := runRoot(t, []string{"convert", src, "-o", dst})
+	// runConvert formats the path with %q, so the expectation is built the same way:
+	// a raw path would match on Linux and never on Windows, where %q escapes every
+	// separator.
+	want := fmt.Sprintf("write %q", dst)
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("convert -o (missing parent dir) err = %v, want it to contain %s", err, want)
+	}
 }
 
 // TestVersionPrintsStampedValue: `version` reports whatever the linker (the
@@ -1679,7 +2081,7 @@ func TestVersionRejectsArgs(t *testing.T) {
 // -e at a legacy bash file must say it is not YAML and name the converter.
 func TestBashEnvGivenToEnvFlag(t *testing.T) {
 	src := writeBashEnv(t)
-	_, err := runRoot(t, []string{"k8s", "status", "--dry-run", "-e", src})
+	_, err := runRoot(t, []string{"status", "broker", "-e", src, "--platform", "kubernetes"})
 	if err == nil {
 		t.Fatal("a bash env file should not load")
 	}
@@ -1701,22 +2103,31 @@ func TestExecute(t *testing.T) {
 	}
 }
 
-// TestK8sConfirmDeclined covers opK8sDelete/opK8sDown's confirm-declined branch: a
-// non-interactive run (no --yes) must issue zero cluster calls -- the actual
-// safety default. Every confirm-gated case in TestK8sWiredDryRun only exercises
-// the --yes path, so the silent-decline default was unproven for either command.
+// TestK8sConfirmDeclined covers the confirm-declined branch of every removal: a
+// non-interactive run without --no-prompt must issue zero cluster calls -- the
+// actual safety default.
+//
+// secrets and namespace are here because they are the two that used to run with no
+// confirmation at all. `remove namespace` deletes everything that happens to live
+// in the namespace, not only what this env file put there, so an unattended run
+// reaching kubectl is the single worst outcome in the tree.
 func TestK8sConfirmDeclined(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 	}{
-		{"delete declined", []string{"k8s", "delete"}},
-		{"down declined", []string{"k8s", "down"}},
+		{"remove broker declined", []string{"remove", "broker", "--platform", "kubernetes"}},
+		{"remove all declined", []string{"remove", "all", "--platform", "kubernetes"}},
+		{"remove secrets declined", []string{"remove", "secrets", "--platform", "kubernetes"}},
+		{"remove namespace declined", []string{"remove", "namespace", "--platform", "kubernetes"}},
+		{"remove operator declined", []string{"remove", "operator", "--platform", "kubernetes"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			args := append(withEnv(tc.args...), "--dry-run")
-			out, err := runRootWith(t, args, func(a *App) { a.Interactive = func() bool { return false } })
+			out, err := runRootWith(t, withEnv(tc.args...), func(a *App) {
+				a.Interactive = func() bool { return false }
+				echoRunner(a)
+			})
 			if err != nil {
 				t.Fatalf("%s err = %v, want nil", tc.name, err)
 			}
@@ -1728,50 +2139,55 @@ func TestK8sConfirmDeclined(t *testing.T) {
 }
 
 // TestK8sRestartConfirmGate covers opK8sRestart's confirmation gate: a
-// non-interactive run (no --yes) must bounce nothing, whether restarting every pod
+// non-interactive run (no --no-prompt) must bounce nothing, whether restarting every pod
 // or a single one, and a bad role is rejected before any prompt is even possible.
 func TestK8sRestartConfirmGate(t *testing.T) {
-	t.Run("restart all declined (no --yes)", func(t *testing.T) {
-		args := append(withEnv("k8s", "restart"), "--dry-run")
-		out, err := runRootWith(t, args, func(a *App) { a.Interactive = func() bool { return false } })
+	t.Run("restart broker (all) declined (no --no-prompt)", func(t *testing.T) {
+		out, err := runRootWith(t, withEnv("restart", "broker", "--platform", "kubernetes"), func(a *App) {
+			a.Interactive = func() bool { return false }
+			echoRunner(a)
+		})
 		if err != nil {
-			t.Fatalf("restart declined err = %v, want nil", err)
+			t.Fatalf("restart broker declined err = %v, want nil", err)
 		}
 		if strings.Contains(out, "+ kubectl") {
-			t.Errorf("restart declined stdout = %q, want no kubectl echo", out)
+			t.Errorf("restart broker declined stdout = %q, want no kubectl echo", out)
 		}
 	})
-	t.Run("restart one role declined (no --yes)", func(t *testing.T) {
-		args := append(withEnv("k8s", "restart", "backup"), "--dry-run")
-		out, err := runRootWith(t, args, func(a *App) { a.Interactive = func() bool { return false } })
+	t.Run("restart broker one role declined (no --no-prompt)", func(t *testing.T) {
+		out, err := runRootWith(t, withEnv("restart", "broker", "backup", "--platform", "kubernetes"), func(a *App) {
+			a.Interactive = func() bool { return false }
+			echoRunner(a)
+		})
 		if err != nil {
-			t.Fatalf("restart backup declined err = %v, want nil", err)
+			t.Fatalf("restart broker backup declined err = %v, want nil", err)
 		}
 		if strings.Contains(out, "+ kubectl") {
-			t.Errorf("restart backup declined stdout = %q, want no kubectl echo", out)
+			t.Errorf("restart broker backup declined stdout = %q, want no kubectl echo", out)
 		}
 	})
 	t.Run("bad role rejected before any prompt", func(t *testing.T) {
-		args := append(withEnv("k8s", "restart", "bogus"), "--dry-run")
-		_, err := runRoot(t, args)
+		_, err := runRoot(t, withEnv("restart", "broker", "bogus", "--platform", "kubernetes"))
 		if err == nil || !strings.Contains(err.Error(), "invalid node role") {
-			t.Fatalf("restart bogus err = %v, want 'invalid node role'", err)
+			t.Fatalf("restart broker bogus err = %v, want 'invalid node role'", err)
 		}
 	})
 }
 
 // TestCtrConfirmDeclined covers opCtrDelete's confirm-declined branch, the
-// container-side counterpart of TestK8sConfirmDeclined: a non-interactive delete
-// (no --yes) must issue zero runtime calls.
+// container-side counterpart of TestK8sConfirmDeclined: a non-interactive removal
+// (no --no-prompt) must issue zero runtime calls.
 func TestCtrConfirmDeclined(t *testing.T) {
 	path := writeCtrStandaloneEnv(t)
-	args := []string{"docker", "delete", "--dry-run", "--env", path}
-	out, err := runRootWith(t, args, func(a *App) { a.Interactive = func() bool { return false } })
+	out, err := runRootWith(t, []string{"remove", "broker", "--env", path, "--platform", "docker"}, func(a *App) {
+		a.Interactive = func() bool { return false }
+		echoRunner(a)
+	})
 	if err != nil {
-		t.Fatalf("docker delete declined err = %v, want nil", err)
+		t.Fatalf("docker remove broker declined err = %v, want nil", err)
 	}
 	if strings.Contains(out, "+ docker") {
-		t.Errorf("docker delete declined stdout = %q, want no docker echo", out)
+		t.Errorf("docker remove broker declined stdout = %q, want no docker echo", out)
 	}
 }
 
@@ -1863,461 +2279,19 @@ func TestCtrLoginOutcomes(t *testing.T) {
 	})
 }
 
-// writeK8sConfigAllArmsEnv writes an HA k8s env with every optional
-// opK8sConfigAll arm configured -- the TLS-secret server-cert fast path, domain
-// certs, additional users, and product keys -- so a direct call actually enters
-// every gated step instead of self-skipping like every existing k8s fixture
-// (sample.yaml leaves domainCerts/additionalUsers/productKeys unset, and
-// writeStandaloneEnv is not even HA).
-func writeK8sConfigAllArmsEnv(t *testing.T) *config.Config {
-	t.Helper()
-	dir := t.TempDir()
-	certPath := filepath.ToSlash(filepath.Join(dir, "tls.crt"))
-	keyPath := filepath.ToSlash(filepath.Join(dir, "tls.key"))
-	if err := os.WriteFile(certPath, []byte("CERT-PEM\n"), 0o644); err != nil {
-		t.Fatalf("write cert: %v", err)
+// TestSecretsNeverEchoed is the S3 smoke check: a secret-bearing command over the
+// echo seam must show its stdin as a byte count, never the secret value. `check
+// semp-login` puts the admin credential on curl's stdin; the login itself fails
+// under Echo (no broker), which is fine -- the assertion is purely that the
+// password does not reach stdout.
+func TestSecretsNeverEchoed(t *testing.T) {
+	path := writeStandaloneEnv(t)
+	out, _ := runStandalone(t, path, "check", "semp-login", "--platform", "kubernetes")
+	if !strings.Contains(out, "bytes on stdin") {
+		t.Errorf("check semp-login stdout = %q, want a 'bytes on stdin' redaction", out)
 	}
-	if err := os.WriteFile(keyPath, []byte("KEY-PEM-do-not-log\n"), 0o600); err != nil {
-		t.Fatalf("write key: %v", err)
-	}
-	yamlBody := "redundancy: yes\n" +
-		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-		"admin:\n" +
-		"  pass: " + smokeAdminPass + "\n" +
-		"  additionalUsers:\n" +
-		"    - username: extrauser\n" +
-		"      accessLevel: read-only\n" +
-		"      password: EXTRA-USER-PW-do-not-log-1\n" +
-		"tls:\n" +
-		"  serverSecret: solace-tls-secret\n" +
-		"  cert: " + certPath + "\n" +
-		"  certKey: " + keyPath + "\n" +
-		"k8s:\n" +
-		"  name: dev-broker\n" +
-		"  namespace: solace\n" +
-		"  adminSecret: solace-admin-secret\n" +
-		"  updateStrategy: automatedRolling\n" +
-		"  storage:\n    class: standard\n    msgNode: 30Gi\n" +
-		"  domainCerts:\n    folder: " + filepath.ToSlash(dir) + "\n    files:\n      myca: myca.pem\n" +
-		"  productKeys:\n    - KEY-1\n"
-	return loadDirect(t, yamlBody, config.K8s)
-}
-
-// k8sConfigAllRunner builds an opRunner for opK8sConfigAll: it always supplies a
-// healthy `show redundancy` transcript (so Leader's poll succeeds on the first
-// check), with fail as the caller's targeted failure, if any.
-func k8sConfigAllRunner(fail func(opCall) error) *opRunner {
-	return &opRunner{
-		fail: fail,
-		output: func(c opCall) []byte {
-			if opArgvMatch(c, ".show-rd.cli") {
-				return []byte(healthyShowRD)
-			}
-			return nil
-		},
-	}
-}
-
-// TestOpK8sConfigAllArms drives opK8sConfigAll directly with every optional step
-// configured, so every gated arm actually runs instead of self-skipping: the HA
-// leader assertion and the TLS-secret server-cert fast path (cli-1, cli-1b), plus
-// domain certs, additional users and product keys (cli-2). sample.yaml is already
-// HA+TLS but leaves the other three unset, and no existing test's config enters
-// any of these five arms at all -- an inverted condition in any of them would ship
-// silently. It bypasses config.Load's --dry-run wiring for a fake Runner that
-// supplies a healthy `show redundancy` transcript, so Leader's poll succeeds on the
-// first check instead of exhausting broker.New's real 2s x 60 poll budget, which
-// the CLI layer has no seam to shorten.
-func TestOpK8sConfigAllArms(t *testing.T) {
-	cfg := writeK8sConfigAllArmsEnv(t)
-	rr := k8sConfigAllRunner(nil)
-	a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-	var configErr error
-	captureStdout(t, func() { configErr = opK8sConfigAll(a) })
-	if configErr != nil {
-		t.Fatalf("opK8sConfigAll (every arm configured) err = %v, want nil", configErr)
-	}
-	for _, want := range []string{
-		"revert-activity",     // Leader
-		"assert-leader",       // Leader
-		"apply",               // ServerCert via the tls.serverSecret fast path
-		"load-domain-certs",   // DomainCerts
-		"disable-default-vpn", // always runs; pins the marker the aborts test relies on
-		"additional-users",    // AdditionalUsers
-		"product-keys",        // ProductKeys
-	} {
-		if !rr.hasCall(want) {
-			t.Errorf("opK8sConfigAll (every arm) never reached the %q step", want)
-		}
-	}
-	for _, c := range rr.calls {
-		for _, arg := range c.args {
-			if strings.Contains(arg, "do-not-log") {
-				t.Errorf("a secret value reached argv: %q", arg)
-			}
-		}
-	}
-}
-
-// TestOpK8sConfigAllAborts drives opK8sConfigAll's six error-return arms in turn
-// (leader, server-cert, domain-certs, disable-default-vpn, disable-default-users,
-// additional-users), each time failing exactly that step's underlying command and
-// asserting the NEXT step's command was never issued -- pinning the function's own
-// documented ordering (harden-then-provision; additionalUsers is not re-runnable)
-// rather than merely that some error came back.
-func TestOpK8sConfigAllAborts(t *testing.T) {
-	cases := []struct {
-		name      string
-		fail      func(opCall) error
-		wantNever string
-	}{
-		{"leader fails -> server-cert never runs", opFailOn("revert-activity"), "apply"},
-		{"server-cert fails -> domain-certs never runs", opFailOn("apply"), "load-domain-certs"},
-		{"domain-certs fails -> disable-default-vpn never runs", opFailOn("load-domain-certs"), "disable-default-vpn"},
-		{"disable-default-vpn fails -> disable-default-users never runs", opFailOn("disable-default-vpn"), "show-vpn"},
-		{"disable-default-users fails -> additional-users never runs", failDisableDefaultUsersUpload, "additional-users"},
-		{"additional-users fails -> product-keys never runs", opFailOn("additional-users"), "product-keys"},
-	}
-	// One fixture for every case, built from the PARENT t on purpose. t.TempDir()
-	// embeds the test name in the path, and these subtests are named after the very
-	// steps the fault injector and the assertions match on -- so a per-subtest temp
-	// dir puts "additional-users" and "product-keys" into the `kubectl cp <local>`
-	// argv of the domain-certs step, firing both the injection and the assertion on
-	// the wrong call. The config is only read, so sharing it is safe.
-	cfg := writeK8sConfigAllArmsEnv(t)
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			rr := k8sConfigAllRunner(tc.fail)
-			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-			var err error
-			captureStdout(t, func() { err = opK8sConfigAll(a) })
-			if err == nil {
-				t.Fatal("opK8sConfigAll = nil, want the injected failure to abort the sequence")
-			}
-			if rr.hasCall(tc.wantNever) {
-				t.Errorf("opK8sConfigAll issued the %q command after the injected failure; the abort did not stop the sequence.\nerr = %v\ncalls:\n%s",
-					tc.wantNever, err, rr.dump())
-			}
-		})
-	}
-}
-
-// writeK8sUpEnv builds the same minimal, valid k8s env as writeStandaloneEnv but
-// with redundancy overridable, so opK8sUp's HA-only final Leader() branch can be
-// exercised (writeStandaloneEnv is fixed at redundancy: no).
-func writeK8sUpEnv(t *testing.T, redundancy string) *config.Config {
-	t.Helper()
-	yamlBody := "redundancy: " + redundancy + "\n" +
-		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-		"admin:\n  pass: " + smokeAdminPass + "\n" +
-		"k8s:\n" +
-		"  name: dev-broker\n" +
-		"  namespace: solace\n" +
-		"  adminSecret: solace-admin-secret\n" +
-		"  updateStrategy: automatedRolling\n" +
-		"  storage:\n    class: standard\n    msgNode: 30Gi\n"
-	return loadDirect(t, yamlBody, config.K8s)
-}
-
-// k8sUpOutputHook supplies the canned Output content opK8sUp's happy path needs
-// once a fake (non-Echo) Runner is in play: k8s.Cluster.isDryRun() is a concrete
-// type assertion on engine.Echo, so a fake Runner takes CheckStorageClass's real
-// validation branch (unlike engine.Echo, which skips it) -- it needs a
-// WaitForFirstConsumer/true StorageClass answer to pass, and Leader (HA only)
-// needs a healthy `show redundancy` transcript to avoid its real poll budget.
-func k8sUpOutputHook(c opCall) []byte {
-	switch {
-	case opArgvMatch(c, "volumeBindingMode"):
-		return []byte("WaitForFirstConsumer")
-	case opArgvMatch(c, "allowVolumeExpansion"):
-		return []byte("true")
-	case opArgvMatch(c, ".show-rd.cli"):
-		return []byte(healthyShowRD)
-	default:
-		return nil
-	}
-}
-
-// TestOpK8sUpAssertsLeaderOnHA covers opK8sUp's final branch: on an HA config,
-// `up` must assert the config-sync leader as its last step, not just deploy the
-// broker and stop. It is unreachable via runRoot/engine.Echo -- Echo's fixed empty
-// output never satisfies Leader's poll, which would otherwise run for broker.New's
-// real 2s x 60 budget -- so this drives opK8sUp directly over a fake Runner.
-func TestOpK8sUpAssertsLeaderOnHA(t *testing.T) {
-	cfg := writeK8sUpEnv(t, "yes")
-	rr := &opRunner{output: k8sUpOutputHook}
-	a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-	var upErr error
-	captureStdout(t, func() { upErr = opK8sUp(a) })
-	if upErr != nil {
-		t.Fatalf("opK8sUp (HA) err = %v, want nil", upErr)
-	}
-	if !rr.hasCall("assert-leader") {
-		t.Error("opK8sUp did not assert the config-sync leader after deploying an HA broker")
-	}
-}
-
-// TestOpK8sUpAborts covers opK8sUp's five error-return arms (Check, OperatorApply,
-// CreateNamespace, CreateSecrets, DeployBroker), each in a separate sub-test that
-// fails exactly that step and asserts no later step's command was issued -- `up`'s
-// own docstring promises every step aborts loud on failure, previously unverified
-// (only the all-succeed path was tested).
-func TestOpK8sUpAborts(t *testing.T) {
-	t.Run("check fails -> nothing else runs", func(t *testing.T) {
-		cfg := writeK8sUpEnv(t, "no")
-		rr := &opRunner{fail: opFailOn("version"), output: k8sUpOutputHook}
-		a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-		var err error
-		captureStdout(t, func() { err = opK8sUp(a) })
-		if err == nil {
-			t.Fatal("opK8sUp = nil, want the injected Check failure to abort")
-		}
-		if rr.hasCall("apply") {
-			t.Error("opK8sUp issued an apply command after Check failed")
-		}
-	})
-
-	steps := []string{"operator-apply", "create-namespace", "create-secrets", "deploy-broker"}
-	for i, step := range steps {
-		n := i + 1
-		t.Run(step+" fails -> the next step never runs", func(t *testing.T) {
-			cfg := writeK8sUpEnv(t, "no")
-			rr := &opRunner{fail: opFailOnCount("apply", n), output: k8sUpOutputHook}
-			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-			var err error
-			captureStdout(t, func() { err = opK8sUp(a) })
-			if err == nil {
-				t.Fatalf("opK8sUp = nil, want the injected %s failure to abort", step)
-			}
-			if got := rr.callCount("apply"); got != n {
-				t.Errorf("opK8sUp issued %d apply command(s) after %s failed, want exactly %d (no later step ran)", got, step, n)
-			}
-		})
-	}
-}
-
-// TestOpK8sPrepAllAborts covers opK8sPrepAll's three error-return arms
-// (OperatorApply, CreateNamespace, CreateSecrets): the same abort-ordering
-// property as opK8sUp, on the four-step prep sequence (LabelNodes, the fourth
-// step, self-skips with no custom labels configured and has no error-return of its
-// own to test).
-func TestOpK8sPrepAllAborts(t *testing.T) {
-	steps := []string{"operator-apply", "create-namespace", "create-secrets"}
-	for i, step := range steps {
-		n := i + 1
-		t.Run(step+" fails -> the next step never runs", func(t *testing.T) {
-			cfg := writeK8sUpEnv(t, "no")
-			rr := &opRunner{fail: opFailOnCount("apply", n)}
-			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr}
-			var err error
-			captureStdout(t, func() { err = opK8sPrepAll(a) })
-			if err == nil {
-				t.Fatalf("opK8sPrepAll = nil, want the injected %s failure to abort", step)
-			}
-			if got := rr.callCount("apply"); got != n {
-				t.Errorf("opK8sPrepAll issued %d apply command(s) after %s failed, want exactly %d", got, step, n)
-			}
-		})
-	}
-}
-
-// TestOpK8sDownAborts covers opK8sDown's two error-return arms (DeleteBroker,
-// DeleteSecrets): it must not remove the namespace out from under a broker- or
-// secrets-deletion that actually failed, leaving orphaned state -- a real
-// correctness property of the teardown order, not just error forwarding.
-func TestOpK8sDownAborts(t *testing.T) {
-	steps := []struct {
-		name string
-		n    int
-	}{
-		{"delete-broker", 1},
-		{"delete-secrets", 2},
-	}
-	for _, s := range steps {
-		t.Run(s.name+" fails -> delete-namespace never runs", func(t *testing.T) {
-			cfg := writeK8sUpEnv(t, "no")
-			rr := &opRunner{fail: opFailOnCount("delete", s.n)}
-			a := &App{Cfg: cfg, Platform: config.K8s, Runner: rr, Yes: true, keepData: true}
-			var err error
-			captureStdout(t, func() { err = opK8sDown(a) })
-			if err == nil {
-				t.Fatalf("opK8sDown = nil, want the injected %s failure to abort", s.name)
-			}
-			if got := rr.callCount("delete"); got != s.n {
-				t.Errorf("opK8sDown issued %d delete command(s) after %s failed, want exactly %d (delete-namespace never ran)", got, s.name, s.n)
-			}
-		})
-	}
-}
-
-// writeCtrConfigAllArmsCfg builds a container config with every opCtrConfigAll arm
-// configured (server-cert, domain certs, product keys), mirroring
-// TestCtrConfigAllArms' own fixture but returning a *config.Config directly for a
-// direct call with a fault-injecting Runner.
-func writeCtrConfigAllArmsCfg(t *testing.T) *config.Config {
-	t.Helper()
-	dir := t.TempDir()
-	certPath := filepath.ToSlash(filepath.Join(dir, "tls.crt"))
-	keyPath := filepath.ToSlash(filepath.Join(dir, "tls.key"))
-	if err := os.WriteFile(certPath, []byte("CERT-PEM\n"), 0o644); err != nil {
-		t.Fatalf("write cert: %v", err)
-	}
-	if err := os.WriteFile(keyPath, []byte("KEY-PEM-do-not-log\n"), 0o600); err != nil {
-		t.Fatalf("write key: %v", err)
-	}
-	yamlBody := "redundancy: no\n" +
-		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-		"admin:\n  pass: " + smokeAdminPass + "\n" +
-		"tls:\n  cert: " + certPath + "\n  certKey: " + keyPath + "\n" +
-		"nodes:\n  primary:\n    name: pri-host\n" +
-		"k8s:\n" +
-		"  domainCerts:\n    folder: " + filepath.ToSlash(dir) + "\n    files:\n      myca: myca.pem\n" +
-		"  productKeys:\n    - KEY-1\n"
-	return loadDirect(t, yamlBody, config.Docker)
-}
-
-// TestOpCtrConfigAllAborts covers opCtrConfigAll's four error-return arms
-// (ServerCert, DomainCerts, DisableDefaultVPN, DisableDefaultUsers) -- the same
-// abort-ordering argument as the k8s config-all cluster (TestOpK8sConfigAllAborts):
-// proves a failed cert upload stops before domain-certs/hardening run rather than
-// leaving the broker half-configured. The true-branch entries are already covered
-// by TestCtrConfigAllArms.
-func TestOpCtrConfigAllAborts(t *testing.T) {
-	cases := []struct {
-		name      string
-		fail      func(opCall) error
-		wantNever string
-	}{
-		{"server-cert fails -> domain-certs never runs", opFailOn("apply-server-certs"), "load-domain-certs"},
-		{"domain-certs fails -> disable-default-vpn never runs", opFailOn("load-domain-certs"), "disable-default-vpn"},
-		{"disable-default-vpn fails -> disable-default-users never runs", opFailOn("disable-default-vpn"), "show-vpn"},
-		{"disable-default-users fails -> product-keys never runs", failDisableDefaultUsersUpload, "product-keys"},
-	}
-	// Built from the parent t for the same reason as TestOpK8sConfigAllAborts: these
-	// subtests are named after the steps being matched, and a per-subtest t.TempDir()
-	// would put those names into the `docker cp <local>` argv of the domain-certs
-	// step, matching the wrong call.
-	cfg := writeCtrConfigAllArmsCfg(t)
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			rr := &opRunner{fail: tc.fail}
-			a := &App{Cfg: cfg, Platform: config.Docker, Runner: rr}
-			var err error
-			captureStdout(t, func() { err = opCtrConfigAll(a) })
-			if err == nil {
-				t.Fatal("opCtrConfigAll = nil, want the injected failure to abort the sequence")
-			}
-			if rr.hasCall(tc.wantNever) {
-				t.Errorf("opCtrConfigAll issued the %q command after the injected failure; the abort did not stop the sequence", tc.wantNever)
-			}
-		})
-	}
-}
-
-// TestOpCtrVerifyAllRunsRedundancyLocal covers opCtrVerifyAll's actual failover
-// exercise arm (the "else if" branch calling RedundancyLocal) rather than only its
-// two skip/reject arms (TestCtrVerifyAll already covers the unknown-host and
-// this-host-is-monitor arms). It sets this host as the primary and supplies a
-// canned `show redundancy` transcript over a fake Runner, since engine.Echo's
-// fixed empty output would otherwise send RedundancyLocal into its real poll loop
-// (broker.New's 2s x 60 budget, which the CLI has no seam to shorten).
-func TestOpCtrVerifyAllRunsRedundancyLocal(t *testing.T) {
-	host, err := os.Hostname()
-	if err != nil {
-		t.Skipf("os.Hostname unavailable: %v", err)
-	}
-	yamlBody := "redundancy: yes\n" +
-		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-		"admin:\n  pass: " + smokeAdminPass + "\n" +
-		"nodes:\n" +
-		"  primary:\n    name: '" + host + "'\n    ip: 10.0.0.11\n" +
-		"  backup:\n    name: ctr-redundancylocal-backup\n    ip: 10.0.0.12\n" +
-		"  monitor:\n    name: ctr-redundancylocal-monitor\n    ip: 10.0.0.13\n"
-	cfg := loadDirect(t, yamlBody, config.Docker)
-	rr := &opRunner{output: func(c opCall) []byte {
-		if opArgvMatch(c, ".show-rd.cli") {
-			// Non-empty but deliberately unhealthy (no Configuration/Redundancy
-			// Status lines): primaryRedundancyUp is false, so redundancyLocalPrimary
-			// returns its health error immediately -- proving RedundancyLocal ran,
-			// without ever entering a real poll loop.
-			return []byte("Activity Status: Local Active\n")
-		}
-		return nil
-	}}
-	a := &App{Cfg: cfg, Platform: config.Docker, Runner: rr}
-	captureStdout(t, func() { err = opCtrVerifyAll(a) })
-	if err == nil || !strings.Contains(err.Error(), "redundancy configuration/status is not healthy") {
-		t.Fatalf("opCtrVerifyAll (primary, active-but-unhealthy) err = %v, want the redundancy-unhealthy error", err)
-	}
-}
-
-// TestK8sVerifyAllRedundancyUnhealthy covers opK8sVerifyAll's Redundancy
-// error-return: on the HA sample under --dry-run, engine.Echo's empty `show
-// redundancy` output makes primaryRedundancyUp false, so Redundancy fails on its
-// first check (no poll -- unlike Leader, whose poll only runs once the initial
-// check has already failed) and verify must never reach the SEMP login at all.
-func TestK8sVerifyAllRedundancyUnhealthy(t *testing.T) {
-	_, err := runRoot(t, withEnv("k8s", "verify", "--dry-run"))
-	if err == nil || !strings.Contains(err.Error(), "redundancy configuration/status is not healthy") {
-		t.Fatalf("k8s verify (HA sample) err = %v, want the redundancy-unhealthy error", err)
-	}
-}
-
-// TestK8sTeardownDomainCertsConfigured covers domainCANames' loop body: every
-// other test's domainCerts.files map is empty, so the map-to-slice conversion
-// feeding RemoveDomainCerts is trivially correct by vacuity. This configures one
-// CA and asserts the teardown actually issues a kubectl exec rather than
-// self-skipping.
-func TestK8sTeardownDomainCertsConfigured(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "domaincerts.yaml")
-	content := "redundancy: no\n" +
-		"image:\n  repo: solace-pubsub-standard\n  tag: \"10.10.1.128\"\n" +
-		"admin:\n  pass: " + smokeAdminPass + "\n" +
-		"k8s:\n" +
-		"  name: dev-broker\n" +
-		"  namespace: solace\n" +
-		"  adminSecret: solace-admin-secret\n" +
-		"  updateStrategy: automatedRolling\n" +
-		"  storage:\n    class: standard\n    msgNode: 30Gi\n" +
-		"  domainCerts:\n    folder: certs\n    files:\n      myca: myca.pem\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write env: %v", err)
-	}
-	out, err := runRoot(t, []string{"k8s", "teardown", "domain-certs", "--dry-run", "--env", path})
-	if err != nil {
-		t.Fatalf("teardown domain-certs (configured) err = %v, want nil", err)
-	}
-	if !strings.Contains(out, "+ kubectl") {
-		t.Errorf("teardown domain-certs (configured) stdout = %q, want a '+ kubectl ...' echo", out)
-	}
-}
-
-// TestConvertParseError covers runConvert's convert.Convert error return: a
-// malformed legacy env file (an unterminated array assignment) is a real,
-// actionable failure a migrating user can actually hit.
-func TestConvertParseError(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bad-array.env")
-	if err := os.WriteFile(path, []byte("SOLBK_TLS_CERTCAS=(\n  \"/a\"\n"), 0o600); err != nil {
-		t.Fatalf("write malformed env: %v", err)
-	}
-	_, err := runRoot(t, []string{"convert", path})
-	if err == nil || !strings.Contains(err.Error(), "unterminated array") {
-		t.Fatalf("convert (unterminated array) err = %v, want it to name the parse failure", err)
-	}
-}
-
-// TestConvertWriteError covers runConvert's os.WriteFile error return: an -o path
-// in a directory that does not exist is a real mistake a migrating user can make.
-func TestConvertWriteError(t *testing.T) {
-	src := writeBashEnv(t)
-	dst := filepath.Join(t.TempDir(), "missing-subdir", "out.yaml")
-	_, err := runRoot(t, []string{"convert", src, "-o", dst})
-	// runConvert formats the path with %q, so the expectation is built the same way:
-	// a raw path would match on Linux and never on Windows, where %q escapes every
-	// separator.
-	want := fmt.Sprintf("write %q", dst)
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("convert -o (missing parent dir) err = %v, want it to contain %s", err, want)
+	if strings.Contains(out, smokeAdminPass) {
+		t.Error("check semp-login leaked the admin password to stdout")
 	}
 }
 
@@ -2334,7 +2308,7 @@ func TestK8sGenSecretsMissingCertFile(t *testing.T) {
 		"  serverSecret: solace-tls-secret\n" +
 		"  cert: " + filepath.ToSlash(filepath.Join(dir, "missing.crt")) + "\n" +
 		"  certKey: " + filepath.ToSlash(filepath.Join(dir, "missing.key")) + "\n" +
-		"k8s:\n" +
+		"kubernetes:\n" +
 		"  name: dev-broker\n" +
 		"  namespace: solace\n" +
 		"  adminSecret: solace-admin-secret\n" +
@@ -2343,9 +2317,9 @@ func TestK8sGenSecretsMissingCertFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	_, err := runRoot(t, []string{"k8s", "gen", "secrets", "--dry-run", "--env", path})
+	_, err := runRoot(t, []string{"generate", "secrets", "--env", path, "--platform", "kubernetes"})
 	if err == nil || !strings.Contains(err.Error(), "read tls.cert") {
-		t.Fatalf("k8s gen secrets (missing cert file) err = %v, want it to wrap the tls.cert read failure", err)
+		t.Fatalf("k8s generate secrets (missing cert file) err = %v, want it to wrap the tls.cert read failure", err)
 	}
 }
 
@@ -2465,19 +2439,20 @@ func TestAnnounceCommandsNamesResolvedBinaries(t *testing.T) {
 // which also keeps the negative cases honest, since --allow-command is itself refused on
 // a command that renders without executing.
 //
-// The negative half matters as much as the positive: --dry-run is documented to need no
-// kubectl/docker/podman installed at all, so resolving one there would contradict the
-// promise, and a --gen-*-only run changes nothing and runs nothing.
+// The negative half matters as much as the positive: `generate` is documented to need no
+// kubectl/docker/podman installed at all, since it never executes anything, and
+// resolving one there would contradict the promise.
 func TestBinaryAnnouncementWiring(t *testing.T) {
 	const marker = "==> using "
 
 	t.Run("a real run announces before it works", func(t *testing.T) {
 		_, path := fakeBinaryOnPath(t, "kubectl")
 		env := writeStandaloneEnv(t)
-		// The stub answers every call with empty stdout, so `check` fails at the
-		// storage-class assertion -- after the announcement, which is what is asserted.
+		// The stub answers every call with empty stdout, so `check deploy` fails at
+		// the storage-class assertion -- after the announcement, which is what is
+		// asserted.
 		got := captureStderr(t, func() {
-			_, _ = runRoot(t, []string{"k8s", "check", "--env", env})
+			_, _ = runRoot(t, []string{"check", "deploy", "--env", env, "--platform", "kubernetes"})
 		})
 		if want := marker + "kubectl: " + path; !strings.Contains(got, want) {
 			t.Errorf("stderr = %q, want it to carry %q", got, want)
@@ -2487,11 +2462,10 @@ func TestBinaryAnnouncementWiring(t *testing.T) {
 		fakeBinaryOnPath(t, "kubectl")
 		env := writeStandaloneEnv(t)
 		for _, args := range [][]string{
-			{"k8s", "check", "--dry-run"},
-			{"k8s", "deploy", "--gen-only"},
-			{"k8s", "gen", "operator"},
+			{"generate", "broker"},
+			{"generate", "operator"},
 		} {
-			full := append(append([]string{}, args...), "--env", env)
+			full := append(append([]string{}, args...), "--env", env, "--platform", "kubernetes")
 			got := captureStderr(t, func() { _, _ = runRoot(t, full) })
 			if strings.Contains(got, marker) {
 				t.Errorf("%v announced a binary it never runs: %q", args, got)
@@ -2508,25 +2482,26 @@ func TestVerboseFlagTracesEveryCommand(t *testing.T) {
 	env := writeStandaloneEnv(t)
 
 	traced := captureStderr(t, func() {
-		_, _ = runRoot(t, []string{"k8s", "check", "-v", "--env", env})
+		_, _ = runRoot(t, []string{"check", "deploy", "-v", "--env", env, "--platform", "kubernetes"})
 	})
 	if !strings.Contains(traced, "==> exec: ") || !strings.Contains(traced, "version -o json") {
 		t.Errorf("-v stderr = %q, want a `==> exec: <path> version -o json` line", traced)
 	}
 	// The default run stays quiet per call: the preamble already named the binary.
 	quiet := captureStderr(t, func() {
-		_, _ = runRoot(t, []string{"k8s", "check", "--env", env})
+		_, _ = runRoot(t, []string{"check", "deploy", "--env", env, "--platform", "kubernetes"})
 	})
 	if strings.Contains(quiet, "==> exec: ") {
 		t.Errorf("a run without -v traced its commands: %q", quiet)
 	}
-	// And it is a no-op under --dry-run, where Echo already prints every command it
-	// would run -- passing both must still work rather than fight.
-	out, err := runRoot(t, []string{"k8s", "check", "--dry-run", "-v", "--env", env})
+	// And it is a no-op with the test-only echo seam installed too, where Echo
+	// already prints every command it would run -- passing both must still work
+	// rather than fight.
+	out, err := runRootWith(t, []string{"check", "deploy", "-v", "--env", env, "--platform", "kubernetes"}, echoRunner)
 	if err != nil {
-		t.Fatalf("--dry-run -v: %v", err)
+		t.Fatalf("echoRunner + -v: %v", err)
 	}
 	if !strings.Contains(out, "+ kubectl version -o json") {
-		t.Errorf("--dry-run -v stdout = %q, want the echoed command", out)
+		t.Errorf("echoRunner + -v stdout = %q, want the echoed command", out)
 	}
 }

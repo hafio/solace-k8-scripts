@@ -129,6 +129,12 @@ func (c *Config) ApplyDefaults(p Platform) {
 	// k8s renderers and transport ever read it.
 	setDefaultCmd(&c.K8s.Runtime, "kubectl")
 
+	// The broker-ops folders apply to every platform: config exec-cli reads the
+	// one and verify diagnostics writes the other, on kubernetes and containers
+	// alike. Defaulted unconditionally so neither branch has to remember to.
+	setDefault(&c.Broker.DiagDir, "diag-configs")
+	setDefault(&c.Broker.CLIScriptsFolder, "cli")
+
 	if p == K8s {
 		c.applyK8sDefaults()
 	}
@@ -145,10 +151,8 @@ func (c *Config) ApplyDefaults(p Platform) {
 func (c *Config) applyK8sDefaults() {
 	setDefault(&c.K8s.UpdateStrategy, "automatedRolling")
 	setDefault(&c.K8s.AdminSecret, "solace-admin-secret")
-	setDefault(&c.K8s.DiagDir, "diag-configs")
-	setDefault(&c.K8s.CLIScriptsFolder, "cli")
 	setDefault(&c.K8s.Storage.MonNode, "5Gi")
-	// k8s.msgNode.cpu and .mem are not defaulted here: CPU is fixed by the
+	// kubernetes.msgNode.cpu and .mem are not defaulted here: CPU is fixed by the
 	// scaling tier and memory defaults from it, both in applyScalingTierDefaults
 	// once maxConnections below has resolved (scaling.go).
 
@@ -186,8 +190,6 @@ func (c *Config) applyK8sDefaults() {
 }
 
 func (c *Config) applyContainerDefaults(p Platform) {
-	setDefault(&c.Docker.Mode, "compose")
-
 	setDefault(&c.Docker.Container.Name, "solace")
 	setDefault(&c.Podman.Container.Name, "solace")
 	applyContainerBlockDefaults(&c.Docker.Container)
@@ -203,12 +205,6 @@ func (c *Config) applyContainerDefaults(p Platform) {
 	applyBridgePortDefaults(&c.Podman.Network)
 
 	setDefault(&c.Admin.User, "admin")
-
-	// Container config/verify reuse these k8s.* fields as the broker-ops source
-	// (diagnostics dir, CLI-scripts folder), so default them here too -- otherwise
-	// `verify diagnostics` would MkdirAll("") and exec-cli would lose its folder.
-	setDefault(&c.K8s.DiagDir, "diag-configs")
-	setDefault(&c.K8s.CLIScriptsFolder, "cli")
 
 	// Scaling: the same knobs k8s takes, since every one of them now reaches the
 	// container as an environment variable. Only maxConnections and the spool
@@ -306,7 +302,7 @@ func xdgConfigHome() string {
 func defaultK8sPorts() []string {
 	return []string{
 		// The operator's own service.ports default leads with tcp-ssh; without it a
-		// deployment that never sets k8s.ports silently loses CLI-over-SSH access.
+		// deployment that never sets kubernetes.ports silently loses CLI-over-SSH access.
 		"tcp-ssh=2222",
 		"tcp-semp=8080", "tls-semp=1943",
 		"tcp-smf=55555", "tcp-smfcomp=55003", "tls-smf=55443", "tcp-smfroute=55556",

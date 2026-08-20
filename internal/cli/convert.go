@@ -14,11 +14,10 @@ import (
 // env format to the YAML env file every other command reads. It sits at the root
 // rather than under a platform because it loads no config of its own: the file
 // it reads is the argument, not -e/--env, so the app context stays unused.
-func newConvertCmd(_ *App) *cobra.Command {
+func newConvertCmd(app *App) *cobra.Command {
 	var (
-		out      string
-		platform string
-		force    bool
+		out   string
+		force bool
 	)
 	cmd := &cobra.Command{
 		Use:   "convert <bash-env-file>",
@@ -33,23 +32,28 @@ func newConvertCmd(_ *App) *cobra.Command {
 			"never commit it.\n\n" +
 			"  solace-util convert bash/env/prod -o prod.yaml\n" +
 			"  solace-util convert bash/env/prod --platform podman -o prod.yaml\n" +
-			"  solace-util k8s check -e prod.yaml --dry-run",
+			"  solace-util check deploy -e prod.yaml",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			return runConvert(args[0], out, platform, force)
+			return runConvert(args[0], out, app.PlatformFlag, force)
 		},
 	}
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write the YAML here instead of stdout")
-	cmd.Flags().StringVar(&platform, "platform", "", "platform section to write: k8s, docker, or podman (default: detect)")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite the --out file if it already exists")
-	registerFlagCompletion(cmd, "platform", completePlatforms)
 	return cmd
 }
 
+// runConvert reads --platform through the same parser the rest of the tree uses,
+// so one word means one thing everywhere: it names a platform, in canonical or
+// abbreviated form. What it SELECTS still differs by necessity -- here it is the
+// section to write into a new file, elsewhere the section to read from an
+// existing one -- but there is no second spelling to learn. Empty still means
+// detect, which for a bash source is a question about its variable names
+// (internal/convert), not about YAML sections.
 func runConvert(src, out, platform string, force bool) error {
-	p, err := convertPlatform(platform)
+	p, err := config.ParsePlatform(platform)
 	if err != nil {
 		return err
 	}
@@ -78,14 +82,4 @@ func runConvert(src, out, platform string, force bool) error {
 	step("converted %s -> %s (platform %s)", src, out, res.Platform)
 	step("review it before use; it carries the secrets from %s verbatim", src)
 	return nil
-}
-
-// convertPlatform validates the --platform value. An empty value means "detect",
-// which the converter reports back so the user can see what it chose.
-func convertPlatform(s string) (config.Platform, error) {
-	switch config.Platform(s) {
-	case "", config.K8s, config.Docker, config.Podman:
-		return config.Platform(s), nil
-	}
-	return "", fmt.Errorf("invalid --platform %q: expected k8s, docker, or podman", s)
 }

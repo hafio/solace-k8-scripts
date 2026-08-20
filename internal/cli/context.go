@@ -18,21 +18,19 @@ import (
 type App struct {
 	EnvName string // -e/--env value: an env file name, or a path
 	BaseDir string // dir searched for the env file, and holding env/ (defaults to CWD)
-	DryRun  bool   // --dry-run: echo commands instead of running them
 	Verbose bool   // -v/--verbose: announce every external command as it runs
-	Yes     bool   // --yes: skip confirmations (never implies data purge)
-
-	// The three --gen-*-only flags each replace a command's real work with a
-	// different rendering. Exactly one may be set (checkGenFlags enforces it).
-	GenOnly        bool // --gen-only: the deployment artifact (CR / compose / quadlet)
-	GenSecretsOnly bool // --gen-secrets-only: the secret-creation artifact
-	GenEnvOnly     bool // --gen-env-only: the container env file (container-only)
 
 	// AllowCommand is the repeatable --allow-command escape hatch: binaries the
 	// OPERATOR approved for the config's platform command, for this invocation
 	// only. It reaches config through Load's argument list, never through the
 	// schema, so an env file has no way to extend its own allowlist.
 	AllowCommand []string
+
+	// PlatformFlag is the raw --platform value, still in whatever spelling was
+	// typed (canonical or the kube/dk/pm abbreviations). Platform below is the
+	// resolved one, settled by resolvePlatform from this flag or, when it is
+	// empty, from the platform sections the env file declares.
+	PlatformFlag string
 
 	Platform config.Platform
 	Cfg      *config.Config
@@ -46,22 +44,34 @@ type App struct {
 	Interactive func() bool
 	PromptIn    io.Reader
 
+	// NewRunner builds the Runner every command executes through. It exists as a
+	// seam for the same reason Interactive/PromptIn do: a test cannot supply a
+	// cluster or a container engine, and the property worth asserting is which
+	// argv a command would issue. Nil means the production runner, so nothing but
+	// a test ever substitutes one -- there is no user-facing way to make this tool
+	// print commands instead of running them, because `generate` is how you look
+	// at an artifact before applying it.
+	NewRunner func(a *App) engine.Runner
+
 	// Command-local flag scratch space. Only one command runs per invocation,
 	// so sharing these on the app context is safe.
-	keepYAML bool   // k8s deploy --keep-yaml
-	purge    bool   // delete/down --purge (alias --clear-data)
-	keepData bool   // delete/down --keep-data
-	pod      string // --pod role override for exec-cli/copy
-	destDir  string // copy into --dir
-	days     int    // verify diagnostics --days
-	restart  bool   // container deploy/up --restart (bounce a running broker)
+	deleteLayer bool   // remove --delete-data / --delete-crd (take the retained layer too)
+	noPrompt    bool   // --no-prompt: ask nothing, and take the safe answer to each question
+	all         bool   // status broker --all (every broker in the cluster)
+	detail      bool   // status --detail (static artifacts, not just running ones)
+	pod         string // --pod role override for cli --input / copy
+	destDir     string // copy into --dir
+	inputFile   string // cli --input/-i: run this CLI script instead of an interactive session
+	days        int    // diagnostics --days
+	restart     bool   // deploy broker --restart (bounce a running broker)
 }
 
 // load resolves the env file for the app's platform and builds the config +
-// runner. Called from each platform command's PersistentPreRunE so config
-// errors surface before any subcommand work, and help still works without a
-// valid env (cobra skips PreRun for --help). cmd is the command about to run:
-// announceCommands needs it to stay quiet where nothing will execute.
+// runner. Called last in every runnable command's PreRunE (prepare, platform.go)
+// so config errors surface before any work, and help still works without a valid
+// env (cobra skips PreRun for --help). By then a.Platform is settled, which is
+// what config.Load needs to scope its defaults and validation. cmd is the command
+// about to run: announceCommands needs it to stay quiet where nothing executes.
 func (a *App) load(cmd *cobra.Command) error {
 	path, err := config.ResolveEnvPath(a.BaseDir, a.EnvName)
 	if err != nil {
@@ -79,11 +89,10 @@ func (a *App) load(cmd *cobra.Command) error {
 		return err
 	}
 	a.Cfg = cfg
-	if a.DryRun {
-		// No announcement here on purpose: --dry-run is documented to need no
-		// kubectl/docker/podman binary installed at all, and Echo prints every command
-		// it would run anyway.
-		a.Runner = engine.Echo{W: os.Stdout}
+	if a.NewRunner != nil {
+		// A test-supplied runner: it does not execute, so there are no binaries
+		// worth resolving and announcing.
+		a.Runner = a.NewRunner(a)
 		return nil
 	}
 	a.Runner = engine.NewExec(os.Stderr, a.Verbose)
@@ -97,7 +106,7 @@ func (a *App) load(cmd *cobra.Command) error {
 // runs -- so the information sits with `==> env file:` in the preamble instead of
 // repeating itself between report lines on every call.
 //
-// The set is exactly the four fields the execution guard exists for (k8s.runtime,
+// The set is exactly the four fields the execution guard exists for (kubernetes.runtime,
 // docker.runtime, podman.runtime, docker.compose), read through their guarded accessors:
 // those are the binaries CONFIG TEXT chose, which is the whole reason their location is
 // worth showing. The tool's own fixed helpers (mkdir, chown, rm, sh, systemctl) were

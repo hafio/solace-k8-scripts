@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -140,10 +141,63 @@ func (c *Cluster) OperatorApply(ctx context.Context) error {
 	return nil
 }
 
+// crdKindRE matches a document whose own `kind:` is CustomResourceDefinition. It is
+// anchored to column 0 on purpose: a CRD carries an OpenAPI schema that contains
+// nested `kind:` keys of its own, and only the document's top-level mapping keys sit
+// unindented.
+var crdKindRE = regexp.MustCompile(`(?m)^kind:[ \t]*CustomResourceDefinition[ \t]*$`)
+
+// yamlDocSepRE matches the `---` line separating documents in the rendered bundle.
+var yamlDocSepRE = regexp.MustCompile(`(?m)^---[ \t]*$`)
+
+// splitOperatorBundle separates the CustomResourceDefinition documents from
+// everything else in the rendered bundle. The two halves are deleted separately
+// because they have very different blast radii: the Deployment and RBAC belong to
+// this operator install, while the CRDs are the cluster-wide type definitions --
+// removing them cascade-deletes every PubSubPlusEventBroker resource in the cluster,
+// including brokers this env file has never heard of.
+func splitOperatorBundle(manifest []byte) (crds, rest []byte) {
+	var crdDocs, restDocs []string
+	for _, doc := range yamlDocSepRE.Split(string(manifest), -1) {
+		if strings.TrimSpace(doc) == "" {
+			continue
+		}
+		if crdKindRE.MatchString(doc) {
+			crdDocs = append(crdDocs, doc)
+			continue
+		}
+		restDocs = append(restDocs, doc)
+	}
+	return joinYAMLDocs(crdDocs), joinYAMLDocs(restDocs)
+}
+
+// joinYAMLDocs reassembles documents into one multi-document manifest, or returns
+// nil when there are none -- so a caller can test the result for emptiness rather
+// than piping a lone separator into kubectl.
+func joinYAMLDocs(docs []string) []byte {
+	if len(docs) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for i, doc := range docs {
+		if i > 0 {
+			b.WriteString("\n---\n")
+		}
+		b.WriteString(strings.Trim(doc, "\n"))
+		b.WriteString("\n")
+	}
+	return []byte(b.String())
+}
+
 // OperatorDelete removes the operator by deleting the rendered bundle on stdin with
 // --ignore-not-found (110:2057) -- one mirrored path with OperatorApply, replacing the
 // separately-maintained delete manifest the legacy 110 shipped.
-func (c *Cluster) OperatorDelete(ctx context.Context) error {
+//
+// deleteCRDs is the same retained-layer decision `remove broker` makes about PVCs:
+// the expensive-to-recreate, easy-to-regret part is kept unless it is asked for by
+// name. Here that is the CRDs, whose removal takes every broker in the cluster with
+// them. Either outcome is stated rather than left to be inferred.
+func (c *Cluster) OperatorDelete(ctx context.Context, deleteCRDs bool) error {
 	if err := c.Preflight(ctx, "delete", "customresourcedefinitions"); err != nil {
 		return err
 	}
@@ -153,10 +207,52 @@ func (c *Cluster) OperatorDelete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := c.deleteStdin(ctx, manifest); err != nil {
-		return fmt.Errorf("delete operator bundle: %w", err)
+	crds, rest := splitOperatorBundle(manifest)
+	if len(rest) > 0 {
+		if err := c.deleteStdin(ctx, rest); err != nil {
+			return fmt.Errorf("delete operator bundle: %w", err)
+		}
 	}
+	if !deleteCRDs {
+		c.logf("operator CRDs kept -- existing broker resources are untouched " +
+			"(pass --delete-crd to remove them)")
+		return nil
+	}
+	if len(crds) == 0 {
+		c.logf("operator CRDs: none in the bundle, nothing to delete")
+		return nil
+	}
+	if err := c.deleteStdin(ctx, crds); err != nil {
+		return fmt.Errorf("delete operator CRDs: %w", err)
+	}
+	c.logf("operator CRDs deleted -- every PubSubPlusEventBroker resource in the cluster went with them")
 	return nil
+}
+
+// OperatorRestart bounces the controller without changing what is installed, for the
+// case where the operator is wedged rather than out of date -- `deploy operator` is
+// what re-applies a changed bundle.
+func (c *Cluster) OperatorRestart(ctx context.Context) error {
+	opNS := c.operatorNS(ctx)
+	if err := c.Preflight(ctx, "patch", "deployments"); err != nil {
+		return err
+	}
+	c.logf("restarting operator deployment %s in %s", operatorDeployment, opNS)
+	return c.kubectl(ctx, "rollout", "restart", "deployment", operatorDeployment, "-n", opNS)
+}
+
+// OperatorInstalled reports whether the operator's CRD and controller Deployment are
+// both present. It returns a plain bool rather than an error: every way of failing to
+// find them -- absent, wrong namespace, cluster unreachable -- leads to the same
+// advice, and the only caller uses this to decide whether to warn before a deploy
+// that would otherwise fail confusingly. A false here is never fatal on its own.
+func (c *Cluster) OperatorInstalled(ctx context.Context) bool {
+	if _, err := c.output(ctx, "get", "crd", brokerResource); err != nil {
+		return false
+	}
+	opNS := c.operatorNS(ctx)
+	_, err := c.output(ctx, "get", "deployment", operatorDeployment, "-n", opNS)
+	return err == nil
 }
 
 // OperatorStatus prints the operator Deployment and its controller pods in the

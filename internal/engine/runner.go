@@ -1,6 +1,6 @@
 // Package engine abstracts external command execution (kubectl, helm, docker,
 // podman, systemctl, openssl) so the rest of the tool can execute commands,
-// echo them (--dry-run), or stub them in tests without touching os/exec.
+// echo them, or stub them in tests without touching os/exec.
 package engine
 
 import (
@@ -14,9 +14,9 @@ import (
 	"strings"
 )
 
-// Runner runs external commands. Implementations: Exec (real), Echo (--dry-run),
-// and test fakes. Every path the tool shells out through goes via a Runner so
-// behaviour is uniform and testable.
+// Runner runs external commands. Implementations: Exec (real), Echo (records what
+// would have run), and test fakes. Every path the tool shells out through goes via
+// a Runner so behaviour is uniform and testable.
 type Runner interface {
 	// Run executes name+args, streaming stdout/stderr to this process's stdout/stderr.
 	Run(ctx context.Context, name string, args ...string) error
@@ -193,8 +193,14 @@ func (e Exec) OutputInput(ctx context.Context, in []byte, name string, args ...s
 	return out.Bytes(), nil
 }
 
-// Echo prints the command it would run instead of running it (--dry-run).
-// Output returns nothing so callers that parse output degrade gracefully.
+// Echo prints the command it would run instead of running it. Output returns
+// nothing so callers that parse output degrade gracefully.
+//
+// It is reached only through the CLI's App.NewRunner seam, which nothing
+// user-facing sets: there is no flag that turns the tool into an echo mode, because
+// `generate` is how you look at an artifact before applying it. What Echo is for is
+// letting the wiring tests assert the exact argv a command would issue without a
+// cluster or a container engine to issue it against.
 type Echo struct{ W io.Writer }
 
 func (e Echo) w() io.Writer {
@@ -215,7 +221,7 @@ func (e Echo) RunInput(_ context.Context, in []byte, name string, args ...string
 }
 
 // RunEnv echoes the variable names it would set with their values masked: the
-// whole point of the environment is to carry secrets, and --dry-run output is
+// whole point of the environment is to carry secrets, and echoed output is
 // printed, logged and pasted into tickets (§3). The names are annotated AFTER the
 // command, the way RunInput annotates its stdin, so every echoed line still reads
 // as "+ <the command>".

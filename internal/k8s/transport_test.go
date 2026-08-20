@@ -41,7 +41,7 @@ type recRunner struct {
 }
 
 // isCanI reports whether an argv is the Preflight probe. Matched on the token
-// rather than a position so a configured k8s.runtime with leading arguments still
+// rather than a position so a configured kubernetes.runtime with leading arguments still
 // resolves to the same answer.
 func isCanI(args []string) bool {
 	for _, a := range args {

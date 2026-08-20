@@ -9,7 +9,7 @@ import (
 	"solace/internal/config"
 )
 
-// wrappedCfg is haCfg with a multi-token k8s.runtime -- the shape the bash KUBE
+// wrappedCfg is haCfg with a multi-token kubernetes.runtime -- the shape the bash KUBE
 // variable carried (bash/env/customer-sample:7 set a whole kubectl profile).
 //
 // `microk8s` is a chained runner, not a CLI this tool drives, so the execution
@@ -106,7 +106,7 @@ func withLeading(rest ...string) []string {
 }
 
 // TestClusterHonoursRuntime: every Cluster helper must run argv[0] from
-// k8s.runtime and place its leading arguments ahead of the subcommand.
+// kubernetes.runtime and place its leading arguments ahead of the subcommand.
 func TestClusterHonoursRuntime(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -161,7 +161,7 @@ func TestClusterHonoursRuntime(t *testing.T) {
 				t.Errorf("method = %q, want %q", got.method, tc.wantMethod)
 			}
 			if got.name != "microk8s" {
-				t.Errorf("argv[0] = %q, want microk8s (from k8s.runtime)", got.name)
+				t.Errorf("argv[0] = %q, want microk8s (from kubernetes.runtime)", got.name)
 			}
 			if !eqArgs(got.args, tc.wantArgs) {
 				t.Errorf("args = %v, want %v", got.args, tc.wantArgs)
@@ -233,7 +233,7 @@ func TestTransportHonoursRuntime(t *testing.T) {
 				t.Errorf("method = %q, want %q", got.method, tc.wantMethod)
 			}
 			if got.name != "microk8s" {
-				t.Errorf("argv[0] = %q, want microk8s (from k8s.runtime)", got.name)
+				t.Errorf("argv[0] = %q, want microk8s (from kubernetes.runtime)", got.name)
 			}
 			if !eqArgs(got.args, tc.wantArgs) {
 				t.Errorf("args = %v, want %v", got.args, tc.wantArgs)

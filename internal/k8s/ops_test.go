@@ -3,7 +3,6 @@ package k8s
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -57,7 +56,13 @@ func TestStatusFailureStopsEarly(t *testing.T) {
 	}
 }
 
-func TestShowAll(t *testing.T) {
+// showAllOutputs feeds one canned listing per section, in order.
+func showAllOutputs() [][]byte {
+	deploys := "NAMESPACE                    NAME                              READY\n" +
+		"pubsubplus-operator-system   pubsubplus-eventbroker-operator   1/1\n" +
+		"kube-system                  coredns                           2/2\n"
+	brokers := "NAMESPACE   NAME         AGE\n" +
+		"solace      dev-broker   3d\n"
 	pods := "NAMESPACE                    NAME                                   READY   STATUS\n" +
 		"solace                       dev-broker-pubsubplus-p-0              1/1     Running\n" +
 		"pubsubplus-operator-system   pubsubplus-eventbroker-operator-abc    1/1     Running\n" +
@@ -67,47 +72,108 @@ func TestShowAll(t *testing.T) {
 		"kube-system kube-dns                ClusterIP\n"
 	stss := "NAMESPACE   NAME                     READY\n" +
 		"solace      dev-broker-pubsubplus-p  1/1\n"
+	return [][]byte{[]byte(deploys), []byte(brokers), []byte(pods), []byte(svcs), []byte(stss)}
+}
 
-	rr := &recRunner{outQueue: [][]byte{[]byte(pods), []byte(svcs), []byte(stss)}}
+// TestShowAll covers the running picture `--all` reports: the operator that
+// everything depends on, the broker resources themselves, and the pods, services
+// and statefulsets behind them -- across every namespace, with unrelated cluster
+// workloads filtered out.
+func TestShowAll(t *testing.T) {
+	rr := &recRunner{outQueue: showAllOutputs()}
 	buf := &bytes.Buffer{}
 	c := NewCluster(rr, haCfg(), nil, buf)
-	if err := c.ShowAll(context.Background()); err != nil {
+	if err := c.ShowAll(context.Background(), false); err != nil {
 		t.Fatalf("ShowAll: %v", err)
 	}
-	if len(rr.calls) != 3 {
-		t.Fatalf("ShowAll made %d calls, want 3 (pods/svc/sts)", len(rr.calls))
+	if len(rr.calls) != len(showAllSections) {
+		t.Fatalf("ShowAll made %d calls, want %d (one per section)", len(rr.calls), len(showAllSections))
 	}
-	if a := rr.calls[0].args; a[0] != "get" || a[1] != "pods" || a[2] != "--all-namespaces" || a[3] != "-o" || a[4] != "wide" {
-		t.Errorf("pods query argv = %v", a)
+	if a := rr.calls[0].args; a[0] != "get" || a[1] != "deployments" || a[2] != "--all-namespaces" {
+		t.Errorf("operator query argv = %v, want a cluster-wide deployments get", a)
 	}
 	out := buf.String()
-	// Broker resources kept; operator pod and unrelated cluster resources dropped.
-	for _, want := range []string{"### PODS ###", "dev-broker-pubsubplus-p-0", "dev-broker-pubsubplus", "### STATEFULSETS ###"} {
+	for _, want := range []string{
+		"### OPERATOR ###", "pubsubplus-eventbroker-operator",
+		"### BROKERS ###", "dev-broker",
+		"### PODS ###", "dev-broker-pubsubplus-p-0",
+		"### SERVICES ###", "### STATEFULSETS ###",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ShowAll output missing %q:\n%s", want, out)
 		}
 	}
-	for _, unwanted := range []string{"coredns", "eventbroker-operator", "kube-dns"} {
+	// Unrelated cluster workloads are dropped. The operator's own POD is too: it is
+	// reported once, as a deployment, and does not belong in the broker pod list.
+	for _, unwanted := range []string{"coredns", "kube-dns", "eventbroker-operator-abc"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("ShowAll should have filtered out %q:\n%s", unwanted, out)
 		}
 	}
 }
 
-// TestShowAllWrapsGetError: a failing `get` aborts ShowAll loudly with per-resource
-// context and preserves the cause, instead of printing a half-filtered table.
-func TestShowAllWrapsGetError(t *testing.T) {
-	rr := &recRunner{outErr: errFake}
+// TestShowAllDetailAddsStaticArtifacts: --detail appends the artifacts a broker is
+// built from, which the running picture never shows -- and which is where a PVC
+// left behind by a removed broker turns up.
+func TestShowAllDetailAddsStaticArtifacts(t *testing.T) {
+	outs := showAllOutputs()
+	for range showDetailSections {
+		outs = append(outs, []byte("NAMESPACE   NAME                    AGE\nsolace      dev-broker-pubsubplus   3d\n"))
+	}
+	rr := &recRunner{outQueue: outs}
+	buf := &bytes.Buffer{}
+	c := NewCluster(rr, haCfg(), nil, buf)
+	if err := c.ShowAll(context.Background(), true); err != nil {
+		t.Fatalf("ShowAll --detail: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"### SECRETS ###", "### CONFIGMAPS ###", "### PERSISTENT VOLUME CLAIMS ###"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ShowAll --detail missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestSurveyScopesToTheBrokerNamespace: without --all the same sections are read,
+// but only in the namespace this env file names -- that is the whole difference
+// between the two, so it is asserted on the argv rather than the output.
+func TestSurveyScopesToTheBrokerNamespace(t *testing.T) {
+	rr := &recRunner{outQueue: showAllOutputs()}
 	c := NewCluster(rr, haCfg(), nil, &bytes.Buffer{})
-	err := c.ShowAll(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "listing pods across namespaces") {
-		t.Fatalf("ShowAll should wrap the get error, got %v", err)
+	if err := c.Survey(context.Background(), false); err != nil {
+		t.Fatalf("Survey: %v", err)
 	}
-	if !errors.Is(err, errFake) {
-		t.Errorf("ShowAll should preserve the cause: %v", err)
+	for _, call := range rr.calls {
+		joined := strings.Join(call.args, " ")
+		if strings.Contains(joined, "--all-namespaces") {
+			t.Errorf("Survey went cluster-wide: %v", call.args)
+		}
+		if !strings.Contains(joined, "-n "+haCfg().K8s.Namespace) {
+			t.Errorf("Survey did not scope to the broker namespace: %v", call.args)
+		}
 	}
-	if len(rr.calls) != 1 {
-		t.Errorf("ShowAll should stop after the first failing section; got %d calls", len(rr.calls))
+}
+
+// TestShowAllReportsAndContinuesOnGetError: one resource kind that cannot be listed
+// -- an RBAC-restricted secrets read, or a CRD that is not installed -- must not
+// hide the kinds that can. The failure is named in place and the survey goes on;
+// aborting would make `--detail` unusable for anyone without cluster-admin.
+func TestShowAllReportsAndContinuesOnGetError(t *testing.T) {
+	rr := &recRunner{outErr: errFake}
+	buf := &bytes.Buffer{}
+	c := NewCluster(rr, haCfg(), nil, buf)
+	if err := c.ShowAll(context.Background(), false); err != nil {
+		t.Fatalf("ShowAll should not fail on one unreadable section, got %v", err)
+	}
+	if len(rr.calls) != len(showAllSections) {
+		t.Errorf("ShowAll stopped early: %d calls, want %d", len(rr.calls), len(showAllSections))
+	}
+	out := buf.String()
+	if !strings.Contains(out, "could not list") || !strings.Contains(out, errFake.Error()) {
+		t.Errorf("ShowAll should name the section it could not read and why:\n%s", out)
+	}
+	if !strings.Contains(out, "### STATEFULSETS ###") {
+		t.Errorf("ShowAll should still reach the later sections:\n%s", out)
 	}
 }
 

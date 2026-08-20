@@ -39,7 +39,7 @@ func (c *Cluster) Check(ctx context.Context) error {
 // only print as "(derived at runtime)": the discovery needs a live cluster, so it happens
 // here, after Reachable. It never fails -- an operator that cannot be found means "not
 // installed yet", which the default covers and `prep operator` fixes. A configured
-// k8s.operator.namespace short-circuits in operatorNSOrigin, so the line costs a cluster
+// kubernetes.operator.namespace short-circuits in operatorNSOrigin, so the line costs a cluster
 // round-trip only when the value has to be discovered.
 func (c *Cluster) checkOperatorNS(ctx context.Context) {
 	w := c.out()
@@ -75,7 +75,7 @@ func (c *Cluster) CheckEnv() {
 
 	fmt.Fprintln(w, "Solace broker deployment (Kubernetes):")
 	fmt.Fprintf(w, "  name/namespace : %s / %s\n", cfg.K8s.Name, cfg.K8s.Namespace)
-	// The cluster CLI is configurable (k8s.runtime), so report which one is in
+	// The cluster CLI is configurable (kubernetes.runtime), so report which one is in
 	// play -- 001-check-env.sh:23 printed the resolved KUBE for the same reason.
 	fmt.Fprintf(w, "  cluster cmd    : %s\n", cfg.K8s.Runtime)
 	fmt.Fprintf(w, "  redundancy     : %s\n", mode)
@@ -127,7 +127,7 @@ func (c *Cluster) CheckEnv() {
 // CheckStorageClass validates the StorageClass the broker PVCs will bind, porting
 // 009:26-41: it must use volumeBindingMode=WaitForFirstConsumer (so the PV lands in
 // the pod's zone) and allowVolumeExpansion=true (so storage can grow). The class is
-// the configured k8s.storage.class, or the cluster default resolved via 009:18.
+// the configured kubernetes.storage.class, or the cluster default resolved via 009:18.
 func (c *Cluster) CheckStorageClass(ctx context.Context) error {
 	name, err := c.resolveStorageClass(ctx)
 	if err != nil {
@@ -138,7 +138,7 @@ func (c *Cluster) CheckStorageClass(ctx context.Context) error {
 		return nil
 	}
 	if name == "" {
-		return fmt.Errorf("no default StorageClass found and k8s.storage.class is not set (009); set k8s.storage.class or mark a StorageClass default")
+		return fmt.Errorf("no default StorageClass found and kubernetes.storage.class is not set (009); set kubernetes.storage.class or mark a StorageClass default")
 	}
 
 	binding, err := c.scColumn(ctx, name, ".volumeBindingMode")
@@ -172,7 +172,7 @@ func (c *Cluster) resolveStorageClass(ctx context.Context) (string, error) {
 	}
 	fields := strings.Fields(string(out))
 	if len(fields) > 1 {
-		return "", fmt.Errorf("multiple default StorageClasses found (%s); set k8s.storage.class explicitly", strings.Join(fields, ", "))
+		return "", fmt.Errorf("multiple default StorageClasses found (%s); set kubernetes.storage.class explicitly", strings.Join(fields, ", "))
 	}
 	if len(fields) == 1 {
 		return fields[0], nil

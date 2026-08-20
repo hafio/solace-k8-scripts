@@ -1,8 +1,8 @@
 // Package config defines the single unified YAML schema for every platform
-// (k8s, docker, podman), plus loading, defaulting, and validation. It replaces
-// the two bash bootstraps (000-env.sh and docker-podman/000-env.sh): shared
-// identity/image/admin/tls/redundancy live at the top level; platform-specific
-// knobs live under k8s/docker/podman/nodes.
+// (kubernetes, docker, podman), plus loading, defaulting, and validation. It
+// replaces the two bash bootstraps (000-env.sh and docker-podman/000-env.sh):
+// shared identity/image/admin/tls/redundancy live at the top level;
+// platform-specific knobs live under kubernetes/docker/podman/nodes.
 package config
 
 import (
@@ -17,7 +17,7 @@ import (
 type Platform string
 
 const (
-	K8s    Platform = "k8s"
+	K8s    Platform = "kubernetes"
 	Docker Platform = "docker"
 	Podman Platform = "podman"
 )
@@ -45,8 +45,9 @@ type Config struct {
 	TLS         TLS         `yaml:"tls"`
 	Scaling     Scaling     `yaml:"scaling"`
 	Replication Replication `yaml:"replication"`
+	Broker      Broker      `yaml:"broker"`
 
-	K8s    K8sConfig    `yaml:"k8s"`
+	K8s    K8sConfig    `yaml:"kubernetes"`
 	Docker DockerConfig `yaml:"docker"`
 	Podman PodmanConfig `yaml:"podman"`
 	Nodes  Nodes        `yaml:"nodes"`
@@ -255,7 +256,7 @@ type Scaling struct {
 	// ApplyDefaults once MaxConnections resolves (scaling.go). Not read from
 	// YAML, so no env file can set it: k8s renders it as messagingNodeCpu,
 	// docker and podman as their own CPU cap. It replaces the independently
-	// settable k8s.msgNode.cpu, which could contradict the tier.
+	// settable kubernetes.msgNode.cpu, which could contradict the tier.
 	CPU string `yaml:"-"`
 }
 
@@ -266,6 +267,20 @@ type Replication struct {
 	PSK     string   `yaml:"psk"`     // REPL_PSK (secret; generated if blank)
 }
 
+// Broker holds the post-deployment broker configuration every platform applies
+// over the broker CLI, plus the local folders those operations read and write.
+// It is platform-neutral on purpose: the container ops apply exactly the same
+// domain certificates, product keys, and .cli scripts as the kubernetes ops do,
+// and while these lived under kubernetes.* a container env file had to carry a
+// kubernetes: section to reach them -- which made "which platform is this file
+// for?" unanswerable from the file itself (DetectPlatforms).
+type Broker struct {
+	CLIScriptsFolder string      `yaml:"cliScriptsFolder"` // SOLBK_CLISCRIPTS_FOLDER
+	DiagDir          string      `yaml:"diagDir"`          // SOLBK_DIAG_DIR
+	ProductKeys      []string    `yaml:"productKeys"`      // SOLBK_PRODUCTKEYS
+	DomainCerts      DomainCerts `yaml:"domainCerts"`
+}
+
 // K8sConfig holds everything specific to the operator-based Kubernetes deployment.
 type K8sConfig struct {
 	Runtime           Command           `yaml:"runtime"`           // KUBE (default: kubectl)
@@ -274,8 +289,6 @@ type K8sConfig struct {
 	AdminSecret       string            `yaml:"adminSecret"`       // SOLBK_USR_SECRET: Secret holding the admin/monitor creds
 	UpdateStrategy    string            `yaml:"updateStrategy"`    // automatedRolling|manualPodRestart
 	ServiceAccount    string            `yaml:"serviceAccount"`    // SOLBK_SVC_ACCOUNT (optional)
-	CLIScriptsFolder  string            `yaml:"cliScriptsFolder"`  // SOLBK_CLISCRIPTS_FOLDER
-	DiagDir           string            `yaml:"diagDir"`           // SOLBK_DIAG_DIR
 	Storage           Storage           `yaml:"storage"`
 	MsgNode           Resources         `yaml:"msgNode"` // SOLBK_MSGNODE_CPU/MEM
 	Operator          Operator          `yaml:"operator"`
@@ -285,9 +298,7 @@ type K8sConfig struct {
 	PodLabels         map[string]string `yaml:"podLabels"`         // -> spec.podLabels
 	Placement         Placement         `yaml:"placement"`
 	LoadBalancer      LoadBalancer      `yaml:"loadBalancer"`
-	Ports             []string          `yaml:"ports"`       // SOLBK_PORTS "name=port[/proto]"
-	ProductKeys       []string          `yaml:"productKeys"` // SOLBK_PRODUCTKEYS
-	DomainCerts       DomainCerts       `yaml:"domainCerts"`
+	Ports             []string          `yaml:"ports"` // SOLBK_PORTS "name=port[/proto]"
 }
 
 // Storage is the k8s PVC sizing / storage class.
@@ -299,7 +310,7 @@ type Storage struct {
 
 // Resources is the message-node resource block.
 type Resources struct {
-	// CPU is retained so an env file carrying the removed k8s.msgNode.cpu fails
+	// CPU is retained so an env file carrying the removed kubernetes.msgNode.cpu fails
 	// with an actionable error instead of a bare unknown-field decode error. It
 	// is never defaulted and never rendered: broker CPU is fixed by the scaling
 	// tier (scaling.go, Scaling.CPU). validateK8s rejects any value here.
@@ -423,10 +434,6 @@ type DomainCerts struct {
 // DockerConfig holds docker-only deployment options plus the shared container block.
 type DockerConfig struct {
 	Runtime Command `yaml:"runtime"` // CONTAINER_RUNTIME override (default: docker)
-	// Mode is retained so an env file carrying the removed "run" value fails with
-	// an actionable error instead of a bare unknown-field decode error. Only
-	// "compose" is accepted: docker always deploys through compose.
-	Mode string `yaml:"mode"` // compose
 	// Compose is the compose invocation, whose form differs per host: the modern
 	// plugin is a runtime subcommand (`docker compose`), the standalone v1 binary
 	// is its own executable (`docker-compose`). Unset defaults to the configured
@@ -462,7 +469,7 @@ type Container struct {
 	RunUser string `yaml:"runUser"` // SOLBK_RUN_USER uid:gid
 	ShmSize string `yaml:"shmSize"` // SOLBK_SHM_SIZE
 	// Mem is the container memory limit in docker's and podman's own b|k|m|g
-	// suffix, NOT the Mi/Gi Kubernetes quantity k8s.msgNode.mem takes -- the
+	// suffix, NOT the Mi/Gi Kubernetes quantity kubernetes.msgNode.mem takes -- the
 	// engines reject that spelling, so validateContainer catches it here rather
 	// than letting compose fail at deploy. Defaults to the scaling tier's memory
 	// (scaling.go). CPU has no counterpart: it is fixed by the tier, so there is

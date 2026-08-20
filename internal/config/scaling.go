@@ -11,7 +11,7 @@ import (
 // CPU is a property of the tier, not a knob: sizing a broker by connection count
 // and then sizing its CPU independently is how a 200k-connection broker ends up
 // on 2 cores, so the env file states the tier and this table states the cores.
-// Mem is only the tier's *default* -- k8s.msgNode.mem and the container blocks'
+// Mem is only the tier's *default* -- kubernetes.msgNode.mem and the container blocks'
 // mem both still override it, because memory headroom depends on the message
 // mix in a way core count does not.
 type scalingTier struct {
@@ -52,7 +52,7 @@ func tierFor(maxConnections int) (scalingTier, bool) {
 
 // containerMemRE is docker's and podman's own memory syntax: an integer then one
 // of b/k/m/g. It exists because this schema sits a Kubernetes quantity
-// (k8s.msgNode.mem, "3410Mi") next to a container one that rejects that exact
+// (kubernetes.msgNode.mem, "3410Mi") next to a container one that rejects that exact
 // spelling, so the likeliest mistake is copying the k8s form across.
 var containerMemRE = regexp.MustCompile(`(?i)^[0-9]+[bkmg]$`)
 

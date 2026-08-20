@@ -27,7 +27,7 @@ func TestCheckEnvNoSecretLeak(t *testing.T) {
 			t.Errorf("CheckEnv leaked secret value %q:\n%s", secret, out)
 		}
 	}
-	// "cluster cmd" reports the resolved k8s.runtime, as 001-check-env.sh:23 did. The
+	// "cluster cmd" reports the resolved kubernetes.runtime, as 001-check-env.sh:23 did. The
 	// operator image carries image.registry, because that is what the apply pulls: the
 	// report printed the bare Operator.Image while RenderOperator prefixed the registry,
 	// so an operator reading `check` was told the wrong image.
@@ -78,7 +78,7 @@ func TestCheckOperatorNS(t *testing.T) {
 		rr := &recRunner{}
 		buf := &bytes.Buffer{}
 		NewCluster(rr, cfg, nil, buf).checkOperatorNS(context.Background())
-		if want := "  operator ns    : chosen-ns (k8s.operator.namespace)\n"; buf.String() != want {
+		if want := "  operator ns    : chosen-ns (kubernetes.operator.namespace)\n"; buf.String() != want {
 			t.Errorf("line = %q, want %q", buf.String(), want)
 		}
 		if len(rr.calls) != 0 {

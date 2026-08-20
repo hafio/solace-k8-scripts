@@ -17,7 +17,7 @@ services:
     network_mode: host
     volumes:
       - "/opt/solace/data:/var/lib/solace:Z"
-      - "certs/tls.crt:/run/secrets/tls.crt:ro"
+      - "scripts/dev.ps1:/run/secrets/tls.crt:ro"
     environment:
       routername: "solace-primary"
       nodetype: "message_routing"

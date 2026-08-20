@@ -49,7 +49,7 @@ func TestGuardConfigIsValid(t *testing.T) {
 
 // TestCheckCommandAccepts is the accept half of the guard matrix: the shapes an
 // operator legitimately writes. Each case names the field it stands for, because
-// the same rules apply to k8s.runtime, docker.runtime, podman.runtime and
+// the same rules apply to kubernetes.runtime, docker.runtime, podman.runtime and
 // docker.compose from one implementation.
 func TestCheckCommandAccepts(t *testing.T) {
 	cases := []struct {
@@ -112,9 +112,9 @@ func TestCheckCommandRejects(t *testing.T) {
 		want  string
 	}{
 		// Empty.
-		{"empty command", clusterRules(), Command{}, nil, "k8s.runtime is empty"},
-		{"nil command", clusterRules(), nil, nil, "k8s.runtime is empty"},
-		{"empty argument", clusterRules(), Command{"kubectl", ""}, nil, "k8s.runtime[1] is an empty argument"},
+		{"empty command", clusterRules(), Command{}, nil, "kubernetes.runtime is empty"},
+		{"nil command", clusterRules(), nil, nil, "kubernetes.runtime is empty"},
+		{"empty argument", clusterRules(), Command{"kubectl", ""}, nil, "kubernetes.runtime[1] is an empty argument"},
 
 		// Layer 2: an unlisted binary, whatever it is.
 		{"curl", clusterRules(), Command{"curl"}, nil, `"curl" is not a binary this tool runs`},
@@ -213,7 +213,7 @@ func TestCheckCommandRejects(t *testing.T) {
 		// The message names the code point, since the character cannot be seen.
 		{"names the code point", clusterRules(), Command{"kubectl", "--context", "pr\u200bod"}, nil, "U+200B"},
 		// The charset applies to every token, not just argv[0].
-		{"metachar in later token", clusterRules(), Command{"kubectl", "--context", "prod;rm"}, nil, `k8s.runtime[2]`},
+		{"metachar in later token", clusterRules(), Command{"kubectl", "--context", "prod;rm"}, nil, `kubernetes.runtime[2]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,7 +273,7 @@ func TestCharsetAgreesAcrossBothYAMLForms(t *testing.T) {
 	for _, r := range spaces {
 		// The scalar form: Fields splits here, so the character never survives into
 		// a token. Any rune Fields treats as a separator...
-		scalar := decodeRuntime(t, "k8s:\n  runtime: \"kubectl --context a"+string(r)+"b\"\n")
+		scalar := decodeRuntime(t, "kubernetes:\n  runtime: \"kubectl --context a"+string(r)+"b\"\n")
 		if len(scalar) != 4 {
 			t.Errorf("U+%04X: scalar form produced %d tokens (%q), want 4 -- strings.Fields did not split it", r, len(scalar), scalar)
 		}
@@ -306,7 +306,7 @@ func TestGuardErrorsAreActionable(t *testing.T) {
 		if strings.Contains(msg, "\n") {
 			t.Errorf("CheckCommand(%q) message spans lines; it must be one line: %q", cmd, msg)
 		}
-		if !strings.Contains(msg, "k8s.runtime") {
+		if !strings.Contains(msg, "kubernetes.runtime") {
 			t.Errorf("CheckCommand(%q) message does not name the field: %q", cmd, msg)
 		}
 		if !strings.Contains(msg, "--allow-command") && !strings.Contains(msg, "kubectl, oc") &&

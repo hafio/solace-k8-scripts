@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// An env file is executable content. k8s.runtime, docker.runtime, podman.runtime
+// An env file is executable content. kubernetes.runtime, docker.runtime, podman.runtime
 // and docker.compose each name a binary this process runs on the operator's own
 // machine, and env files travel -- repos, pull requests, shared archives -- so the
 // person who wrote one is routinely not the person who runs it. Everything in this
@@ -54,7 +54,7 @@ var execBinaries = map[Platform][]string{
 // neverAllowed are binaries --allow-command may not approve, at any time, by anyone.
 // They are all privilege-escalation wrappers, and the reason is not that escalating
 // is wrong -- rootful podman genuinely needs root -- but that escalating HERE is the
-// wrong place for it. `sudo solace-util podman deploy` elevates one process the operator
+// wrong place for it. `sudo solace-util deploy` elevates one process the operator
 // chose, visibly, at the moment they typed it. A `runtime: sudo podman` elevates
 // every command this tool issues for the lifetime of an env file, decided by whoever
 // wrote that file, and the operator who approves it once on the command line cannot
@@ -96,15 +96,15 @@ const pathSeparators = `/\`
 // tool executes has exactly one rules value, built by the helpers below, so the
 // per-field differences live in one place rather than at the call sites.
 type commandRules struct {
-	field    string   // schema path, for error messages ("k8s.runtime")
+	field    string   // schema path, for error messages ("kubernetes.runtime")
 	platform Platform // which allowlist applies
 	subword  string   // the single bare subcommand this field may carry at index 1
 }
 
-// clusterRules guard k8s.runtime -- the cluster CLI, checked on every platform
+// clusterRules guard kubernetes.runtime -- the cluster CLI, checked on every platform
 // because ApplyDefaults fills it everywhere and only k8s reads it.
 func clusterRules() commandRules {
-	return commandRules{field: "k8s.runtime", platform: K8s}
+	return commandRules{field: "kubernetes.runtime", platform: K8s}
 }
 
 // runtimeRules guard docker.runtime / podman.runtime.
@@ -334,7 +334,7 @@ func (c *Config) AllowCommands(names []string) error {
 // An UNSET field is skipped rather than refused, which is the one place the two
 // enforcement points deliberately differ. In this schema an omitted key, an empty
 // string and an empty list all mean "unset" (setDefaultCmd), ApplyDefaults runs
-// before Validate on every path config.Load takes, and reporting "k8s.runtime is
+// before Validate on every path config.Load takes, and reporting "kubernetes.runtime is
 // empty" for a file that simply never mentioned it would be a worse error than the
 // mandatory-fields list it would displace. The executor has no such context -- by
 // the time it is asked, an empty command means an empty argv -- so CheckCommand
@@ -344,7 +344,7 @@ func (c *Config) validateExecCommands(p Platform) error {
 		rules commandRules
 		cmd   Command
 	}{
-		// k8s.runtime is checked on every platform: ApplyDefaults fills it
+		// kubernetes.runtime is checked on every platform: ApplyDefaults fills it
 		// everywhere, and it is printable from any code path.
 		{clusterRules(), c.K8s.Runtime},
 	}
@@ -373,7 +373,7 @@ func (c *Config) validateExecCommands(p Platform) error {
 	return nil
 }
 
-// ClusterCommand returns the guarded k8s.runtime command. Every k8s executor
+// ClusterCommand returns the guarded kubernetes.runtime command. Every k8s executor
 // resolves argv[0] through this rather than reading the field, so the check the
 // validator ran is re-run immediately before argv is built.
 func (c *Config) ClusterCommand() (Command, error) {

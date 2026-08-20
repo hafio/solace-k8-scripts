@@ -130,6 +130,18 @@ function Task-tidy { return (Cap go mod tidy) }
 function Task-vet  { return (Cap go vet ./...) }
 function Task-test { return (Cap go test @RaceFlag -count=1 ./...) }
 
+# Task-regen rewrites the committed goldens from the code that generates them.
+# Deliberately NOT in all/full: those gate, and a gate that silently rewrote the
+# thing it compares against could never fail. `test` is what reports a stale
+# golden; this is what you run once the new output is what you wanted.
+function Task-regen {
+  foreach ($pkg in @('./internal/cli', './internal/convert', './internal/render', './internal/k8s')) {
+    $code = Cap go test $pkg -update
+    if ($code -ne 0) { return $code }
+  }
+  return 0
+}
+
 # Build-One compiles the CLI for one target into dist/. The target lands in the
 # binary name because the release job merges every leg with merge-multiple:
 # identical names would silently overwrite.
@@ -251,6 +263,10 @@ Tasks:
            pick the target, unset means host; stamps ``solace-util version``
            from git describe (falls back to "dev")
   test     go test $raceDesc -count=1 ./...
+  regen    rewrite the committed goldens (docs/commands.md and the render/k8s/
+           convert testdata) from the code that generates them. Run it when
+           ``test`` reports one stale AND the new output is what you wanted.
+           Deliberately not in all/full: a gate must not rewrite what it checks
   cov      coverage profile -> coverage/coverage.html + printed total
   scan     govulncheck (fatal on a fixable vulnerability this module calls;
            one with no released fix warns and passes)

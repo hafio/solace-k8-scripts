@@ -1,6 +1,6 @@
 # env/sample.yaml -- unified config for the `solace-util` CLI. Copy to env/<name>.yaml
 # and edit; run any command with `-e <file>`. One file drives all three
-# platforms (k8s, docker, podman); each reads only the sections it needs.
+# platforms (kubernetes, docker, podman); each reads only the sections it needs.
 #
 # This is a TEMPLATE with placeholder secrets. Replace admin.pass, the image
 # credentials, and nodes.psk before real use, and never commit real secrets.
@@ -14,7 +14,7 @@
 # Secrets never reach a deployment artifact, and every platform delivers them to
 # the broker as files: on containers each one is externalized (podman's secret
 # store; docker compose secrets sourced from the environment `deploy` passes it)
-# and mounted at /run/secrets/<setting>, and on k8s they live in Secret manifests
+# and mounted at /run/secrets/<setting>, and on Kubernetes they live in Secret manifests
 # applied on stdin and mounted by the operator. So `--gen-only` output is safe to
 # share, while `--gen-secrets-only` output is as sensitive as this file.
 #
@@ -26,11 +26,11 @@
 
 # HA topology, unified across platforms: yes = redundancy group (primary+backup
 # +monitor); no = a single standalone broker. Omitting it means "no": HA
-# provisions three brokers (and three PVCs on k8s), so it is opted into, never
+# provisions three brokers (and three PVCs on Kubernetes), so it is opted into, never
 # inherited by accident.
 redundancy: yes
 
-# Broker timezone, unified across platforms: the k8s CR's timezone and the
+# Broker timezone, unified across platforms: the Kubernetes CR's timezone and the
 # containers' TZ are the same knob. Omitted -> the broker keeps the image default.
 # timezone: Asia/Singapore
 
@@ -38,73 +38,78 @@ image:
   repo: solace-pubsub-standard      # mandatory
   tag: "10.26.0.8755"                # mandatory
   registry: registry.example.com   # optional prefix; omit for docker.io
-  pullSecret: solace-image-pull     # k8s: name of the image-pull secret
-  user: repo-user                   # registry login: k8s builds the pull secret,
+  pullSecret: solace-image-pull     # Kubernetes: name of the image-pull secret
+  user: repo-user                   # registry login: Kubernetes builds the pull secret,
   pass: CHANGE-ME-registry          # docker/podman run `<runtime> login`. secret
   # passEnv: SOLACE_REGISTRY_PASS   # ...or name the variable holding it instead
-  # pullPolicy: IfNotPresent        # k8s: Always | IfNotPresent | Never. Always for
-                                    # a moving tag, Never for an air-gapped cluster
+  # pullPolicy: IfNotPresent        # Kubernetes: Always | IfNotPresent | Never.
+                                    # Always for a moving tag, Never for an
+                                    # air-gapped cluster
 
 admin:
-  user: admin                       # container admin username. On k8s the operator reads
-                                    # the fixed username_admin_password key, so anything
-                                    # other than "admin" is refused at load rather than
+  user: admin                       # container admin username. On Kubernetes the
+                                    # operator reads the fixed
+                                    # username_admin_password key, so anything other
+                                    # than "admin" is refused at load rather than
                                     # ignored -- the name is a docker/podman knob
   pass: CHANGE-ME-admin             # secret, mandatory on every platform
   # passEnv: SOLACE_ADMIN_PASS      # ...or name the variable holding it instead
-  monitorPass: CHANGE-ME-monitor    # k8s monitor user secret
+  monitorPass: CHANGE-ME-monitor    # Kubernetes monitor user secret
   # monitorPassEnv: SOLACE_MON_PASS # ...or name the variable holding it instead
   # additionalUsers:                # extra CLI (management) users beyond admin/monitor.
   #   - username: appuser           # Every field is required; password takes the same
   #     accessLevel: read-only      # literal-or-passwordEnv choice as above.
   #     password: CHANGE-ME-appuser # accessLevel: none | read-only | mesh-manager |
   #   - username: rouser            #   read-write | admin
-  #     accessLevel: mesh-manager   # Containers create these at boot. On k8s they are
-  #     passwordEnv: SOLACE_ROPASS  # created by `config additional-users` over the
-                                    # broker CLI (the operator ignores extra keys in
-                                    # the credentials Secret), which is NOT re-runnable
-                                    # and rejects : ( ) " ; ' < > , ` \ * & | in a
-                                    # password. Those characters stay fine on
-                                    # docker/podman, which mount the value as a file.
+  #     accessLevel: mesh-manager   # Containers create these at boot. On Kubernetes
+  #     passwordEnv: SOLACE_ROPASS  # they are created by `config additional-users`
+                                    # over the broker CLI (the operator ignores extra
+                                    # keys in the credentials Secret), which is NOT
+                                    # re-runnable and rejects the characters
+                                    # : ( ) " ; ' < > , ` \ * & | in a password.
+                                    # Those characters stay fine on docker/podman,
+                                    # which mount the value as a file.
 
 tls:
-  cert: certs/tls.crt               # server certificate (enables broker TLS listeners)
-  certKey: certs/tls.key
+  cert: scripts/dev.ps1               # server certificate (enables broker TLS listeners)
+  certKey: scripts/dev.sh
   # certPassphrase: CHANGE-ME-pass  # secret; only when the key is encrypted. On
                                     # docker/podman it is externalized like the admin
                                     # password and reaches the broker as
                                     # tls_servercertificate_passphrasefilepath. Not
-                                    # wired on k8s: the operator mounts the TLS secret.
+                                    # wired on Kubernetes: the operator mounts the
+                                    # TLS secret.
   # certPassphraseEnv: SOLACE_TLS_PASS   # ...or name the variable holding it instead
-  serverSecret: solace-tls-secret   # k8s: TLS secret name (enables the CR tls block)
+  serverSecret: solace-tls-secret   # Kubernetes: TLS secret name (enables the CR
+                                    # tls block)
   # cas:                            # trusted domain CA files (config domain-certs)
   #   - certs/ca.crt
 
-# scaling: omit to take platform defaults (k8s and container differ). Override any:
+# scaling: omit to take platform defaults (Kubernetes and container differ). Override any:
 #
 # maxConnections is the Solace scaling tier, and it FIXES the broker's CPU on every
 # platform -- there is no cpu key anywhere in this schema. It must be exactly one of
 # the five values below; a value between tiers is rejected, not rounded, because
 # Solace publishes no sizing for it. Memory is the tier's default and stays yours to
-# override (k8s.msgNode.mem, docker/podman container.mem).
+# override (kubernetes.msgNode.mem, docker/podman container.mem).
 #
 #   maxConnections | cpu (fixed) | memory default
 #   ---------------+-------------+----------------
-#   100            | 2           | 3410Mi  (k8s default tier)
+#   100            | 2           | 3410Mi  (Kubernetes default tier)
 #   1000           | 2           | 6898Mi  (container default tier)
 #   10000          | 4           | 12435Mi
 #   100000         | 8           | 30925Mi
 #   200000         | 12          | 52581Mi
 #
-# Every knob below applies to every platform. Only the delivery differs: k8s writes
+# Every knob below applies to every platform. Only the delivery differs: Kubernetes writes
 # them into the broker CR's spec.systemScaling, while docker and podman pass them to
 # the container as environment variables under the broker's own setting names
 # (system_scaling_*, messagespool_maxspoolusage). Two of the defaults differ by
 # platform, marked below; the rest are the same either way.
 #
 # scaling:
-#   maxConnections: 100             # k8s default 100, container default 1000
-#   maxSpoolUsageMB: 10000          # k8s default 10000, container default 100000
+#   maxConnections: 100             # Kubernetes default 100, container default 1000
+#   maxSpoolUsageMB: 10000          # Kubernetes default 10000, container default 100000
 #   maxQueueMessages: 100
 #   maxKafkaBridge: 0
 #   maxKafkaConnections: 0
@@ -122,7 +127,26 @@ tls:
 #     - remote-host:55443
 #   psk: ""                         # secret; generated when left blank
 
-k8s:
+# broker: platform-neutral. Every platform applies these over the broker CLI
+# after deployment (config/verify), so they live here rather than under any one
+# platform section.
+# broker:
+#   cliScriptsFolder: cli           # local folder holding .cli scripts (config exec-cli)
+#   diagDir: diag-configs           # local folder for verify diagnostics output
+#   productKeys: []                 # config product-keys
+#   domainCerts:
+#     folder: certs
+#     files: {}                     # CA-NAME: cert filename
+
+# A REAL env file declares only the platform(s) it targets -- the CLI
+# auto-detects which platform to use from which of kubernetes:/docker:/podman:
+# sections are present, so an unused section must be left out entirely, not
+# just emptied of keys. A file declaring more than one requires choosing, either
+# interactively or with --platform. The section must still be present even when
+# every key in it is a default, so it can be recognised: `docker: {}` is enough.
+# This file populates all three at once purely so every key has one place to
+# look it up; copy only the section(s) you need into a real env file.
+kubernetes:
   # runtime: kubectl                # the cluster CLI (legacy KUBE). A scalar is split
                                     # on whitespace, so it can carry a whole profile:
                                     # `oc` or `kubectl --kubeconfig /path/.kubeconfig-dev`.
@@ -143,8 +167,6 @@ k8s:
                                     # only those two keys (see admin.additionalUsers)
   updateStrategy: automatedRolling  # automatedRolling | manualPodRestart
   serviceAccount: solace-sa         # optional
-  # cliScriptsFolder: cli           # local folder holding .cli scripts (config exec-cli)
-  # diagDir: diag-configs           # local folder for verify diagnostics output
   # securityContext:                # -> spec.securityContext; omitted entirely when unset
   #   runAsUser: "1000001"          # "0" asks OpenShift to auto-assign
   #   fsGroup: "1000002"
@@ -166,7 +188,7 @@ k8s:
   #   namespace: pubsubplus-operator-system  # omit to discover the running one
   #   watchNamespaces: ""           # comma-separated list, de-duplicated; empty = the
                                     # broker ns only, since watchBrokerNs adds it
-  #   watchBrokerNs: true           # also watch k8s.namespace. Setting this false with
+  #   watchBrokerNs: true           # also watch kubernetes.namespace. Setting this false with
                                     # an empty watchNamespaces leaves WATCH_NAMESPACE
                                     # empty, which watches EVERY namespace
   #   cpu: 500m
@@ -191,7 +213,7 @@ k8s:
   #   tolerationsPrimary: ["dedicated=solace:NoSchedule"]
   #   tolerationsBackup: []
   #   tolerationsMonitor: []
-  #   antiAffinityNamespaces: []    # default: [k8s.namespace]; drives the built-in
+  #   antiAffinityNamespaces: []    # default: [kubernetes.namespace]; drives the built-in
   #   antiAffinityWeight: 100       # one-broker-per-host spread
   #   nodeAffinity:                 # additive; unset leaves the CR exactly as above
   #     preferred:                  # weight 1-100 + ANDed match expressions
@@ -208,26 +230,23 @@ k8s:
   #   monitoring (the Prometheus exporter sidecar), service.type (always
   #   LoadBalancer) and per-port nodePort, extraEnvVars/extraEnvVarsCM/
   #   extraEnvVarsSecret.
-  # There is deliberately no k8s health check either: the operator already runs its
+  # There is deliberately no Kubernetes health check either: the operator already runs its
   # own readiness and liveness probes on the broker pods and gates service traffic
   # on them, so overriding that would only risk fighting it. healthCheck exists
   # solely under docker:/podman:, where no such supervisor exists.
-  # productKeys: []                 # config product-keys
-  # domainCerts:
-  #   folder: certs
-  #   files: {}                     # CA-NAME: cert filename
 
 docker:
   # runtime: docker                 # command to exec: a bare binary name from
                                     # {docker, docker-compose, nerdctl}, then flags
-                                    # only. Same rules as k8s.runtime above -- this
+                                    # only. Same rules as kubernetes.runtime above -- this
                                     # field runs a binary on your machine. A wrapper
                                     # such as `lima nerdctl` needs the operator to
                                     # approve it per run: --allow-command lima.
                                     # sudo/doas/su/pkexec are NEVER approvable here;
-                                    # run `sudo solace-util docker deploy` instead, so the
+                                    # run `sudo solace-util deploy` instead, so the
                                     # privilege belongs to one invocation you chose.
-  mode: compose                     # compose (the only value; run mode was removed)
+                                    # Docker always deploys through compose -- there is
+                                    # no mode key; run mode was removed.
   # compose: docker compose         # the compose invocation. Omitted -> the runtime
                                     # plus `compose` (the plugin form). Set it to
                                     # `docker-compose` on a host carrying only the
@@ -245,7 +264,7 @@ docker:
   #   runUser: "0:0"                # uid:gid the container runs as
   #   shmSize: 1g
   #   mem: 6898m                    # memory limit, in docker's/podman's own b|k|m|g
-                                    # suffix -- NOT the Mi/Gi k8s.msgNode.mem takes.
+                                    # suffix -- NOT the Mi/Gi kubernetes.msgNode.mem takes.
                                     # Defaults to the scaling.maxConnections tier's
                                     # memory (container default tier 1000 -> 6898m).
                                     # There is no cpu key: it is fixed by the tier.
@@ -276,7 +295,7 @@ docker:
   # network:
   #   mode: host                    # host | bridge
   #   ports:                        # host:container. Omitted in bridge mode, the
-  #     - 8080:8080                 # same 17 ports k8s defaults to are published
+  #     - 8080:8080                 # same 17 ports Kubernetes defaults to are published
 
 podman:
   # runtime: podman                 # command to exec; same rules as docker.runtime,

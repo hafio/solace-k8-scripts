@@ -19,21 +19,6 @@ func emit(b []byte) error {
 	return err
 }
 
-// genAnnotation marks a command as able to honor the --gen-*-only flags (render
-// an artifact instead of applying it). Every platform's PersistentPreRunE rejects
-// them on a command without it.
-const genAnnotation = "solace_gen_capable"
-
-// genCapable tags a command as gen-aware and returns it, so registration can wrap
-// a command inline: genCapable(leaf(...)).
-func genCapable(c *cobra.Command) *cobra.Command {
-	if c.Annotations == nil {
-		c.Annotations = map[string]string{}
-	}
-	c.Annotations[genAnnotation] = "true"
-	return c
-}
-
 // renderAnnotation marks a command that ONLY renders -- it never executes an
 // external command, whatever flags it is given. `gen` is the whole set today. It
 // exists so checkAllowCommand can refuse --allow-command where there is nothing to
@@ -50,19 +35,15 @@ func renderOnly(c *cobra.Command) *cobra.Command {
 	return c
 }
 
-// anyGen reports whether a gen flag asked for a rendering instead of the real
-// work. Handlers branch on it before doing anything that changes state.
-func (a *App) anyGen() bool { return a.GenOnly || a.GenSecretsOnly || a.GenEnvOnly }
-
-// willExecute reports whether this invocation can reach an external command. A
-// --gen-*-only run renders and changes nothing, and a render-only command never
-// executes at all.
+// willExecute reports whether this invocation can reach an external command. Only
+// the render-only commands cannot: they build an artifact from the env file and
+// print it, touching nothing.
 func (a *App) willExecute(cmd *cobra.Command) bool {
-	return !a.anyGen() && cmd.Annotations[renderAnnotation] != "true"
+	return cmd.Annotations[renderAnnotation] != "true"
 }
 
-// addAllowCommandFlag wires --allow-command onto a platform subtree. It is the
-// operator's escape hatch for the execution-guard allowlist (config/execguard.go):
+// addAllowCommandFlag wires --allow-command onto one command that executes. It is
+// the operator's escape hatch for the execution-guard allowlist (config/execguard.go):
 // a binary this tool does not drive by default -- a `microk8s kubectl`, a site
 // wrapper -- runs only when the person at the keyboard names it, for that one
 // invocation. It cannot approve a privilege-escalation wrapper at all: elevate this
@@ -71,10 +52,10 @@ func (a *App) willExecute(cmd *cobra.Command) bool {
 // It is a CLI flag and NOTHING else on purpose. There is no config key for it, no
 // environment variable, and no binding layer that could give an env file a way to
 // set it: an env file that could approve its own binary would make the allowlist
-// decorative. It is registered on the platform commands rather than on root so
-// `solace-util convert --allow-command ...` is a usage error too.
+// decorative. wireExec adds it to each command that runs something rather than to
+// root, so `solace-util convert --allow-command ...` is a usage error too.
 func addAllowCommandFlag(c *cobra.Command, app *App) {
-	c.PersistentFlags().StringArrayVar(&app.AllowCommand, "allow-command", nil,
+	c.Flags().StringArrayVar(&app.AllowCommand, "allow-command", nil,
 		"approve one extra binary for the config's platform command, for this run only "+
 			"(repeatable; a bare name, never a path). The env file cannot grant this")
 	// No file completion: the value is a bare binary name, and offering paths would
@@ -96,40 +77,6 @@ func checkAllowCommand(cmd *cobra.Command, app *App) error {
 		"without executing; drop the flag", cmd.CommandPath())
 }
 
-// checkGenFlags validates the --gen-*-only trio for the command about to run.
-// They are root persistent flags, so they parse on every command on every
-// platform, but only a command tagged genCapable renders an artifact: silently
-// ignoring one elsewhere would mask a user mistake -- and could let someone think
-// a destructive command was a dry render -- so we fail loud (§4). Combining them
-// is rejected too: each selects a different artifact, so a pair has no meaning.
-//
-// This is a hand-rolled check rather than cobra's MarkFlagsMutuallyExclusive
-// because the flags are declared on root and validated against the leaf command
-// that inherited them, which also lets the error name the offending command.
-func checkGenFlags(cmd *cobra.Command, app *App) error {
-	var set []string
-	if app.GenOnly {
-		set = append(set, "--gen-only")
-	}
-	if app.GenSecretsOnly {
-		set = append(set, "--gen-secrets-only")
-	}
-	if app.GenEnvOnly {
-		set = append(set, "--gen-env-only")
-	}
-	switch {
-	case len(set) == 0:
-		return nil
-	case len(set) > 1:
-		return fmt.Errorf("%s cannot be combined: each renders a different artifact, so pass exactly one",
-			strings.Join(set, " and "))
-	case cmd.Annotations[genAnnotation] != "true":
-		return fmt.Errorf("%s is only valid on artifact commands (deploy, gen -- plus prep secrets, prep operator and operator deploy on k8s), not %q",
-			set[0], cmd.CommandPath())
-	}
-	return nil
-}
-
 // opFunc is a leaf handler that needs only the app context.
 type opFunc func(*App) error
 
@@ -140,19 +87,19 @@ type roleOpFunc func(*App, config.Role) error
 // arguments, so NoFileCompletions is what it should offer -- cobra's default is
 // to fall back to filenames, which would be wrong for every command built here.
 func leaf(app *App, use, short string, fn opFunc) *cobra.Command {
-	return &cobra.Command{
+	return wireExec(app, &cobra.Command{
 		Use:               use,
 		Short:             short,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE:              func(*cobra.Command, []string) error { return fn(app) },
-	}
+	})
 }
 
 // roleLeaf builds a subcommand taking an optional [role] positional (p|b|m,
 // default primary), normalizing it via config.ParseRole before dispatching.
 func roleLeaf(app *App, use, short string, fn roleOpFunc) *cobra.Command {
-	return &cobra.Command{
+	return wireExec(app, &cobra.Command{
 		Use:       use + " [role]",
 		Short:     short,
 		ValidArgs: config.RoleNames(),
@@ -164,19 +111,77 @@ func roleLeaf(app *App, use, short string, fn roleOpFunc) *cobra.Command {
 			}
 			return fn(app, role)
 		},
+	})
+}
+
+// layer describes the one thing a removal keeps by default: the part that is
+// expensive to recreate and impossible to get back. Both removals ask about theirs
+// the same way, through addLayerFlags/confirmLayer, so learning the contract on one
+// teaches the other.
+type layer struct {
+	flag  string // the flag that deletes it without asking
+	what  string // what is kept, for the flag help and the report
+	why   string // what deleting it costs, said at the moment of asking
+	usage string // the flag's own help text
+}
+
+var (
+	layerData = layer{
+		flag: "delete-data",
+		what: "persistent data",
+		why:  "Kubernetes PVCs / the container data directory -- the broker's messages and configuration",
+		usage: "delete the broker's persistent data too (Kubernetes PVCs / the container data " +
+			"directory). Without it the data is kept",
+	}
+	layerCRD = layer{
+		flag: "delete-crd",
+		what: "the operator CRDs",
+		why: "the CRDs are cluster-wide: deleting them cascade-deletes EVERY PubSubPlusEventBroker " +
+			"in this cluster, including brokers this env file does not describe",
+		usage: "delete the operator's CustomResourceDefinitions too. Without it they are kept, " +
+			"so existing brokers survive",
+	}
+)
+
+// addRemoveFlags wires the confirmation contract onto a command that destroys
+// something. Every such command asks before it acts; --no-prompt is the ONE flag
+// that makes it silent, so a script needs exactly one thing switched off rather
+// than one per question.
+//
+// l is the retained layer, or nil for a command that has none (secrets and the
+// namespace are recreated by `prepare`, so there is nothing worth keeping back).
+// Where there is one, the two flags COMPOSE and are deliberately not exclusive:
+// --delete-data says what to do with the layer, --no-prompt says not to ask about
+// any of it, and a fully unattended removal wants both. Passing --delete-data
+// alone still stops to confirm the removal itself, which is the point -- naming
+// the data you are willing to lose is not the same as confirming the deletion.
+func addRemoveFlags(c *cobra.Command, app *App, l *layer) {
+	c.Flags().BoolVar(&app.noPrompt, "no-prompt", false,
+		"do not ask anything: proceed with the removal, and keep whatever is kept by default "+
+			"unless a --delete-* flag says otherwise")
+	if l != nil {
+		c.Flags().BoolVar(&app.deleteLayer, l.flag, false, l.usage)
 	}
 }
 
-// addDataFlags wires the unified data-retention flags onto a delete/down command.
-// Data is kept by default; --purge (alias --clear-data) clears it; --keep-data
-// keeps it and skips the interactive prompt. Keeping and clearing are mutually
-// exclusive so an ambiguous `--purge --keep-data` fails at parse time.
-func addDataFlags(c *cobra.Command, app *App) {
-	c.Flags().BoolVar(&app.purge, "purge", false, "clear persistent data (k8s PVCs / container data folder)")
-	c.Flags().BoolVar(&app.purge, "clear-data", false, "alias for --purge")
-	c.Flags().BoolVar(&app.keepData, "keep-data", false, "keep persistent data and skip the confirmation prompt")
-	c.MarkFlagsMutuallyExclusive("purge", "keep-data")
-	c.MarkFlagsMutuallyExclusive("clear-data", "keep-data")
+// confirmLayer decides whether the retained layer goes with the removal. Keeping it
+// is the default in every direction: the --delete-* flag is the only way to a yes
+// without being asked, a non-interactive or --no-prompt run keeps it, and a prompt
+// answered with anything but an exact "yes" keeps it.
+//
+// So --no-prompt on its own is safe by construction: it silences the questions and
+// takes the conservative answer to each. Losing the data always takes an explicit
+// --delete-*, whatever else is on the command line.
+func confirmLayer(a *App, l layer) bool {
+	if a.deleteLayer {
+		return true
+	}
+	if a.noPrompt || !interactive(a) {
+		return false
+	}
+	return promptYes(promptSource(a), os.Stderr, fmt.Sprintf(
+		"Also delete %s? %s.\nThis cannot be undone. Type 'yes' to delete, anything else keeps it: ",
+		l.what, l.why))
 }
 
 // isTTY reports whether f is an interactive terminal (a character device). Prompts
@@ -231,23 +236,24 @@ func promptYes(in io.Reader, out io.Writer, prompt string) bool {
 	return strings.ToLower(promptLine(in, out, prompt)) == "yes"
 }
 
-// confirmDelete gates a delete/teardown. --yes confirms non-interactively; an
-// interactive session is prompted [y/N]; a non-TTY without --yes declines loudly
-// (never delete unattended without an explicit --yes).
+// confirmDelete gates every command that destroys something. --no-prompt confirms
+// without asking; an interactive session is prompted [y/N]; a non-TTY without
+// --no-prompt declines loudly, because nothing should be destroyed unattended
+// without someone having said so on the command line.
 func confirmDelete(a *App, what string) bool {
-	if a.Yes {
+	if a.noPrompt {
 		return true
 	}
 	if !interactive(a) {
-		warn("refusing to delete %s without confirmation; pass --yes to proceed", what)
+		warn("refusing to delete %s without confirmation; pass --no-prompt to proceed", what)
 		return false
 	}
 	return promptYesNo(promptSource(a), os.Stderr, fmt.Sprintf("Delete %s? [y/N] ", what))
 }
 
-// addRestartFlag wires --restart onto a container deploy/up command. Deliberately
-// separate from --yes: bouncing a live broker to apply a changed artifact is its
-// own explicit decision, the same way clearing data is.
+// addRestartFlag wires --restart onto the deploy command. Deliberately separate
+// from --no-prompt: bouncing a live broker to apply a changed artifact is its own
+// explicit decision, the same way deleting its data is.
 func addRestartFlag(c *cobra.Command, app *App) {
 	c.Flags().BoolVar(&app.restart, "restart", false,
 		"restart an already-running broker when the deploy artifact changed (otherwise you are asked, and a non-interactive run leaves it running)")
@@ -264,23 +270,6 @@ func confirmRestart(a *App, question string) bool {
 		return false
 	}
 	return promptYesNo(promptSource(a), os.Stderr, question+" [y/N] ")
-}
-
-// confirmPurge decides whether persistent data (PVCs) is cleared alongside a delete.
-// Data is kept by default: --keep-data keeps, --purge clears, a non-TTY keeps, and an
-// interactive session clears only on an exact "yes". --yes never implies purge --
-// clearing data is always its own explicit decision (safer than legacy 120).
-func confirmPurge(a *App) bool {
-	if a.keepData {
-		return false
-	}
-	if a.purge {
-		return true
-	}
-	if !interactive(a) {
-		return false
-	}
-	return promptYes(promptSource(a), os.Stderr, "Also clear persistent data (PVCs)? This is irreversible. Type 'yes' to purge: ")
 }
 
 func firstArg(args []string) string {

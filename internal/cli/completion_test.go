@@ -49,7 +49,7 @@ func TestCompletionScriptsGenerate(t *testing.T) {
 		{"powershell", "Register-ArgumentCompleter -CommandName 'solace-util'"},
 	} {
 		t.Run(tc.shell, func(t *testing.T) {
-			out, err := runRoot(t, []string{"completion", tc.shell})
+			out, err := runRoot(t, []string{"auto-complete", tc.shell})
 			if err != nil {
 				t.Fatalf("completion %s: %v", tc.shell, err)
 			}
@@ -66,14 +66,14 @@ func TestCompletionScriptsGenerate(t *testing.T) {
 func TestCompletionNoDescriptions(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
 		t.Run(shell, func(t *testing.T) {
-			with, err := runRoot(t, []string{"completion", shell, "--no-descriptions"})
+			with, err := runRoot(t, []string{"auto-complete", shell, "--no-descriptions"})
 			if err != nil {
 				t.Fatalf("completion %s --no-descriptions: %v", shell, err)
 			}
 			if !strings.Contains(with, cobra.ShellCompNoDescRequestCmd) {
 				t.Errorf("completion %s --no-descriptions does not request %s", shell, cobra.ShellCompNoDescRequestCmd)
 			}
-			without, err := runRoot(t, []string{"completion", shell})
+			without, err := runRoot(t, []string{"auto-complete", shell})
 			if err != nil {
 				t.Fatalf("completion %s: %v", shell, err)
 			}
@@ -89,7 +89,7 @@ func TestCompletionNoDescriptions(t *testing.T) {
 // non-runnable command by printing help to stdout and exiting 0, which would put
 // the help text into `solace-util completion tcsh > solace-util.ps1` and call it a success.
 func TestCompletionNeedsAShell(t *testing.T) {
-	for _, args := range [][]string{{"completion", "tcsh"}, {"completion"}} {
+	for _, args := range [][]string{{"auto-complete", "tcsh"}, {"auto-complete"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			out, err := runRoot(t, args)
 			if err == nil {
@@ -105,7 +105,7 @@ func TestCompletionNeedsAShell(t *testing.T) {
 // TestCompletionHelpStillWorks: --help short-circuits ahead of the RunE above, so
 // asking how to use the command is not itself an error.
 func TestCompletionHelpStillWorks(t *testing.T) {
-	if _, err := runRoot(t, []string{"completion", "--help"}); err != nil {
+	if _, err := runRoot(t, []string{"auto-complete", "--help"}); err != nil {
 		t.Errorf("completion --help err = %v, want nil", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestEnvFlagCompletesEnvFiles(t *testing.T) {
 	write("env/dev.yml")
 	write("notes.txt")
 
-	got, directive := runComplete(t, "k8s", "status", "--base-dir", base, "-e", "")
+	got, directive := runComplete(t, "status", "--base-dir", base, "-e", "")
 	want := []string{"prod.yaml", "dev.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("-e completions = %v, want %v (base dir first, deduped, YAML only)", got, want)
@@ -150,7 +150,7 @@ func TestEnvFlagPrefixFilters(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	got, _ := runComplete(t, "k8s", "status", "--base-dir", base, "-e", "pr")
+	got, _ := runComplete(t, "status", "--base-dir", base, "-e", "pr")
 	want := []string{"preprod.yaml", "prod.yaml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("-e pr completions = %v, want %v", got, want)
@@ -165,7 +165,7 @@ func TestEnvFlagWithPathDefersToShell(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(base, "prod.yaml"), []byte("redundancy: no\n"), 0o600); err != nil {
 		t.Fatalf("write prod.yaml: %v", err)
 	}
-	got, directive := runComplete(t, "k8s", "status", "--base-dir", base, "-e", "env/")
+	got, directive := runComplete(t, "status", "--base-dir", base, "-e", "env/")
 	if len(got) != 0 {
 		t.Errorf("-e env/ completions = %v, want none", got)
 	}
@@ -175,21 +175,24 @@ func TestEnvFlagWithPathDefersToShell(t *testing.T) {
 }
 
 // TestRoleArgsComplete: every command taking a [role] positional offers the three
-// role names -- the ones built through roleLeaf and the ones assembled inline.
+// role names -- the ones built through roleOnK8sLeaf/roleOnContainerLeaf/roleLeaf
+// and the ones assembled inline (cli, deploy broker/all). The tree is flat, so one
+// case per verb covers every platform it applies to; completion never reads the
+// env file, so it cannot tell here whether a given run will land on Kubernetes
+// (which rejects the role) or a container host (which uses it) -- see
+// TestUnusableRoleFailsLoud (platform_test.go) for that refusal.
 func TestRoleArgsComplete(t *testing.T) {
 	for _, path := range [][]string{
-		{"k8s", "logs"},
-		{"k8s", "cli"},
-		{"k8s", "shell"},
-		{"k8s", "describe", "broker"},
-		{"k8s", "verify", "login"},
-		{"k8s", "restart"},
-		{"docker", "deploy"},
-		{"docker", "up"},
-		{"docker", "gen"},
-		{"docker", "config", "leader"},
-		{"docker", "verify", "redundancy"},
-		{"podman", "deploy"},
+		{"logs", "broker"},
+		{"cli"},
+		{"shell"},
+		{"check", "semp-login"},
+		{"restart", "broker"},
+		{"deploy", "broker"},
+		{"deploy", "all"},
+		{"config", "leader"},
+		{"smoke", "redundancy"},
+		{"generate", "broker"},
 	} {
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
 			got, directive := runComplete(t, append(path, "")...)
@@ -207,7 +210,7 @@ func TestRoleArgsComplete(t *testing.T) {
 // TestPodFlagCompletesRoles: --pod names the same roles as the positionals, so it
 // completes to the same set rather than to filenames.
 func TestPodFlagCompletesRoles(t *testing.T) {
-	got, directive := runComplete(t, "k8s", "copy", "into", "--pod", "")
+	got, directive := runComplete(t, "copy", "into", "--pod", "")
 	want := []string{"primary", "backup", "monitor"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("--pod completions = %v, want %v", got, want)
@@ -217,30 +220,48 @@ func TestPodFlagCompletesRoles(t *testing.T) {
 	}
 }
 
-// TestPlatformFlagCompletes: convert --platform offers the three platforms
-// convertPlatform accepts. The empty "detect" value is left out -- omitting the
-// flag is how you ask for it.
+// TestPlatformFlagCompletes: --platform completes to the three canonical platform
+// names, on root and on every command that inherits it -- convert included, since
+// it no longer declares its own copy of the flag and reads the root one instead.
+// The empty "detect" value is left out -- omitting the flag is how you ask for it.
+//
+// Neither the retired k8s spelling nor the kube/dk/pm abbreviations are offered: the
+// abbreviations exist to save typing something you already know, which is what a
+// completion already does -- offering both would put two names for one platform
+// in front of the user.
 func TestPlatformFlagCompletes(t *testing.T) {
-	got, directive := runComplete(t, "convert", "old-env", "--platform", "")
-	want := []string{"k8s", "docker", "podman"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("--platform completions = %v, want %v", got, want)
-	}
-	if directive != wantDirective(cobra.ShellCompDirectiveNoFileComp) {
-		t.Errorf("--platform directive = %s, want no-file-completion", directive)
+	for _, path := range [][]string{
+		{"status"},
+		{"convert", "old-env"},
+	} {
+		t.Run(strings.Join(path, " "), func(t *testing.T) {
+			got, directive := runComplete(t, append(path, "--platform", "")...)
+			want := []string{"kubernetes", "docker", "podman"}
+			if strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Errorf("--platform completions = %v, want %v", got, want)
+			}
+			if directive != wantDirective(cobra.ShellCompDirectiveNoFileComp) {
+				t.Errorf("--platform directive = %s, want no-file-completion", directive)
+			}
+			for _, retired := range []string{"k8s", "k8", "kube", "dk", "pm"} {
+				for _, c := range got {
+					if c == retired {
+						t.Errorf("--platform completions = %v, must not offer %q", got, retired)
+					}
+				}
+			}
+		})
 	}
 }
 
 // TestDirFlagCompletesDirectories: --dir takes a directory, so it asks the shell
-// to filter to directories rather than offering every file.
+// to filter to directories rather than offering every file. The tree is flat now,
+// so `copy into` is one command shared by every platform rather than a separate
+// copy per platform subtree.
 func TestDirFlagCompletesDirectories(t *testing.T) {
-	for _, path := range [][]string{{"k8s", "copy", "into"}, {"docker", "copy", "into"}} {
-		t.Run(strings.Join(path, " "), func(t *testing.T) {
-			_, directive := runComplete(t, append(path, "--dir", "")...)
-			if directive != wantDirective(cobra.ShellCompDirectiveFilterDirs) {
-				t.Errorf("--dir directive = %s, want directory filtering", directive)
-			}
-		})
+	_, directive := runComplete(t, "copy", "into", "--dir", "")
+	if directive != wantDirective(cobra.ShellCompDirectiveFilterDirs) {
+		t.Errorf("--dir directive = %s, want directory filtering", directive)
 	}
 }
 
@@ -248,28 +269,30 @@ func TestDirFlagCompletesDirectories(t *testing.T) {
 // offers nothing. Cobra's fallback is filename completion, which is what this
 // stops -- the wrong suggestion on the majority of commands in the tree.
 //
-// The cases below deliberately include every no-arg command that needs a flag or an
-// annotation on top (deploy, delete, down, diagnostics): those used to hand-roll the
-// literal leaf already builds, which is how they lost NoFileCompletions while the
-// plain leaves kept it. They now go through leaf and attach the extra afterwards, so
-// there is one definition of "takes no arguments" for the whole tree.
+// The cases below deliberately include every no-arg command that needs a flag on
+// top (remove broker/all, diagnostics): those used to hand-roll the literal leaf
+// already builds, which is how they lost NoFileCompletions while the plain leaves
+// kept it. They now go through leaf and attach the extra afterwards, so there is
+// one definition of "takes no arguments" for the whole tree.
+//
+// The verb groups themselves (check, status, remove, ...) are deliberately
+// absent: they carry no RunE and no ValidArgsFunction of their own, so completing
+// after one offers its object subcommands' names -- the group's own semantics,
+// not "takes no arguments". `deploy broker`/`deploy all` are absent for the same
+// reason as TestRoleArgsComplete's comment: their [role] positional is offered by
+// ValidArgs unconditionally, since completion cannot tell here whether this run
+// will land on Kubernetes (which rejects the role) or a container host (which
+// uses it).
 func TestNoArgsLeafOffersNoFiles(t *testing.T) {
 	for _, path := range [][]string{
-		{"k8s", "check"},
-		{"k8s", "status"},
-		{"k8s", "show-all"},
-		{"k8s", "deploy"},
-		{"k8s", "delete"},
-		{"k8s", "up"},
-		{"k8s", "down"},
-		{"k8s", "verify", "diagnostics"},
-		{"k8s", "prep", "namespace"},
-		{"k8s", "operator", "logs"},
-		{"docker", "check"},
-		{"docker", "delete"},
-		{"docker", "down"},
-		{"podman", "verify", "diagnostics"},
-		{"podman", "teardown", "domain-certs"},
+		{"check", "deploy"},
+		{"status", "operator"},
+		{"remove", "broker"},
+		{"remove", "all"},
+		{"diagnostics"},
+		{"prepare", "namespace"},
+		{"logs", "operator"},
+		{"config", "delete", "domain-certs"},
 		{"version"},
 	} {
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
@@ -286,10 +309,13 @@ func TestNoArgsLeafOffersNoFiles(t *testing.T) {
 
 // TestAllowCommandOffersNoFiles: --allow-command takes a bare binary name, never a
 // path. Offering files would coach the mistake its own help text warns against.
+// wireExec wires the flag the same way on every command that carries it, so one
+// case built through leaf (check) and one built inline (deploy) are enough to
+// prove the registration, rather than enumerating every runnable command.
 func TestAllowCommandOffersNoFiles(t *testing.T) {
-	for _, platform := range []string{"k8s", "docker", "podman"} {
-		t.Run(platform, func(t *testing.T) {
-			got, directive := runComplete(t, platform, "check", "--allow-command", "")
+	for _, path := range [][]string{{"check", "deploy"}, {"deploy", "broker"}} {
+		t.Run(strings.Join(path, " "), func(t *testing.T) {
+			got, directive := runComplete(t, append(path, "--allow-command", "")...)
 			if len(got) != 0 {
 				t.Errorf("completions = %v, want none", got)
 			}
@@ -311,17 +337,14 @@ func TestFlagCompletionsRegistered(t *testing.T) {
 	}{
 		{nil, "env"},
 		{nil, "base-dir"},
-		{[]string{"k8s"}, "allow-command"},
-		{[]string{"docker"}, "allow-command"},
-		{[]string{"podman"}, "allow-command"},
-		{[]string{"k8s", "config", "exec-cli"}, "pod"},
-		{[]string{"k8s", "copy", "from"}, "pod"},
-		{[]string{"k8s", "copy", "into"}, "pod"},
-		{[]string{"k8s", "copy", "into"}, "dir"},
-		{[]string{"docker", "copy", "into"}, "dir"},
-		{[]string{"k8s", "verify", "diagnostics"}, "days"},
-		{[]string{"docker", "verify", "diagnostics"}, "days"},
-		{[]string{"convert"}, "platform"},
+		{nil, "platform"},
+		{[]string{"status", "broker"}, "allow-command"},
+		{[]string{"deploy", "broker"}, "allow-command"},
+		{[]string{"cli"}, "pod"},
+		{[]string{"copy", "from"}, "pod"},
+		{[]string{"copy", "into"}, "pod"},
+		{[]string{"copy", "into"}, "dir"},
+		{[]string{"diagnostics"}, "days"},
 	}
 	for _, tc := range cases {
 		cmd := findCmd(t, root, tc.path...)

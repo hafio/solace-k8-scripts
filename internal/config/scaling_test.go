@@ -225,7 +225,7 @@ func TestValidateK8sMsgNodeCPURemoved(t *testing.T) {
 	if !strings.Contains(err.Error(), "scaling.maxConnections") {
 		t.Errorf("removal error should name scaling.maxConnections, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "k8s.msgNode.mem") {
+	if !strings.Contains(err.Error(), "kubernetes.msgNode.mem") {
 		t.Errorf("removal error should say mem is unaffected, got: %v", err)
 	}
 }

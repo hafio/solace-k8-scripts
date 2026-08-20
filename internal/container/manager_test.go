@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,7 +55,6 @@ func ctrCfg(p config.Platform, redundancy string) *config.Config {
 		c.Podman.Network.Mode = "host"
 	default:
 		c.Docker.Runtime = config.Command{"docker"}
-		c.Docker.Mode = "compose"
 		c.Docker.Container.Name = "solace"
 		c.Docker.Container.RunUser = "0:0"
 		c.Docker.Container.Mem = "6898m"
@@ -687,7 +687,7 @@ func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
 		cfg, svc := setup(t, config.Podman)
 		m, rr, _ := newCapMgr(cfg, config.Podman)
 		m.Geteuid = func() int { return -1 }
-		m.Restart = true
+		m.RestartApproved = true
 		rr.out = []byte("active\n")
 		if err := m.Deploy(context.Background(), config.Primary); err != nil {
 			t.Fatalf("Deploy: %v", err)
@@ -732,7 +732,7 @@ func TestManagerRedeployChangedNeedsConsent(t *testing.T) {
 	t.Run("docker recreates with --restart", func(t *testing.T) {
 		cfg, _ := setup(t, config.Docker)
 		m, rr, _ := newCapMgr(cfg, config.Docker)
-		m.Restart = true
+		m.RestartApproved = true
 		rr.out = []byte("solace\n")
 		if err := m.Deploy(context.Background(), config.Primary); err != nil {
 			t.Fatalf("Deploy: %v", err)
@@ -1048,6 +1048,205 @@ func TestManagerDeleteDockerComposeNoFileFallsBackToStopRm(t *testing.T) {
 	}
 	if !hasCall(rr, "docker", []string{"stop", "solace"}) || !hasCall(rr, "docker", []string{"rm", "solace"}) {
 		t.Errorf("compose Delete with no file should fall back to stop+rm:\n%+v", rr.calls)
+	}
+}
+
+// --- Lifecycle: Start / Stop / Restart ---------------------------------------
+
+// TestManagerLifecyclePodmanSystemctl covers Start/Stop/Restart on podman: all
+// three drive systemd rather than the engine directly, since the quadlet unit
+// owns the container's lifecycle. Both rootful and rootless are covered because
+// systemctlArgs prepends `--user` only in the rootless case.
+func TestManagerLifecyclePodmanSystemctl(t *testing.T) {
+	for _, rootless := range []bool{false, true} {
+		label := "rootful"
+		if rootless {
+			label = "rootless"
+		}
+		t.Run(label, func(t *testing.T) {
+			cfg := ctrCfg(config.Podman, "no")
+			if rootless {
+				cfg.Podman.SystemctlUser = "--user"
+			}
+			cases := []struct {
+				name, verb string
+				call       func(*Manager) error
+			}{
+				{"start", "start", func(m *Manager) error { return m.Start(context.Background()) }},
+				{"stop", "stop", func(m *Manager) error { return m.Stop(context.Background()) }},
+				{"restart", "restart", func(m *Manager) error { return m.Restart(context.Background()) }},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					m, rr, _ := newCapMgr(cfg, config.Podman)
+					if err := tc.call(m); err != nil {
+						t.Fatalf("%s: %v", tc.name, err)
+					}
+					if !hasCall(rr, "systemctl", withUser(cfg, tc.verb, "sol-pod.service")) {
+						t.Errorf("%s should run systemctl %s on the unit:\n%+v", tc.name, tc.verb, rr.calls)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestStatusAllFindsBrokersByImage covers the container answer to `--all`:
+// discovery is by IMAGE, not by the name this env file configured, so a broker
+// someone deployed by hand still shows up and an unrelated container never does.
+// That is the whole reason the flag exists -- a config-scoped listing cannot answer
+// "what is actually running on this host".
+func TestStatusAllFindsBrokersByImage(t *testing.T) {
+	ps := "solace\tsolace/solace-pubsub-standard:10.10.1.128\tUp 3 days\n" +
+		"legacy-broker\tsolace/solace-pubsubplus-enterprise:10.9\tUp 1 hour\n" +
+		"nginx\tnginx:latest\tUp 2 days\n"
+	m, rr, out := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	rr.out = []byte(ps)
+	if err := m.StatusAll(context.Background(), false); err != nil {
+		t.Fatalf("StatusAll: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"solace", "legacy-broker"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("StatusAll output missing the Solace container %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "nginx") {
+		t.Errorf("StatusAll listed a non-Solace container:\n%s", got)
+	}
+}
+
+// TestStatusAllReportsNothingFound: an empty listing says so in words. This is the
+// ordinary case on a host that has not been deployed to yet, and printing a bare
+// header there reads as though the command failed to look.
+func TestStatusAllReportsNothingFound(t *testing.T) {
+	m, rr, out := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	rr.out = []byte("nginx\tnginx:latest\tUp 2 days\n")
+	if err := m.StatusAll(context.Background(), false); err != nil {
+		t.Fatalf("StatusAll: %v", err)
+	}
+	if !strings.Contains(out.String(), "no Solace broker containers") {
+		t.Errorf("StatusAll with nothing to show should say so:\n%s", out.String())
+	}
+}
+
+// errListFailed stands in for an engine that cannot be asked.
+var errListFailed = errors.New("cannot connect to the docker daemon")
+
+// TestStatusAllWrapsListError: an engine that cannot be asked -- docker not
+// running, podman socket down -- fails loud and names the cause. Reporting an empty
+// host instead would be a lie in exactly the situation an operator is trying to
+// diagnose.
+func TestStatusAllWrapsListError(t *testing.T) {
+	m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	rr.outErr = errListFailed
+	err := m.StatusAll(context.Background(), false)
+	if err == nil || !strings.Contains(err.Error(), "listing containers") {
+		t.Fatalf("StatusAll err = %v, want it to name the listing failure", err)
+	}
+	if !errors.Is(err, errListFailed) {
+		t.Errorf("StatusAll should preserve the cause: %v", err)
+	}
+}
+
+// TestStatusAllDetailInspectsEachAndKeepsSecretsOut: --detail goes deeper on every
+// container it found, and the deeper view is deliberately mounts-only. A broker's
+// secrets are files under /run/secrets, so mounts name them without reading them --
+// while docker's compose secrets are environment-sourced, so dumping the
+// environment here would put passwords on the terminal and into scrollback.
+func TestStatusAllDetailInspectsEachAndKeepsSecretsOut(t *testing.T) {
+	m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	rr.out = []byte("solace\tsolace/solace-pubsub-standard:10.10.1.128\tUp 3 days\n")
+	if err := m.StatusAll(context.Background(), true); err != nil {
+		t.Fatalf("StatusAll --detail: %v", err)
+	}
+	var inspected bool
+	for _, c := range rr.calls {
+		joined := strings.Join(c.args, " ")
+		if strings.Contains(joined, "inspect") {
+			inspected = true
+			if strings.Contains(joined, ".Config.Env") || strings.Contains(joined, "Env}}") {
+				t.Errorf("inspect format reads the environment, which carries secrets: %v", c.args)
+			}
+			if !strings.Contains(joined, "Mounts") {
+				t.Errorf("inspect format should report mounts: %v", c.args)
+			}
+		}
+	}
+	if !inspected {
+		t.Errorf("StatusAll --detail should inspect each container it found:\n%+v", rr.calls)
+	}
+}
+
+// TestManagerLifecycleDockerComposeFile covers the docker half when a compose
+// file is on disk: Start/Stop/Restart drive it through compose, the same
+// artifact Deploy wrote, rather than the plain runtime verb.
+func TestManagerLifecycleDockerComposeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Docker.ComposeFile = filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(cfg.Docker.ComposeFile, []byte("services:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, verb string
+		call       func(*Manager) error
+	}{
+		{"start", "start", func(m *Manager) error { return m.Start(context.Background()) }},
+		{"stop", "stop", func(m *Manager) error { return m.Stop(context.Background()) }},
+		{"restart", "restart", func(m *Manager) error { return m.Restart(context.Background()) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, rr, _ := newCapMgr(cfg, config.Docker)
+			if err := tc.call(m); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if !hasCall(rr, "docker", []string{"compose", "-f", cfg.Docker.ComposeFile, tc.verb}) {
+				t.Errorf("%s with a compose file present should run compose %s:\n%+v", tc.name, tc.verb, rr.calls)
+			}
+		})
+	}
+}
+
+// TestManagerLifecycleDockerNoComposeFile covers the fallback when no compose
+// file is on disk: Start/Stop/Restart drive the plain runtime verb against the
+// container name instead, mirroring Delete's stop/rm fallback.
+func TestManagerLifecycleDockerNoComposeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := ctrCfg(config.Docker, "no")
+	cfg.Docker.ComposeFile = filepath.Join(dir, "absent.yml") // does not exist
+	cases := []struct {
+		name, verb string
+		call       func(*Manager) error
+	}{
+		{"start", "start", func(m *Manager) error { return m.Start(context.Background()) }},
+		{"stop", "stop", func(m *Manager) error { return m.Stop(context.Background()) }},
+		{"restart", "restart", func(m *Manager) error { return m.Restart(context.Background()) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, rr, _ := newCapMgr(cfg, config.Docker)
+			if err := tc.call(m); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if !hasCall(rr, "docker", []string{tc.verb, "solace"}) {
+				t.Errorf("%s with no compose file should fall back to the plain runtime verb:\n%+v", tc.name, rr.calls)
+			}
+		})
+	}
+}
+
+// TestManagerLifecycleDockerDryRunUsesCompose: under --dry-run there is no file
+// on disk to probe (the Echo runner never wrote one), so the preview always takes
+// the compose branch rather than guessing from a real deploy's artifact.
+func TestManagerLifecycleDockerDryRunUsesCompose(t *testing.T) {
+	m, buf := newEchoMgr(ctrCfg(config.Docker, "no"), config.Docker)
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !strings.Contains(buf.String(), "+ docker compose -f docker-compose.yml start") {
+		t.Errorf("dry-run Start should preview the compose path even with no file on disk:\n%s", buf.String())
 	}
 }
 
@@ -1371,7 +1570,7 @@ func TestManagerRedeployUnchangedRestartsForRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, rr, buf := newCapMgr(cfg, config.Docker)
-	m.Restart = true
+	m.RestartApproved = true
 	rr.out = []byte("solace\n") // ps lists this container by name -> running
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)
@@ -1398,7 +1597,7 @@ func TestManagerRedeployPodmanUnchangedRestartsForRotation(t *testing.T) {
 	}
 	m, rr, buf := newCapMgr(cfg, config.Podman)
 	m.Geteuid = func() int { return -1 }
-	m.Restart = true
+	m.RestartApproved = true
 	rr.out = []byte("active\n")
 	if err := m.Deploy(context.Background(), config.Primary); err != nil {
 		t.Fatalf("Deploy: %v", err)

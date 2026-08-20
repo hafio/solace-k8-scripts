@@ -3,10 +3,35 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// TestPlatformConstantsMatchSchemaSections pins the naming rule CLAUDE.md states:
+// a platform's constant value is also its top-level section key in the env file,
+// so the word an operator passes to --platform and the block they edit are the
+// same. The yaml tag is a separate literal from the constant and nothing in the
+// compiler ties them, so this is the only thing stopping the two from drifting.
+//
+// It matters more now than it did when the platform was a subcommand: the section
+// key is what DetectPlatforms looks for, so a constant that drifted from its tag
+// would not merely read oddly -- every env file would resolve to no platform at all.
+func TestPlatformConstantsMatchSchemaSections(t *testing.T) {
+	sections := map[string]bool{}
+	rt := reflect.TypeOf(Config{})
+	for i := 0; i < rt.NumField(); i++ {
+		if tag := rt.Field(i).Tag.Get("yaml"); tag != "" {
+			sections[tag] = true
+		}
+	}
+	for _, p := range Platforms() {
+		if !sections[string(p)] {
+			t.Errorf("platform %q has no top-level %q: section in Config", p, p)
+		}
+	}
+}
 
 func TestPlatformIsContainer(t *testing.T) {
 	tests := []struct {
@@ -234,11 +259,11 @@ func TestApplyDefaultsK8s(t *testing.T) {
 	if c.K8s.AdminSecret != "solace-admin-secret" {
 		t.Errorf("K8s.AdminSecret = %q", c.K8s.AdminSecret)
 	}
-	if c.K8s.DiagDir != "diag-configs" {
-		t.Errorf("DiagDir = %q", c.K8s.DiagDir)
+	if c.Broker.DiagDir != "diag-configs" {
+		t.Errorf("DiagDir = %q", c.Broker.DiagDir)
 	}
-	if c.K8s.CLIScriptsFolder != "cli" {
-		t.Errorf("CLIScriptsFolder = %q", c.K8s.CLIScriptsFolder)
+	if c.Broker.CLIScriptsFolder != "cli" {
+		t.Errorf("CLIScriptsFolder = %q", c.Broker.CLIScriptsFolder)
 	}
 	if c.K8s.Storage.MonNode != "5Gi" {
 		t.Errorf("Storage.MonNode = %q", c.K8s.Storage.MonNode)
@@ -358,9 +383,6 @@ func TestApplyDefaultsDocker(t *testing.T) {
 	if c.Docker.Runtime.String() != "docker" {
 		t.Errorf("Docker.Runtime = %q, want docker", c.Docker.Runtime)
 	}
-	if c.Docker.Mode != "compose" {
-		t.Errorf("Docker.Mode = %q, want compose", c.Docker.Mode)
-	}
 	// The compose default is derived from the runtime, not hardcoded, so a runtime
 	// override carries into it.
 	if c.Docker.Compose.String() != "docker compose" {
@@ -375,12 +397,12 @@ func TestApplyDefaultsDocker(t *testing.T) {
 	if c.Docker.Container.Name != "solace" {
 		t.Errorf("Docker.Container.Name = %q, want solace", c.Docker.Container.Name)
 	}
-	// Container config/verify reuse these k8s.* fields, so they default here too.
-	if c.K8s.DiagDir != "diag-configs" {
-		t.Errorf("container DiagDir = %q, want diag-configs", c.K8s.DiagDir)
+	// Container config/verify reuse these broker.* fields, so they default here too.
+	if c.Broker.DiagDir != "diag-configs" {
+		t.Errorf("container DiagDir = %q, want diag-configs", c.Broker.DiagDir)
 	}
-	if c.K8s.CLIScriptsFolder != "cli" {
-		t.Errorf("container CLIScriptsFolder = %q, want cli", c.K8s.CLIScriptsFolder)
+	if c.Broker.CLIScriptsFolder != "cli" {
+		t.Errorf("container CLIScriptsFolder = %q, want cli", c.Broker.CLIScriptsFolder)
 	}
 	assertContainerBlockDefaults(t, c.Docker.Container)
 	assertContainerScaling(t, c)
@@ -483,7 +505,7 @@ func TestValidateK8sMissingMandatory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing mandatory k8s fields")
 	}
-	want := "these fields must not be empty: admin.pass, image.repo, image.tag, k8s.name, k8s.namespace, k8s.storage.msgNode"
+	want := "these fields must not be empty: admin.pass, image.repo, image.tag, kubernetes.name, kubernetes.namespace, kubernetes.storage.msgNode"
 	if err.Error() != want {
 		t.Errorf("missing-fields message =\n  %q\nwant\n  %q", err.Error(), want)
 	}
@@ -493,7 +515,7 @@ func TestValidateK8sBadUpdateStrategy(t *testing.T) {
 	c := validK8sConfig()
 	c.K8s.UpdateStrategy = "rollThemAll"
 	err := c.Validate(K8s)
-	if err == nil || !strings.Contains(err.Error(), "k8s.updateStrategy must be") {
+	if err == nil || !strings.Contains(err.Error(), "kubernetes.updateStrategy must be") {
 		t.Errorf("expected updateStrategy enum error, got: %v", err)
 	}
 }
@@ -809,10 +831,10 @@ func TestValidateK8sKeyValueEntries(t *testing.T) {
 	}{
 		{"lb annotation without a colon", func(c *Config) {
 			c.K8s.LoadBalancer.Annotations = []string{"not-a-pair"}
-		}, "k8s.loadBalancer.annotations[0]"},
+		}, "kubernetes.loadBalancer.annotations[0]"},
 		{"label with an empty key", func(c *Config) {
 			c.K8s.Placement.LabelsPrimary = []string{" : solace"}
-		}, "k8s.placement.labelsPrimary[0]"},
+		}, "kubernetes.placement.labelsPrimary[0]"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -932,31 +954,8 @@ func TestValidateContainerBadNetworkMode(t *testing.T) {
 	}
 }
 
-func TestValidateDockerBadMode(t *testing.T) {
-	c := validContainerConfig(Docker, "yes")
-	c.Docker.Mode = "swarm"
-	if err := c.Validate(Docker); err == nil || !strings.Contains(err.Error(), "docker.mode must be") {
-		t.Errorf("expected docker.mode enum error, got: %v", err)
-	}
-}
-
-// TestValidateDockerRunModeRemoved pins the removed value's own error: an env file
-// migrated from run mode has to be told why and what to set, not just that the
-// enum is wrong.
-func TestValidateDockerRunModeRemoved(t *testing.T) {
-	c := validContainerConfig(Docker, "yes")
-	c.Docker.Mode = "run"
-	err := c.Validate(Docker)
-	if err == nil || !strings.Contains(err.Error(), "was removed") {
-		t.Fatalf("expected the run-mode removal error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "docker.compose") {
-		t.Errorf("removal error should mention docker.compose, got: %v", err)
-	}
-}
-
 // TestValidateDockerComposeCommand covers the compose command as an exec-bound
-// Command, the same boundary check k8s.runtime and docker.runtime get.
+// Command, the same boundary check kubernetes.runtime and docker.runtime get.
 func TestValidateDockerComposeCommand(t *testing.T) {
 	c := validContainerConfig(Docker, "yes")
 	c.Docker.Compose = Command{"docker", ""}
@@ -1135,7 +1134,7 @@ image:
   tag: latest
 admin:
   pass: s3cret
-k8s:
+kubernetes:
   name: mybroker
   namespace: sol-ns
   storage:
@@ -1170,6 +1169,22 @@ func TestLoadParseError(t *testing.T) {
 	_, err := Load(path, K8s)
 	if err == nil || !strings.Contains(err.Error(), "parse env file") {
 		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+// TestLoadRejectsTheOldK8sSection pins the deliberate hard break: the platform
+// section is `kubernetes:`, and the old `k8s:` spelling is not aliased. Strict
+// decoding is what refuses it, so the test asserts the ordinary unknown-key error
+// rather than a bespoke hint -- there is no migration path in the loader, and an
+// env file that quietly kept working under both names would make the rename a lie.
+func TestLoadRejectsTheOldK8sSection(t *testing.T) {
+	path := writeTempYAML(t, "k8s:\n  name: b\n  namespace: ns\n")
+	_, err := Load(path, K8s)
+	if err == nil {
+		t.Fatal("the old k8s: section should not load")
+	}
+	if !strings.Contains(err.Error(), "parse env file") || !strings.Contains(err.Error(), "k8s") {
+		t.Errorf("error %q should be the strict-decoding error naming the k8s field", err.Error())
 	}
 }
 
@@ -1246,7 +1261,7 @@ func TestLoadValidationError(t *testing.T) {
 func minimalK8s(body string) string {
 	return "redundancy: \"no\"\n" +
 		"image:\n  repo: solace/broker\n  tag: \"10.26.0\"\n" +
-		"k8s:\n  name: b\n  namespace: ns\n  storage:\n    msgNode: 10Gi\n" +
+		"kubernetes:\n  name: b\n  namespace: ns\n  storage:\n    msgNode: 10Gi\n" +
 		body
 }
 

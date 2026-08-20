@@ -88,6 +88,18 @@ task_tidy() { cap go mod tidy; }
 task_vet()  { cap go vet ./...; }
 task_test() { cap go test "${RACE_FLAG[@]}" -count=1 ./...; }
 
+# task_regen rewrites the committed goldens from the code that generates them.
+# Deliberately NOT in `all` or `full`: those gate, and a gate that silently
+# rewrote the thing it is comparing against could never fail. `test` is what
+# reports a stale golden; this is what you run once you have decided the new
+# output is correct.
+task_regen() {
+  cap go test ./internal/cli -update &&
+    cap go test ./internal/convert -update &&
+    cap go test ./internal/render -update &&
+    cap go test ./internal/k8s -update
+}
+
 # build_one <os> <arch> -- compile the CLI for one target into dist/. The
 # target lands in the binary name because the release job merges every leg
 # with merge-multiple: identical names would silently overwrite.
@@ -178,6 +190,10 @@ Tasks:
            pick the target, unset means host; stamps \`solace-util version\`
            from git describe (falls back to "dev")
   test     go test ${RACE_FLAG[*]:-} -count=1 ./...
+  regen    rewrite the committed goldens (docs/commands.md and the render/k8s/
+           convert testdata) from the code that generates them. Run it when
+           \`test\` reports one stale AND the new output is what you wanted.
+           Deliberately not in all/full: a gate must not rewrite what it checks
   cov      coverage profile -> coverage/coverage.html + printed total
   scan     govulncheck (fatal on a fixable vulnerability this module calls;
            one with no released fix warns and passes)

@@ -40,14 +40,20 @@ replication:
     - "host1:port1"
     - "host2:port2"
 
-k8s:
+broker:
+  cliScriptsFolder: cliscripts
+  diagDir: "/path/to/diag-configs/dir"
+  domainCerts:
+    folder: "/path/to/domain/ca"
+    files:
+      CERT_NAME: cert.crt
+
+kubernetes:
   runtime: "kubectl --kubeconfig /home/localadmin/.kubeconfig-dev"
   name: solace-broker
   namespace: solace-namespace
   adminSecret: solace-cli-secret
   updateStrategy: automatedRolling
-  cliScriptsFolder: cliscripts
-  diagDir: "/path/to/diag-configs/dir"
   storage:
     class: solace-storage-class
     msgNode: "16100Mi"
@@ -61,7 +67,3 @@ k8s:
     antiAffinityNamespaces:
       - solace-namespace
     antiAffinityWeight: 100
-  domainCerts:
-    folder: "/path/to/domain/ca"
-    files:
-      CERT_NAME: cert.crt

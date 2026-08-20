@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
-// writeRuntimeEnv writes a standalone env whose k8s.runtime is the given command,
+// writeRuntimeEnv writes a standalone env whose kubernetes.runtime is the given command,
 // so a test can drive the whole CLI -- flag parsing, config.Load, Validate, and the
 // executors -- against one hostile or wrapped value.
 func writeRuntimeEnv(t *testing.T, runtime string) string {
@@ -16,7 +18,7 @@ func writeRuntimeEnv(t *testing.T, runtime string) string {
 	doc := "redundancy: no\n" +
 		"image:\n  repo: solace/solace-pubsub-standard\n  tag: \"10.10.1.35\"\n" +
 		"admin:\n  pass: " + smokeAdminPass + "\n" +
-		"k8s:\n  name: broker\n  namespace: solace\n  runtime: " + runtime + "\n" +
+		"kubernetes:\n  name: broker\n  namespace: solace\n  runtime: " + runtime + "\n" +
 		"  storage:\n    msgNode: 30Gi\n"
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatalf("writing env: %v", err)
@@ -24,23 +26,43 @@ func writeRuntimeEnv(t *testing.T, runtime string) string {
 	return path
 }
 
-// TestAllowCommandIsRegisteredOnPlatformTrees: the escape hatch reaches every verb
-// that can execute, and only through the platform subtrees. Registering it on root
-// would put it on `solace-util convert`, which loads no config and runs no platform CLI.
-func TestAllowCommandIsRegisteredOnPlatformTrees(t *testing.T) {
+// TestAllowCommandIsRegisteredWhereItExecutes: the escape hatch reaches every
+// command that can execute. The platform subtrees that used to each carry it as a
+// shared PersistentFlag are gone -- the tree is flat now -- so wireExec puts the
+// flag on the command itself (helpers.go addAllowCommandFlag), and this walks the
+// whole tree checking it directly rather than checking three subtree attachment
+// points.
+//
+// The flag belongs to each command that executes because that is the unit the
+// operator is approving a binary for. Root is the wrong place for the same reason
+// it always was: `solace-util convert` hangs off root too, loads no env file, and
+// runs no platform CLI, so a root-level flag would offer it somewhere it can never
+// apply.
+func TestAllowCommandIsRegisteredWhereItExecutes(t *testing.T) {
 	root := newRootCmd(&App{})
-	for _, platform := range []string{"k8s", "docker", "podman"} {
-		cmd := findCmd(t, root, platform)
-		if cmd.PersistentFlags().Lookup("allow-command") == nil {
-			t.Errorf("%s subtree does not declare --allow-command", platform)
-		}
-		// Inherited by the leaves, which is where execution happens.
-		if findCmd(t, root, platform, "deploy").InheritedFlags().Lookup("allow-command") == nil {
-			t.Errorf("%s deploy does not inherit --allow-command", platform)
-		}
+	exempt := map[*cobra.Command]bool{
+		findCmd(t, root, "convert"):    true,
+		findCmd(t, root, "version"):    true,
+		findCmd(t, root, "auto-complete"): true,
 	}
+	walkCommands(root, 0, func(c *cobra.Command, _ int) {
+		if c.RunE == nil || exempt[c] {
+			return
+		}
+		// Verb groups are runnable only to print help or reject an unknown noun;
+		// they execute nothing, so there is no binary for --allow-command to approve.
+		if c.Annotations[groupAnnotation] == "true" {
+			return
+		}
+		if p := c.Parent(); p != nil && exempt[p] {
+			return // the completion subtree's own shells (bash, zsh, ...)
+		}
+		if c.Flags().Lookup("allow-command") == nil {
+			t.Errorf("%s has RunE but no --allow-command flag", c.CommandPath())
+		}
+	})
 	if root.PersistentFlags().Lookup("allow-command") != nil {
-		t.Error("--allow-command is a root persistent flag; it must be scoped to the platform trees")
+		t.Error("--allow-command is a root persistent flag; it must be scoped to each command that executes")
 	}
 	if _, err := runRoot(t, []string{"convert", "--allow-command", "lima", "somefile"}); err == nil {
 		t.Error("`solace-util convert --allow-command` should be a usage error: convert runs no platform CLI")
@@ -52,7 +74,7 @@ func TestAllowCommandIsRegisteredOnPlatformTrees(t *testing.T) {
 func TestAllowCommandIsRepeatable(t *testing.T) {
 	app := &App{}
 	root := newRootCmd(app)
-	root.SetArgs([]string{"k8s", "check", "--allow-command", "lima", "--allow-command", "microk8s",
+	root.SetArgs([]string{"check", "deploy", "--allow-command", "lima", "--allow-command", "microk8s",
 		"--env", "does-not-exist.yaml"})
 	_ = root.Execute() // fails on the missing env; the flag values are what matter
 	if len(app.AllowCommand) != 2 || app.AllowCommand[0] != "lima" || app.AllowCommand[1] != "microk8s" {
@@ -66,13 +88,13 @@ func TestAllowCommandIsRepeatable(t *testing.T) {
 func TestAllowCommandApprovesAWrappedRuntime(t *testing.T) {
 	env := writeRuntimeEnv(t, "microk8s kubectl")
 
-	if _, err := runRoot(t, []string{"k8s", "check", "--dry-run", "--env", env}); err == nil {
+	if _, err := runRootWith(t, []string{"check", "deploy", "--platform", "kubernetes", "--env", env}, echoRunner); err == nil {
 		t.Fatal("an unapproved `microk8s kubectl` must be refused")
 	} else if !strings.Contains(err.Error(), "--allow-command microk8s") {
 		t.Errorf("error = %v, want it to name the escape hatch", err)
 	}
 
-	out, err := runRoot(t, []string{"k8s", "check", "--dry-run", "--allow-command", "microk8s", "--env", env})
+	out, err := runRootWith(t, []string{"check", "deploy", "--allow-command", "microk8s", "--platform", "kubernetes", "--env", env}, echoRunner)
 	if err != nil {
 		t.Fatalf("an approved `microk8s kubectl` must run: %v", err)
 	}
@@ -103,7 +125,7 @@ func TestAllowCommandRejectsBadValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := runRoot(t, withEnv("k8s", "check", "--dry-run", "--allow-command", tc.value))
+			_, err := runRoot(t, withEnv("check", "deploy", "--allow-command", tc.value, "--platform", "kubernetes"))
 			if err == nil {
 				t.Fatalf("--allow-command %q must be a usage error", tc.value)
 			}
@@ -114,19 +136,19 @@ func TestAllowCommandRejectsBadValues(t *testing.T) {
 	}
 }
 
-// TestAllowCommandRejectedWhereNothingExecutes: the flag is meaningless on a render
-// -- `gen`, or any verb under a --gen-*-only flag -- and saying so is what keeps it
-// from being learned as harmless boilerplate, which is how it ends up pasted into a
+// TestAllowCommandRejectedWhereNothingExecutes: the flag is meaningless on a
+// render -- every leaf under `generate` -- and saying so is what keeps it from
+// being learned as harmless boilerplate, which is how it ends up pasted into a
 // wrapper script that DOES execute.
 func TestAllowCommandRejectedWhereNothingExecutes(t *testing.T) {
 	cases := [][]string{
-		{"k8s", "gen", "broker", "--allow-command", "lima"},
-		{"docker", "gen", "--allow-command", "lima"},
-		{"k8s", "deploy", "--gen-only", "--allow-command", "lima"},
-		{"docker", "deploy", "--gen-only", "--allow-command", "lima"},
+		{"generate", "broker", "--allow-command", "lima", "--platform", "kubernetes"},
+		{"generate", "operator", "--allow-command", "lima", "--platform", "kubernetes"},
+		{"generate", "secrets", "--allow-command", "lima", "--platform", "docker"},
+		{"generate", "broker", "--allow-command", "lima", "--platform", "podman"},
 	}
 	for _, args := range cases {
-		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			_, err := runRoot(t, withEnv(args...))
 			if err == nil {
 				t.Fatal("--allow-command must be refused where nothing executes")
@@ -145,11 +167,11 @@ func TestEscalationIsRefusedEndToEnd(t *testing.T) {
 	env := writeRuntimeEnv(t, "sudo kubectl")
 
 	// Without the hatch: an unlisted binary.
-	if _, err := runRoot(t, []string{"k8s", "status", "--dry-run", "--env", env}); err == nil {
+	if _, err := runRootWith(t, []string{"status", "broker", "--platform", "kubernetes", "--env", env}, echoRunner); err == nil {
 		t.Fatal("`sudo kubectl` was accepted")
 	}
 	// With the hatch: refused at the flag, before the config is even read.
-	_, err := runRoot(t, []string{"k8s", "status", "--dry-run", "--allow-command", "sudo", "--env", env})
+	_, err := runRootWith(t, []string{"status", "broker", "--allow-command", "sudo", "--platform", "kubernetes", "--env", env}, echoRunner)
 	if err == nil {
 		t.Fatal("--allow-command sudo was accepted")
 	}
@@ -167,18 +189,18 @@ func TestEscalationIsRefusedEndToEnd(t *testing.T) {
 func TestHostileRuntimeIsRefusedByEveryVerb(t *testing.T) {
 	env := writeRuntimeEnv(t, "curl")
 	verbs := [][]string{
-		{"k8s", "check"},
-		{"k8s", "status"},
-		{"k8s", "deploy"},
-		{"k8s", "delete", "--yes"},
-		{"k8s", "show-all"},
-		{"k8s", "logs"},
+		{"check", "deploy"},
+		{"status", "broker"},
+		{"deploy", "broker"},
+		{"remove", "broker", "--no-prompt"},
+		{"status", "broker", "--all"},
+		{"logs", "broker"},
 	}
 	for _, verb := range verbs {
 		t.Run(strings.Join(verb, " "), func(t *testing.T) {
-			_, err := runRoot(t, append(append([]string{}, verb...), "--dry-run", "--env", env))
+			_, err := runRootWith(t, append(append([]string{}, verb...), "--platform", "kubernetes", "--env", env), echoRunner)
 			if err == nil {
-				t.Fatalf("`solace %s` ran with an unlisted binary as k8s.runtime", strings.Join(verb, " "))
+				t.Fatalf("`solace %s` ran with an unlisted binary as kubernetes.runtime", strings.Join(verb, " "))
 			}
 			if !strings.Contains(err.Error(), "is not a binary this tool runs") {
 				t.Errorf("error = %v, want the allowlist refusal", err)
@@ -194,9 +216,9 @@ func TestSmuggledSubcommandIsRefused(t *testing.T) {
 	for _, runtime := range []string{"kubectl delete", "kubectl delete ns prod", "kubectl --"} {
 		t.Run(runtime, func(t *testing.T) {
 			env := writeRuntimeEnv(t, runtime)
-			_, err := runRoot(t, []string{"k8s", "status", "--dry-run", "--env", env})
+			_, err := runRootWith(t, []string{"status", "broker", "--platform", "kubernetes", "--env", env}, echoRunner)
 			if err == nil {
-				t.Fatalf("k8s.runtime %q was accepted", runtime)
+				t.Fatalf("kubernetes.runtime %q was accepted", runtime)
 			}
 			msg := err.Error()
 			if !strings.Contains(msg, "subcommand position") && !strings.Contains(msg, `"--" is not allowed`) {
@@ -212,9 +234,9 @@ func TestPathRuntimeIsRefused(t *testing.T) {
 	for _, runtime := range []string{"./kubectl", "/usr/local/bin/kubectl", "../kubectl"} {
 		t.Run(runtime, func(t *testing.T) {
 			env := writeRuntimeEnv(t, runtime)
-			_, err := runRoot(t, []string{"k8s", "status", "--dry-run", "--env", env})
+			_, err := runRootWith(t, []string{"status", "broker", "--platform", "kubernetes", "--env", env}, echoRunner)
 			if err == nil {
-				t.Fatalf("k8s.runtime %q was accepted", runtime)
+				t.Fatalf("kubernetes.runtime %q was accepted", runtime)
 			}
 			if !strings.Contains(err.Error(), "must be a bare binary name, not a path") {
 				t.Errorf("error = %v, want the bare-name refusal", err)
@@ -230,12 +252,12 @@ func TestPathRuntimeIsRefused(t *testing.T) {
 func TestGenPathNeverExecutes(t *testing.T) {
 	app := &App{}
 	root := newRootCmd(app)
-	root.SetArgs([]string{"k8s", "gen", "broker", "--env", writeRuntimeEnv(t, "curl")})
+	root.SetArgs([]string{"generate", "broker", "--platform", "kubernetes", "--env", writeRuntimeEnv(t, "curl")})
 	root.SetOut(nil)
 	root.SetErr(nil)
 	_ = captureStdout(t, func() { _ = root.Execute() })
 	// Whatever the outcome, no runner was ever handed a command: App.load builds
-	// the Runner, and nothing under `gen` calls it.
+	// the Runner, and nothing under `generate` calls it.
 	if rr, ok := app.Runner.(*opRunner); ok && len(rr.calls) > 0 {
 		t.Errorf("the gen path executed %d command(s): %+v", len(rr.calls), rr.calls)
 	}

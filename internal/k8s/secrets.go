@@ -60,7 +60,7 @@ func AdminSecret(cfg *config.Config) ([]byte, error) {
 		return nil, fmt.Errorf("admin.pass must be set to build the admin secret")
 	}
 	if cfg.K8s.AdminSecret == "" {
-		return nil, fmt.Errorf("k8s.adminSecret (the secret name) must be set")
+		return nil, fmt.Errorf("kubernetes.adminSecret (the secret name) must be set")
 	}
 	data := map[string][]byte{
 		"username_admin_password": []byte(cfg.Admin.Pass),

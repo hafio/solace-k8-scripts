@@ -28,6 +28,12 @@ func TestPreflightRunsBeforeAnything(t *testing.T) {
 		{"docker delete", config.Docker, func(m *Manager) error { return m.Delete(context.Background(), false) }},
 		{"podman delete", config.Podman, func(m *Manager) error { return m.Delete(context.Background(), false) }},
 		{"prep host", config.Docker, func(m *Manager) error { return m.PrepHost(context.Background()) }},
+		{"docker start", config.Docker, func(m *Manager) error { return m.Start(context.Background()) }},
+		{"podman start", config.Podman, func(m *Manager) error { return m.Start(context.Background()) }},
+		{"docker stop", config.Docker, func(m *Manager) error { return m.Stop(context.Background()) }},
+		{"podman stop", config.Podman, func(m *Manager) error { return m.Stop(context.Background()) }},
+		{"docker restart", config.Docker, func(m *Manager) error { return m.Restart(context.Background()) }},
+		{"podman restart", config.Podman, func(m *Manager) error { return m.Restart(context.Background()) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,6 +89,34 @@ func TestPreflightFailureStopsTheDeploy(t *testing.T) {
 	}
 	if len(rr.calls) != 1 {
 		t.Errorf("%d calls made after a failed preflight, want only the probe: %+v", len(rr.calls), rr.calls)
+	}
+}
+
+// TestPreflightFailureStopsLifecycle: an unreachable engine must stop Start, Stop
+// and Restart before they touch systemd or the runtime -- the same ordering
+// guarantee Deploy/Delete/PrepHost already have (TestPreflightFailureStopsTheDeploy).
+// These act on an already-deployed broker rather than writing anything, so the
+// only postcondition worth pinning is that nothing beyond the probe ran.
+func TestPreflightFailureStopsLifecycle(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(*Manager) error
+	}{
+		{"start", func(m *Manager) error { return m.Start(context.Background()) }},
+		{"stop", func(m *Manager) error { return m.Stop(context.Background()) }},
+		{"restart", func(m *Manager) error { return m.Restart(context.Background()) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, rr, _ := newCapMgr(ctrCfg(config.Docker, "no"), config.Docker)
+			rr.outFail = failOn("info")
+			if err := tc.call(m); err == nil {
+				t.Fatalf("%s must fail when the engine cannot be reached", tc.name)
+			}
+			if len(rr.calls) != 1 {
+				t.Errorf("%d call(s) made after a failed preflight, want only the probe: %+v", len(rr.calls), rr.calls)
+			}
+		})
 	}
 }
 

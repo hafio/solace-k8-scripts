@@ -126,12 +126,12 @@ func requireKeyValue(groups []keyValueEntries) error {
 
 func (c *Config) validateK8s() error {
 	missing := requireAll(map[string]string{
-		"k8s.name":            c.K8s.Name,
-		"k8s.namespace":       c.K8s.Namespace,
-		"image.repo":          c.Image.Repo,
-		"image.tag":           c.Image.Tag,
-		"k8s.storage.msgNode": c.K8s.Storage.MsgNode,
-		"admin.pass":          c.Admin.Pass, // hardening: no hardcoded default password
+		"kubernetes.name":            c.K8s.Name,
+		"kubernetes.namespace":       c.K8s.Namespace,
+		"image.repo":                 c.Image.Repo,
+		"image.tag":                  c.Image.Tag,
+		"kubernetes.storage.msgNode": c.K8s.Storage.MsgNode,
+		"admin.pass":                 c.Admin.Pass, // hardening: no hardcoded default password
 	})
 	if len(missing) > 0 {
 		return missingErr(missing)
@@ -139,9 +139,9 @@ func (c *Config) validateK8s() error {
 	if c.K8s.MsgNode.CPU != "" {
 		// Removed rather than ignored: a stale cpu: in an env file is a sizing
 		// decision the operator believes is in effect, so it has to be seen.
-		return fmt.Errorf("k8s.msgNode.cpu was removed; broker CPU is fixed by the scaling tier and "+
+		return fmt.Errorf("kubernetes.msgNode.cpu was removed; broker CPU is fixed by the scaling tier and "+
 			"derived from scaling.maxConnections (one of %s) -- drop the key. "+
-			"k8s.msgNode.mem is unaffected: it still overrides the tier's default memory", scalingTierList)
+			"kubernetes.msgNode.mem is unaffected: it still overrides the tier's default memory", scalingTierList)
 	}
 	if u := c.Admin.User; u != "" && u != "admin" {
 		// Rejected rather than ignored, for the same reason as msgNode.cpu above: this is
@@ -152,13 +152,13 @@ func (c *Config) validateK8s() error {
 		// fills "admin", so empty means "will be defaulted" as it does for every other
 		// setDefault field.
 		return fmt.Errorf("admin.user %q is not supported on Kubernetes: the operator reads the fixed "+
-			"username_admin_password key out of k8s.adminSecret, so the broker admin user is always "+
+			"username_admin_password key out of kubernetes.adminSecret, so the broker admin user is always "+
 			"'admin' -- drop the key (it applies to docker and podman, where the username is yours to choose)", u)
 	}
 	switch c.K8s.UpdateStrategy {
 	case "automatedRolling", "manualPodRestart":
 	default:
-		return fmt.Errorf("k8s.updateStrategy must be 'automatedRolling' or 'manualPodRestart' (got: %q)", c.K8s.UpdateStrategy)
+		return fmt.Errorf("kubernetes.updateStrategy must be 'automatedRolling' or 'manualPodRestart' (got: %q)", c.K8s.UpdateStrategy)
 	}
 	switch c.Image.PullPolicy {
 	case "", "Always", "IfNotPresent", "Never":
@@ -167,10 +167,10 @@ func (c *Config) validateK8s() error {
 	}
 	pl := c.K8s.Placement
 	if err := requireKeyValue([]keyValueEntries{
-		{"k8s.loadBalancer.annotations", c.K8s.LoadBalancer.Annotations},
-		{"k8s.placement.labelsPrimary", pl.LabelsPrimary},
-		{"k8s.placement.labelsBackup", pl.LabelsBackup},
-		{"k8s.placement.labelsMonitor", pl.LabelsMonitor},
+		{"kubernetes.loadBalancer.annotations", c.K8s.LoadBalancer.Annotations},
+		{"kubernetes.placement.labelsPrimary", pl.LabelsPrimary},
+		{"kubernetes.placement.labelsBackup", pl.LabelsBackup},
+		{"kubernetes.placement.labelsMonitor", pl.LabelsMonitor},
 	}); err != nil {
 		return err
 	}
@@ -290,19 +290,19 @@ var nodeMatchOperators = map[string]bool{
 // with a far less obvious message, or a term with no topology to spread over.
 func validatePlacementAffinity(pl Placement) error {
 	for i, term := range pl.NodeAffinity.Preferred {
-		if err := validateMatchExprs(fmt.Sprintf("k8s.placement.nodeAffinity.preferred[%d].match", i), term.Match); err != nil {
+		if err := validateMatchExprs(fmt.Sprintf("kubernetes.placement.nodeAffinity.preferred[%d].match", i), term.Match); err != nil {
 			return err
 		}
 	}
-	if err := validateMatchExprs("k8s.placement.nodeAffinity.required", pl.NodeAffinity.Required); err != nil {
+	if err := validateMatchExprs("kubernetes.placement.nodeAffinity.required", pl.NodeAffinity.Required); err != nil {
 		return err
 	}
 	for _, group := range []struct {
 		field string
 		terms []PodAffinityTerm
 	}{
-		{"k8s.placement.podAffinity", pl.PodAffinity},
-		{"k8s.placement.podAntiAffinity", pl.PodAntiAffinity},
+		{"kubernetes.placement.podAffinity", pl.PodAffinity},
+		{"kubernetes.placement.podAntiAffinity", pl.PodAntiAffinity},
 	} {
 		for i, term := range group.terms {
 			if strings.TrimSpace(term.TopologyKey) == "" {
@@ -374,11 +374,11 @@ func (c *Config) validateContainer(p Platform) error {
 			platformKey(p), u)
 	}
 	if m := cb.Mem; m != "" && !containerMemRE.MatchString(m) {
-		// The likely mistake is copying k8s.msgNode.mem's Kubernetes quantity
+		// The likely mistake is copying kubernetes.msgNode.mem's Kubernetes quantity
 		// across; the engines reject "Mi"/"Gi", and catching it here beats a
 		// compose parse error at deploy time.
 		return fmt.Errorf("%s.container.mem %q is invalid: docker and podman take an integer followed by "+
-			"b, k, m or g (e.g. 6898m), not the Mi/Gi suffix k8s.msgNode.mem uses", platformKey(p), m)
+			"b, k, m or g (e.g. 6898m), not the Mi/Gi suffix kubernetes.msgNode.mem uses", platformKey(p), m)
 	}
 	if err := c.validateAdditionalUsers(p); err != nil {
 		return err
@@ -412,20 +412,6 @@ func (c *Config) validateContainer(p Platform) error {
 		return fmt.Errorf("%s.network.mode must be 'host' or 'bridge' (got: %q)", platformKey(p), net.Mode)
 	}
 
-	if p == Docker {
-		switch c.Docker.Mode {
-		case "compose":
-		case "run":
-			// run mode was removed: a bare `docker run` cannot recreate an existing
-			// container, so redeploying after an image.tag bump hard-failed on a
-			// name conflict where compose recreates cleanly.
-			return fmt.Errorf("docker.mode 'run' was removed; docker deploys through compose only -- " +
-				"set docker.mode: compose (or drop the key), and set docker.compose if this host " +
-				"uses the standalone 'docker-compose' binary")
-		default:
-			return fmt.Errorf("docker.mode must be 'compose' (got: %q)", c.Docker.Mode)
-		}
-	}
 	return nil
 }
 

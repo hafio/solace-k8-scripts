@@ -186,8 +186,8 @@ func TestConvertLegacyK8sEnv(t *testing.T) {
 		t.Errorf("tls.cas = %v", c.TLS.CAs)
 	}
 	// Associative array.
-	if c.K8s.DomainCerts.Files["CERT_NAME"] != "cert.crt" {
-		t.Errorf("domainCerts.files = %v", c.K8s.DomainCerts.Files)
+	if c.Broker.DomainCerts.Files["CERT_NAME"] != "cert.crt" {
+		t.Errorf("domainCerts.files = %v", c.Broker.DomainCerts.Files)
 	}
 	// ${SOLBK_NS} expanded from the earlier assignment.
 	if len(c.K8s.Placement.AntiAffinityNS) != 1 || c.K8s.Placement.AntiAffinityNS[0] != "solace-namespace" {
@@ -208,10 +208,10 @@ func TestConvertLegacyK8sEnv(t *testing.T) {
 		t.Errorf("an empty PSK should be omitted:\n%s", res.YAML)
 	}
 	// KUBE was expanded unquoted by the bash scripts, so a whole kubectl profile
-	// has to survive the conversion as k8s.runtime, split into argv.
+	// has to survive the conversion as kubernetes.runtime, split into argv.
 	wantRuntime := config.Command{"kubectl", "--kubeconfig", "/home/localadmin/.kubeconfig-dev"}
 	if c.K8s.Runtime.String() != wantRuntime.String() {
-		t.Errorf("k8s.runtime = %v, want %v", c.K8s.Runtime, wantRuntime)
+		t.Errorf("kubernetes.runtime = %v, want %v", c.K8s.Runtime, wantRuntime)
 	}
 	// EXDIR is bash plumbing; every other variable in the file is mapped, so the
 	// only warning allowed here is the replication advisory -- this fixture does set
@@ -397,25 +397,27 @@ func TestConvertKubeMapsToK8sRuntime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := convertOK(t, k8sEnv+tc.kube+"\n", config.K8s)
 			if got := strictDecode(t, res.YAML).K8s.Runtime; got.String() != tc.want {
-				t.Errorf("k8s.runtime = %q, want %q", got, tc.want)
+				t.Errorf("kubernetes.runtime = %q, want %q", got, tc.want)
 			}
 			if hasWarning(res.Warnings, "KUBE") {
-				t.Errorf("KUBE maps to k8s.runtime now and must not warn; warnings = %v", res.Warnings)
+				t.Errorf("KUBE maps to kubernetes.runtime now and must not warn; warnings = %v", res.Warnings)
 			}
 		})
 	}
 }
 
 // TestConvertKubeEchoIsDropped pins the one KUBE value that must not carry over:
-// "echo" was the bash dry-run trick, and as a real k8s.runtime it would turn
-// every cluster call into a no-op whose stdout the parsing steps then misread.
+// "echo" was the bash trick for previewing commands, and as a real
+// kubernetes.runtime it would turn every cluster call into a no-op whose stdout the
+// parsing steps then misread. The warning has to name what replaced it, which is
+// `generate` -- rendering the artifact rather than faking the command away.
 func TestConvertKubeEchoIsDropped(t *testing.T) {
 	res := convertOK(t, k8sEnv+"KUBE=\"echo\"\n", config.K8s)
-	if !hasWarning(res.Warnings, "--dry-run") {
-		t.Errorf("KUBE=echo should warn and point at --dry-run; warnings = %v", res.Warnings)
+	if !hasWarning(res.Warnings, "generate") {
+		t.Errorf("KUBE=echo should warn and point at generate; warnings = %v", res.Warnings)
 	}
 	if got := strictDecode(t, res.YAML).K8s.Runtime; len(got) != 0 {
-		t.Errorf("k8s.runtime = %q, want it omitted so the kubectl default applies", got)
+		t.Errorf("kubernetes.runtime = %q, want it omitted so the kubectl default applies", got)
 	}
 }
 
@@ -427,7 +429,7 @@ func TestConvertKubeSilentOnContainerPlatform(t *testing.T) {
 		t.Errorf("KUBE must be consumed silently on a container platform; warnings = %v", res.Warnings)
 	}
 	if got := strictDecode(t, res.YAML).K8s.Runtime; len(got) != 0 {
-		t.Errorf("a container conversion must not emit k8s.runtime, got %q", got)
+		t.Errorf("a container conversion must not emit kubernetes.runtime, got %q", got)
 	}
 }
 

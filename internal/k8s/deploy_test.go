@@ -1,11 +1,21 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 )
+
+// logBuf builds a step-logger func that appends every formatted line to a
+// buffer, the container package's pattern for capturing progress text -- this
+// package's tests otherwise pass Log: nil and never inspect it.
+func logBuf() (func(string, ...any), *bytes.Buffer) {
+	buf := &bytes.Buffer{}
+	return func(f string, a ...any) { fmt.Fprintf(buf, f+"\n", a...) }, buf
+}
 
 func TestDeployBrokerApply(t *testing.T) {
 	cfg := loadK8s(t)
@@ -195,4 +205,50 @@ func TestDeleteBrokerPurgeSwallowsPVCError(t *testing.T) {
 	if calls := rr.afterPreflight(t, "delete", brokerResource); len(calls) != 4 {
 		t.Fatalf("all PVC deletes should still be attempted; got %d calls after the probe, want 4", len(calls))
 	}
+}
+
+// TestDeleteBrokerLogsPVCOutcome pins the explicit, both-directions logging
+// DeleteBroker now does: which of the two layers -- the CR, the data -- survived
+// a removal is the fact an operator most needs from this command's output, so it
+// is stated rather than left to be inferred from the argv.
+func TestDeleteBrokerLogsPVCOutcome(t *testing.T) {
+	t.Run("kept", func(t *testing.T) {
+		cfg := loadK8s(t)
+		rr := &recRunner{}
+		log, buf := logBuf()
+		c := NewCluster(rr, cfg, log, nil)
+		if err := c.DeleteBroker(context.Background(), false); err != nil {
+			t.Fatalf("DeleteBroker: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "PVCs kept") || !strings.Contains(out, "--delete-data") {
+			t.Errorf("DeleteBroker(purge=false) should log that PVCs were kept and name the flag to remove them:\n%s", out)
+		}
+		if strings.Contains(out, "deleting PVC") {
+			t.Errorf("DeleteBroker(purge=false) must not log a per-PVC delete line:\n%s", out)
+		}
+	})
+	t.Run("deleted", func(t *testing.T) {
+		cfg := loadK8s(t) // redundancy: yes -> three PVCs, three per-role log lines
+		rr := &recRunner{}
+		log, buf := logBuf()
+		c := NewCluster(rr, cfg, log, nil)
+		if err := c.DeleteBroker(context.Background(), true); err != nil {
+			t.Fatalf("DeleteBroker: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{
+			"deleting PVC data-dev-broker-pubsubplus-p-0",
+			"deleting PVC data-dev-broker-pubsubplus-b-0",
+			"deleting PVC data-dev-broker-pubsubplus-m-0",
+			"PVCs deleted",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("DeleteBroker(purge=true) missing log line %q:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, "PVCs kept") {
+			t.Errorf("DeleteBroker(purge=true) must not also log the kept-PVCs line:\n%s", out)
+		}
+	})
 }

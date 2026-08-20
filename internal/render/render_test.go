@@ -71,7 +71,7 @@ func TestGolden(t *testing.T) {
 			gen:  func(t *testing.T) []byte { return BrokerCR(load(t, config.K8s)) },
 		},
 		{
-			// The sample leaves k8s.ports commented, so the case above renders the
+			// The sample leaves kubernetes.ports commented, so the case above renders the
 			// 16 defaults. An explicit list here covers the other branch of
 			// ApplyDefaults' port handling, and with it the two forms only a custom
 			// list uses: a container port differing from the service port, and an
@@ -247,17 +247,6 @@ func TestGolden(t *testing.T) {
 			},
 		},
 		{
-			// The env file is the same pairs in env-file framing, and the whole
-			// point is that it is printable -- so the golden also pins the absence
-			// of the admin password and the PSK.
-			name: "container env file primary HA",
-			file: "container_envfile_primary.golden",
-			gen: func(t *testing.T) []byte {
-				c := load(t, config.Podman)
-				return EnvFile(c, c.ResolveNode(config.Primary))
-			},
-		},
-		{
 			name: "podman secret script HA",
 			file: "podman_secret_script.golden",
 			gen:  func(t *testing.T) []byte { return SecretScript(load(t, config.Podman), config.Podman) },
@@ -325,10 +314,8 @@ func TestArtifactsCarryNoSecrets(t *testing.T) {
 			artifacts["broker CR"] = BrokerCR(c)
 		case config.Podman:
 			artifacts["quadlet"] = Quadlet(c, id)
-			artifacts["env file"] = EnvFile(c, id)
 		default:
 			artifacts["compose"] = Compose(c, id)
-			artifacts["env file"] = EnvFile(c, id)
 		}
 		for name, body := range artifacts {
 			for _, secret := range secrets {

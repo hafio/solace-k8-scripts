@@ -31,8 +31,17 @@ Narrowing a run during development (not a substitute for the gate):
 go test ./internal/config -run TestResolveEnvPath -v
 ```
 
-Four packages carry golden files and accept `-update` to regenerate them. Only run it after
-eyeballing the diff -- the committed goldens are the reviewed expected output:
+Four packages carry golden files and accept `-update` to regenerate them. The `regen` task
+does all four; only run it after eyeballing the diff, since the committed goldens ARE the
+reviewed expected output:
+
+```
+./scripts/dev.sh regen        # or: .\scripts\dev.ps1 regen
+```
+
+`regen` is deliberately absent from `all` and `full`: those gate, and a gate that rewrote
+the thing it compares against could never fail. `test` is what reports a stale golden.
+The individual invocations behind it, when only one package needs rewriting:
 
 ```
 go test ./internal/render -update
@@ -46,25 +55,25 @@ test may point at it -- a fresh CI checkout has no such files.
 
 ## Summary
 
-32 test files, 602 test functions. `TestHelperProcess` in `internal/engine` is not a real
+35 test files, 650 test functions. `TestHelperProcess` in `internal/engine` is not a real
 test -- it is the os/exec helper-process shim, a no-op unless `GO_WANT_HELPER_PROCESS=1`.
 
 | Package | Files | Tests |
 | --- | --- | --- |
 | internal/broker | 4 | 135 |
-| internal/k8s | 11 | 98 |
-| internal/config | 4 | 97 |
-| internal/container | 4 | 93 |
-| internal/cli | 4 | 95 |
+| internal/cli | 6 | 120 |
+| internal/config | 5 | 103 |
+| internal/k8s | 11 | 105 |
+| internal/container | 4 | 102 |
 | internal/convert | 1 | 31 |
-| internal/engine | 2 | 25 |
+| internal/engine | 2 | 26 |
 | internal/render | 1 | 17 |
 | internal/tools/vulnjudge | 1 | 11 |
-| **Total** | **32** | **602** |
+| **Total** | **35** | **650** |
 
 ## Coverage
 
-Last recorded run, from `scripts/logs/cov.log` (2026-08-18 13:36), total **96.9%**. Re-run
+Last recorded run, from `scripts/logs/cov.log` (2026-08-19 14:18), total **96.9%**. Re-run
 `cov` after any change; these figures go stale the moment tests move, and the previous
 total is the floor the next run has to hold.
 
@@ -95,7 +104,8 @@ this artifact.
 
 Config loading, defaults, validation, and env-file resolution, plus the `Command`
 type behind the platform CLI overrides and the execution guard that decides what a
-`Command` may be, and the scaling block that sizes the broker on every platform. 97 tests across 4 files.
+`Command` may be, the scaling block that sizes the broker on every platform, and the
+platform vocabulary the CLI resolves against. 103 tests across 5 files.
 
 ### command_test.go
 
@@ -110,7 +120,7 @@ type behind the platform CLI overrides and the execution guard that decides what
 | `TestValidateProbeCommandAccepts` | The container health-check probe keeps the loose rules, because it runs inside the broker rather than here: a path, and a shell pipeline with metacharacters, both pass, as does an unset command. The field-by-field opposite of `TestCheckCommandRejects` |
 | `TestValidateProbeCommandRejects` | Even the probe rejects empty arguments and control characters (newline, NUL), naming the field and the offending index |
 | `TestValidateRejectsBadRuntime` | A malformed runtime fails `Validate` for all three platforms, ahead of the mandatory-field checks, so the message names the runtime rather than the fields also missing |
-| `TestRuntimeDefaults` | Defaults resolve to exactly one token with no leading args (`kubectl`/`docker`/`podman`), so existing argv is byte-identical; `k8s.runtime` is defaulted on every platform |
+| `TestRuntimeDefaults` | Defaults resolve to exactly one token with no leading args (`kubectl`/`docker`/`podman`), so existing argv is byte-identical; `kubernetes.runtime` is defaulted on every platform |
 | `TestRuntimeExplicitValueSurvivesDefaults` | A configured override is never overwritten by defaulting |
 
 ### execguard_test.go
@@ -142,6 +152,7 @@ validator and every executor enforce it from one definition.
 | Test | What it covers |
 | --- | --- |
 | `TestPlatformIsContainer` | `Platform.IsContainer` is true for docker/podman, false for k8s |
+| `TestPlatformConstantsMatchSchemaSections` | Each `Platform` constant value is also a top-level section key in `Config`, reflected off the yaml tags. The subtree name and `--platform` read the constant, but the tag is a separate literal, so this is the only thing tying the word an operator types to the block they edit |
 | `TestRedundancyEnabled` | Only the literal `yes` enables HA; `no`, empty, and junk do not |
 | `TestImageRef` | `Image.Ref` joins repo:tag, prefixing the registry only when set |
 | `TestParseRole` | Long and short role spellings parse, empty defaults to primary, junk errors |
@@ -154,13 +165,13 @@ validator and every executor enforce it from one definition.
 | `TestNetworkBlock` | Network block is selected per platform |
 | `TestApplyDefaultsK8s` | Every k8s default lands: redundancy, update strategy, admin secret, diag dir, CLI folder, storage, operator image/resources, scaling, ports, anti-affinity. Broker resources now come from the scaling tier instead: `msgNode.cpu` stays empty (it is the removal sentinel, not a value), `msgNode.mem` is the tier-100 default and `Scaling.CPU` its cores |
 | `TestApplyDefaultsK8sTLS` | TLS cert/key default only when `tls.serverSecret` is set |
-| `TestApplyDefaultsDocker` | Docker defaults (runtime, compose mode, the compose command derived from the runtime, host network, admin user, container name) plus the shared `k8s.*` fields containers reuse |
+| `TestApplyDefaultsDocker` | Docker defaults (runtime, compose mode, the compose command derived from the runtime, host network, admin user, container name) plus the shared `kubernetes.*` fields containers reuse |
 | `TestApplyDefaultsPodmanRootful` | Rootful podman gets the system quadlet dir, no `--user`, `multi-user.target` |
 | `TestApplyDefaultsPodmanRootlessXDG` | Rootless quadlet dir derives from `XDG_CONFIG_HOME`, with `--user` and `default.target` |
 | `TestApplyDefaultsPodmanRootlessHomeDir` | Empty `XDG_CONFIG_HOME` falls back to the user home dir branch |
 | `TestValidateK8sValid` | A fully populated k8s config validates clean |
 | `TestValidateK8sMissingMandatory` | Every missing mandatory k8s field is named in one message, exact wording pinned |
-| `TestValidateK8sBadUpdateStrategy` | `k8s.updateStrategy` enum is rejected loud |
+| `TestValidateK8sBadUpdateStrategy` | `kubernetes.updateStrategy` enum is rejected loud |
 | `TestValidateK8sAdminUserFixed` | Mirrors `TestValidateK8sMsgNodeCPURemoved` for a credential: the operator reads the fixed `username_admin_password` key, so a non-`admin` `admin.user` was silently ignored on Kubernetes and is now refused naming that key. `"admin"` and unset both stay legal (unset means `ApplyDefaults` fills it), and docker still accepts any name -- there the username drives the access-level setting, the password file and the SEMP login |
 | `TestValidateContainerHA` | A valid HA container config validates for both docker and podman |
 | `TestValidateContainerStandalone` | Standalone only requires `nodes.primary.name` among the node fields |
@@ -176,8 +187,6 @@ validator and every executor enforce it from one definition.
 | `TestImageTagVersion` | Tag parsing behind the health-check gate: dotted versions, a `-rc1` suffix, and a two-part tag parse; `latest`, empty, a bare major and a non-numeric tag report *unknown* rather than guessing; `AtLeast` compares major before minor |
 | `TestValidateHealthCheck` | The opt-in probe: with no cmd it uses the built-in readiness endpoint, so 10.26+ is accepted while an older tag and an unidentifiable one are both refused (naming the explicit-cmd escape hatch); an explicit cmd skips the version gate but keeps the exec-boundary check; disabled stays legal on any tag |
 | `TestValidateContainerBadNetworkMode` | Unknown network mode is rejected loud |
-| `TestValidateDockerBadMode` | An unknown `docker.mode` is rejected loud |
-| `TestValidateDockerRunModeRemoved` | The removed `run` value gets its own error naming why it went and what to set, not a bare enum message |
 | `TestValidateDockerComposeCommand` | `docker.compose` gets the same exec-boundary check as the runtimes: an empty argument is rejected |
 | `TestValidateUnknownPlatform` | An unrecognised platform fails rather than validating nothing |
 | `TestValidateBadRedundancy` | `redundancy` enum is rejected loud |
@@ -187,6 +196,7 @@ validator and every executor enforce it from one definition.
 | `TestLoadSuccess` | A valid file loads, and defaults are applied during `Load` |
 | `TestLoadReadError` | A missing file errors with `read env file` |
 | `TestLoadParseError` | Malformed YAML errors with `parse env file` |
+| `TestLoadRejectsTheOldK8sSection` | The old `k8s:` section is not aliased: it fails as an ordinary unknown key. Pins the decision that the rename has no compatibility path in the loader, so a stale env file cannot half-work |
 | `TestLoadUnknownField` | Strict decoding turns a typo'd key into a hard error |
 | `TestLoadBashEnvFileHint` | A legacy bash env file is reported as not-YAML and points at `solace-util convert` |
 | `TestLoadNotYAMLHint` | Any other non-YAML file says the env file must be YAML and names the schema and the converter |
@@ -198,6 +208,21 @@ validator and every executor enforce it from one definition.
 | `TestValidateAdditionalUserPasswordCharsetIsK8sOnly` | The one platform-specific rule: k8s puts the password on a CLI line, so the characters the broker rejects there fail validation (naming the character, never the password), while the same env file stays valid for docker and podman, which mount the value as a file |
 | `TestValidateAdditionalUsers` | On k8s and docker alike: a valid entry passes, and missing/invalid/duplicate usernames, the built-in `admin`/`monitor` names, a missing or invalid access level, and an empty password all fail. Two usernames differing only in `.`/`_`/`-` are refused too: they fold to one docker host variable name, which would feed one user's password to both |
 | `TestValidateAdditionalUserClashesWithAdminUser` | The container-only clash: a listed user matching a configured `admin.user` is refused (two secrets would feed one broker setting) |
+
+### platform_test.go
+
+The platform vocabulary and the env-file probe behind it. These matter more than their
+size suggests: the platform is no longer typed as a subcommand, so `DetectPlatforms` is
+what decides which system every later step talks to.
+
+| Test | What it covers |
+| --- | --- |
+| `TestPlatforms` | The enumerator's contents and order -- the order is what a prompt lists and what an error names, so it is contract, not an accident of the literal |
+| `TestParsePlatform` | Every accepted spelling (canonical plus `kube`/`dk`/`pm`), empty meaning "not specified", and the rejections. Both the retired `k8s` and the newer `k8` abbreviation are listed explicitly so reinstating either silently would fail |
+| `TestParsePlatformErrorTeachesCanonical` | A rejection names the canonical words the env file's own sections use, not only the abbreviations |
+| `TestDetectPlatforms` | The whole resolution input space: none, one, several sections; `docker: {}` and a null section both count as declared; results come back in `Platforms()` order regardless of the order in the file |
+| `TestDetectPlatformsMissingFile` | A bad path fails here rather than reaching `Load` with an empty platform list |
+| `TestDetectPlatformsBashFileHint` | The legacy-bash-env mistake keeps its `solace-util convert` hint. `DetectPlatforms` is now the first thing to read the file, so without this the message would degrade to a bare decode error |
 
 ### scaling_test.go
 
@@ -211,24 +236,37 @@ and the two keys the change removed or added.
 | `TestTierForRejectsOffTierValues` | The deliberate absence of rounding: values between, below and above the tiers (including 0 and a negative) resolve to nothing rather than to a neighbour |
 | `TestScalingTierListMatchesTable` | The error message's tier list cannot drift from the table -- every listed value is a key, the list is ascending, and its rendering is exact. The package avoids `sort`, so the order is a literal that needs pinning |
 | `TestContainerMem` | The one rewrite between the schema's two memory spellings: Kubernetes' `Mi`/`Gi` to the bare `m`/`g` docker and podman accept, leaving an already-container value untouched. Every tier's rewritten default is checked against the validator it would face from an env file, so a default cannot be one the loader rejects |
-| `TestApplyScalingTierDefaultsK8s` | A non-default tier derives its cores into `Scaling.CPU` and its memory into `k8s.msgNode.mem`, while `msgNode.cpu` stays empty so `validateK8s` can read any value there as user-set |
+| `TestApplyScalingTierDefaultsK8s` | A non-default tier derives its cores into `Scaling.CPU` and its memory into `kubernetes.msgNode.mem`, while `msgNode.cpu` stays empty so `validateK8s` can read any value there as user-set |
 | `TestApplyScalingTierDefaultsMemOverride` | The asymmetry the change rests on: an explicit memory survives defaulting on both k8s and container, while CPU is the tier's regardless |
 | `TestApplyScalingTierDefaultsContainerBlocks` | Both container blocks are filled whichever container platform is active, matching `applyContainerDefaults`' existing parity |
 | `TestApplyScalingTierDefaultsOffTier` | The fail-safe: an unresolvable tier derives nothing rather than inventing a footprint, and `Validate` is what the operator hears from |
 | `TestValidateScalingTierRejectsOffTier` | An off-tier value fails on all three platforms with a message listing the five tiers -- the check sits ahead of the platform switch because every platform now renders a CPU limit from it |
 | `TestValidateScalingTierAcceptsEveryTier` | Every tier validates cleanly on every platform, so the enum cannot be narrower than the table |
-| `TestValidateK8sMsgNodeCPURemoved` | Mirrors `TestValidateDockerRunModeRemoved`: the removed `k8s.msgNode.cpu` still decodes, so the operator gets a reason naming `scaling.maxConnections` and noting `mem` is unaffected, rather than a bare unknown-field error |
+| `TestValidateK8sMsgNodeCPURemoved` | Mirrors `TestValidateDockerRunModeRemoved`: the removed `kubernetes.msgNode.cpu` still decodes, so the operator gets a reason naming `scaling.maxConnections` and noting `mem` is unaffected, rather than a bare unknown-field error |
 | `TestValidateMaxPoolRemoved` | The second folded-away key: `maxPool` named the same broker setting as `maxSpoolUsageMB` under a platform-specific name. It is rejected on all three platforms naming the replacement, and an unset (zero) value does not trip the sentinel |
-| `TestValidateContainerMem` | `container.mem` takes docker's and podman's own `b\|k\|m\|g` suffix: the likely mistake (a `Mi` quantity copied from `k8s.msgNode.mem`) is refused naming that trap, alongside bare numbers, decimals and unknown suffixes, while every legal form and the unset case pass |
+| `TestValidateContainerMem` | `container.mem` takes docker's and podman's own `b\|k\|m\|g` suffix: the likely mistake (a `Mi` quantity copied from `kubernetes.msgNode.mem`) is refused naming that trap, alongside bare numbers, decimals and unknown suffixes, while every legal form and the unset case pass |
 
 ---
 
 ## internal/cli
 
-Command-tree wiring, global flags, confirm prompts, and end-to-end `--dry-run` /
-gen-flag passes over the sample env, plus the generated command reference, shell
-completion, and the end-to-end behaviour of the execution guard. 95 tests across
-four files.
+Command-tree wiring, global flags, confirm prompts, and end-to-end passes over the
+sample env, plus command aliases, platform resolution, the generated command
+reference, shell completion, and the end-to-end behaviour of the execution guard.
+
+The old `--dry-run` flag and the `--gen-*-only` trio are gone from the CLI; the
+property they used to prove -- which argv a command would issue -- is now driven
+through `echoRunner`, a test-only helper (`cli_test.go`) that installs
+`engine.Echo` via the `App.NewRunner` seam (`internal/cli/context.go`). Reach for
+`runRootWith(t, args, echoRunner)` (or the `runStandalone`/`runCtr` wrappers built
+on it) wherever a test used to append `--dry-run`.
+120 tests across six files.
+
+Because the platform is now a flag rather than the first word of a command, the
+invocations here name it explicitly (`--platform docker`) rather than relying on
+detection: `env/sample.yaml` declares all three sections, so an invocation without it
+would hit the ambiguity error instead of the behaviour under test. Detection itself is
+covered in `platform_test.go`, against fixtures written for that purpose.
 
 ### cli_test.go
 
@@ -241,39 +279,42 @@ four files.
 | `TestEmit` | `emit` writes bytes to stdout unchanged |
 | `TestWarnAndStep` | `warn` and `step` write `[WARN]` / `==>` lines to stderr |
 | `TestAnnounceCommandsNamesResolvedBinaries` | The preamble that replaced the per-call `exec:` line: each binary the env file names is resolved and printed once as `==> using <name>: <path>`. k8s announces the cluster CLI; docker announces one line when `compose` is the runtime's own subcommand and two when a standalone `docker-compose` is configured; a name that resolves nowhere is skipped in silence, since a report must not invent a failure the first real execution already reports. Hermetic -- a stub binary is written into a temp dir put at the front of `PATH`, so the expected path is exact and no test host needs kubectl or docker |
-| `TestBinaryAnnouncementWiring` | The same through the real command tree, with the stub named `kubectl` so it is the schema default and needs no `--allow-command` (which is itself refused where nothing executes). A real run announces before it works; `--dry-run`, `--gen-only` and `gen` announce nothing -- `--dry-run` is documented to need no runtime binary installed at all |
-| `TestVerboseFlagTracesEveryCommand` | `-v` prints `==> exec: <path> <args>` per call, a run without it prints none, and `--dry-run -v` still works (Echo already echoes every command) |
-| `TestTreeStructure` | Every platform and a representative set of leaf command paths exist in the tree |
-| `TestFlagsRegistered` | Per-command flags (`purge`/`clear-data`/`keep-data`, `keep-yaml`, `days`, `pod`, `dir`) are registered where expected |
-| `TestHelpNoConfig` | `--help` at root and per platform short-circuits before config load, so no env is needed |
-| `TestGenWired` | Every render-only path emits the right artifact: k8s CR (`apiVersion:`), Secret manifests, compose (`services:`), quadlet (`[Unit]`), the container secret script, and the container env file -- via both the `gen` command and the `--gen-*-only` flags |
-| `TestCtrWiredDryRun` | Every container command safe under `--dry-run` reaches its handler and echoes the expected runtime/systemctl/mkdir command |
+| `TestBinaryAnnouncementWiring` | The same through the real command tree, with the stub named `kubectl` so it is the schema default and needs no `--allow-command` (which is itself refused where nothing executes). A real run (`check deploy`) announces before it works; the render-only `generate broker` and `generate operator` announce nothing, since neither one ever runs a binary |
+| `TestVerboseFlagTracesEveryCommand` | `-v` prints `==> exec: <path> <args>` per call, a run without it prints none, and pairing `-v` with the test-only echo seam still works rather than fighting it, since Echo already echoes every command |
+| `TestTreeStructure` | A representative set of command paths exists in the one unified tree, covering a top-level leaf, a group's child, and each applicability class |
+| `TestEveryRunnableCommandIsWired` | The wiring that replaced the two `PersistentPreRunE` hooks: every command with a `RunE` (bar `convert`, `version`, `completion`) carries the shared pre-run and the `--allow-command` flag. Missing either is invisible until that one command is run, so it is checked structurally |
+| `TestGroupCommandsPrintHelpAndDoNothing` | The no-implicit-actions rule: a verb that owns objects (`check`, `smoke`, `prepare`, `deploy`, `config`, `start`, `stop`, `restart`, `status`, `logs`, `copy`, `generate`, `remove`, and `config`'s own `apply`/`delete`/`disable`) carries no `RunE`, so running it bare prints its own help and touches nothing -- proven by succeeding with no `--env` at all, since a runnable leaf would instead fail resolving the missing default env file |
+| `TestFlagsRegistered` | Per-command flags are registered where expected: `--restart` on `deploy broker`/`deploy all`; `--delete-data`/`--no-prompt` on `remove broker`/`remove all`; `--delete-crd`/`--no-prompt` on `remove operator`; `--days` on `diagnostics`; `--input`/`--pod` on `cli`; `--pod` on `copy from`; `--pod`/`--dir` on `copy into`; `--all`/`--detail` on `status broker`; `--detail` on `status operator` |
+| `TestHelpNoConfig` | `--help` short-circuits before config load, so no env file is needed |
+| `TestGenerateWired` | `generate`'s leaves, none of which contact the cluster or the container engine: `generate broker` renders what `deploy broker` would apply on EITHER family (the CR's `apiVersion:` on kubernetes, `services:`/`[Unit]` on docker/podman), plus `generate secrets` on both and `generate operator` on kubernetes. A plain `runRoot` with no echo seam is enough since nothing here executes |
+| `TestCtrWiredDryRun` | Every container command safe to run against the HA sample drives clean over the echo seam, echoing the expected runtime/systemctl/mkdir command |
 | `TestCtrRoleGuards` | Node-local HA guards: leader must run on the primary, redundancy rejects the monitor, bad roles error, and standalone self-skips |
 | `TestCtrConfigDryRun` | Container config steps run clean on a standalone env; cert/product-key-gated steps self-skip |
-| `TestCtrErrorPaths` | Container config/verify failures are actionable: no TLS, no product keys, no exec-cli file, failed SEMP login |
-| `TestCtrVerifyDiagnosticsDryRun` | Container diagnostics echoes its gather/download sequence (isolated because it creates a diag dir) |
+| `TestCtrExecCLIPathSeparator` | `opCtrExecCLI`'s used-as-is branch: a `cli --input` file argument containing a path separator is used as-is, not joined under the CLI scripts folder |
+| `TestCtrErrorPaths` | Container `config apply` failures are actionable: no TLS configured for server-cert, no product keys configured, and a failed `check semp-login` |
+| `TestCtrDiagnosticsDryRun` | Container `diagnostics` echoes its node-local gather/download sequence over the echo seam (isolated because it creates a diag dir) |
 | `TestCtrRoleArgCount` | Role-taking commands reject a second positional argument |
 | `TestCtrRoleHelp` | Role-taking commands expose `--help` without loading an env |
-| `TestK8sWiredDryRun` | Every k8s command safe under `--dry-run` runs clean, with `+ kubectl` echoed on the acting paths and absent on the skip paths |
-| `TestK8sStandaloneDryRun` | Redundancy-branching commands on a standalone env: HA-only steps self-skip, config/prep/up run clean |
-| `TestK8sVerifyDiagnosticsDryRun` | k8s diagnostics echoes the gather/download sequence for all three nodes (isolated for its dir side-effect) |
-| `TestK8sGenOperatorWired` | `gen operator` and `operator deploy --gen` emit the bundle with every template marker resolved |
-| `TestSecretsNeverEchoed` | A secret-bearing command under `--dry-run` shows stdin as a byte count and never the password |
-| `TestK8sErrorPaths` | k8s handler boundaries: missing cert/key, no product keys, failed login, missing exec-cli file, bad `--pod`, `--gen-only` rejected on non-artifact commands, `--gen-env-only` rejected as having no k8s equivalent, mutually exclusive data flags |
-| `TestConfirmFlagShortcuts` | `--yes` confirms a delete; `--purge`/`--keep-data` drive retention without reading stdin |
-| `TestConfirmNonTTY` | Without a TTY and without `--yes`, delete refuses and purge keeps data |
+| `TestK8sWiredDryRun` | Every k8s command safe to run against the HA sample drives clean over the echo seam, with `+ kubectl` echoed on the acting paths and absent on the skip paths |
+| `TestK8sStandaloneDryRun` | Redundancy-branching commands on a standalone env: the HA-only `config leader`/`smoke redundancy` self-skip, while `prepare secrets`/`prepare all`/`deploy all` run clean |
+| `TestDeployAllDoesNotApplyOperator` | Pins the deliberate behavior change from the old `up`: the operator is cluster-scoped and shared between brokers, so `deploy all` no longer installs it -- only `deploy operator` does. Run on a standalone env to stay off the HA leader-assertion poll, which the echo seam cannot satisfy |
+| `TestCheckDeployWarnsWhenOperatorAbsent` | `opK8sCheck`'s operator probe: `check deploy` is read-only, so a missing operator is reported as a stderr warning rather than failing the check itself |
+| `TestStartStopRestartBroker` | The day-2 `start`/`stop`/`restart broker` verbs on both platform families: Kubernetes scales the statefulset(s) via a kubectl echo, containers start/stop/restart the container in place via a docker echo |
+| `TestCLICommand` | `cli`'s two shapes, now one command distinguished by a flag rather than two subcommands: bare, it opens an interactive session; with `--input`, it uploads and runs a script instead |
+| `TestStatusBrokerFlags` | How `--all` and `--detail` compose on `status broker`: they widen the report along independent axes (every broker in the cluster vs. this env file's one; the static description vs. the running inspection) rather than one replacing the other, on both kubernetes and a container platform |
+| `TestRemoveBrokerLayerContract` | The retained-layer contract on `remove broker`: persistent data is kept by default, `--no-prompt` proceeds while still keeping it, `--delete-data` deletes it, and a non-interactive run keeps it. Losing data always takes an explicit `--delete-data`, whatever else is on the command line |
+| `TestRemoveOperatorLayerContract` | Mirrors `TestRemoveBrokerLayerContract` for the operator's CRDs: kept by default, since deleting them cascades to every broker in the cluster, and deleted only when `--delete-crd` names them |
+| `TestRemoveFlagsCompose` | `--delete-data` and `--no-prompt` answer DIFFERENT questions -- what to do with the data, and whether to ask about anything -- so they must combine, not conflict. A fully unattended removal that also drops the data needs both, which a brief spell of mutual exclusion made impossible to express |
+| `TestSecretsNeverEchoed` | `check semp-login` over the echo seam shows stdin as a byte count and never the admin password |
+| `TestConfirmFlagShortcuts` | `--no-prompt` confirms a removal; `confirmLayer` still keeps the layer under it, and `--delete-data` is what deletes -- all without reading stdin |
+| `TestConfirmNonTTY` | Without a TTY and without `--no-prompt`, `confirmDelete` refuses, and `confirmLayer` with no flags set keeps the layer -- both with no prompt read |
 | `TestPromptYesNo` | Lenient delete prompt: `y`/`yes` in any case accept, everything else declines |
-| `TestPromptYes` | Strict purge prompt: only an exact trimmed `yes` accepts; a bare `y` does not |
-| `TestErrorPaths` | Global rejections: unresolvable env file, invalid node roles across container and k8s leaves, unknown `gen` target |
-| `TestDockerRunModeRejected` | An env file still carrying `docker.mode: run` fails with the removal reason and points at `docker.compose` |
-| `TestK8sGenSecretsWired` | The Secret manifests render through both the `gen secrets` target and `--gen-secrets-only`, on the standalone env rather than the HA sample whose tls.serverSecret points at cert files absent from a checkout |
-| `TestGenSecretsRefusesEmptyValue` | The printed script invites execution, so it is refused when running it would create an empty secret -- while `--gen-only` stays renderable, since the deploy artifact only references secrets by name |
-| `TestGenFlagsAreExclusive` | Two gen flags at once is a loud error, not a silent precedence rule |
-| `TestCtrGenFlagsRejectedOnNonArtifactCommands` | Every gen flag on every non-artifact container command (`delete`, `down`, `status`, `check`) fails loud -- being ignored on `delete` would run the real delete while the user believed they asked for a render |
-| `TestGenNeverLeaksSecrets` | End-to-end: `--gen-only` and `--gen-env-only` output on both container platforms omits the admin password, while `--gen-secrets-only` carries it (it is what creates the secret) |
-| `TestCtrVerifyAll` | `verify` role arms: unknown host fails loud, this-host-is-monitor skips redundancy, standalone skips redundancy |
-| `TestCtrConfigAllArms` | `config` with every optional step configured runs all three gated arms, and the private key never reaches stdout |
-| `TestCtrExecCLIPathSeparator` | An exec-cli argument containing a separator is used as-is, not joined under the CLI scripts folder |
+| `TestPromptYes` | Strict layer-deletion prompt: only an exact trimmed `yes` accepts; a bare `y` does not |
+| `TestErrorPaths` | Global rejections: unresolvable env file, invalid node roles across container and k8s leaves (`deploy broker`, `generate broker`, `deploy all`, `logs broker`), unknown `generate` target |
+| `TestK8sGenSecretsWired` | The Secret manifests render through `generate secrets`, on the standalone env rather than the HA sample whose tls.serverSecret points at cert files absent from a checkout |
+| `TestGenSecretsRefusesEmptyValue` | The printed script invites execution, so `generate secrets` is refused when running it would create an empty secret -- while `generate broker` stays renderable, since the deploy artifact only references secrets by name |
+| `TestGenNeverLeaksSecrets` | End-to-end: `generate broker` output on both container platforms omits the admin password, while `generate secrets` carries it (it is what creates the secret) |
+| `TestConfigStepsDoNotLeakSecrets` | Drives each `config apply`/`config disable` step individually against a container fixture carrying every optional value (server cert/key, a domain CA, a product key) and asserts none prints the private key material to stdout. Replaces the direct-call coverage the now-deleted `opCtrConfigAll` used to get in one run, since `config` no longer aggregates these steps into a re-runnable ordering |
 | `TestConvertToStdout` | `convert` writes YAML to stdout and its warnings to stderr, so the artifact stays clean |
 | `TestConvertToFile` | `-o` writes the file, a second run refuses to clobber it, and `--force` overrides |
 | `TestConvertRoundTrip` | A converted file loads: `-e` against it drives a real command |
@@ -284,26 +325,43 @@ four files.
 | `TestVersionRejectsArgs` | `version` takes no arguments |
 | `TestBashEnvGivenToEnvFlag` | Pointing `-e` at a legacy bash file reports not-valid-YAML and names `solace-util convert` |
 | `TestExecute` | `Execute()` builds the tree and runs `--help` without error |
-| `TestK8sConfirmDeclined` | a non-interactive `k8s delete`/`k8s down` (no --yes) makes zero cluster calls, using the new App.Interactive seam instead of ambient stdin |
-| `TestK8sRestartConfirmGate` | a non-interactive `k8s restart` (all or one role) bounces nothing, and a bad role is rejected before any prompt |
-| `TestCtrConfirmDeclined` | a non-interactive `docker delete` (no --yes) issues zero runtime calls |
+| `TestK8sConfirmDeclined` | Every removal declines unattended: `remove broker`/`all`/`secrets`/`namespace`/`operator` without `--no-prompt` make zero cluster calls, using the App.Interactive seam instead of ambient stdin. secrets and namespace are covered because they used to run with no confirmation at all, and `remove namespace` takes everything living in the namespace, not only what this env file put there |
+| `TestK8sRestartConfirmGate` | a non-interactive `restart broker` (all or one role) bounces nothing, and a bad role is rejected before any prompt |
+| `TestCtrConfirmDeclined` | a non-interactive `remove broker` on docker without `--no-prompt` issues zero runtime calls |
 | `TestIsTTYClosedFile` | isTTY treats a stream it cannot Stat (a closed file) as non-interactive rather than risking a blocked prompt |
 | `TestCtrManagerConfirmWiring` | ctrManager wires Manager.Confirm to confirmRestart, and a non-interactive session (via App.Interactive) declines without reading a prompt |
 | `TestK8sLoginOutcomes` | a transport failure propagates as an error and a canned 200 OK response returns nil, the two real SEMP outcomes engine.Echo's fixed (nil,nil) can never produce |
 | `TestCtrLoginOutcomes` | same as TestK8sLoginOutcomes for the container login path |
-| `TestOpK8sConfigAllArms` | with every optional step configured on an HA env, opK8sConfigAll actually runs all five previously-unreached arms (not just the always-run hardening steps) and no secret value reaches an argv |
-| `TestOpK8sConfigAllAborts` | failing any one step's underlying command aborts before the next step's command is ever issued, pinning the function's documented harden-then-provision ordering |
-| `TestOpK8sUpAssertsLeaderOnHA` | on an HA config, `up` asserts the config-sync leader as its last step rather than stopping after deploy |
-| `TestOpK8sUpAborts` | failing any one step aborts before the next step's command runs, closing the 'every step aborts loud' claim in the docstring |
-| `TestOpK8sPrepAllAborts` | same abort-ordering property as opK8sUp, on the four-step prep sequence |
-| `TestOpK8sDownAborts` | a failed broker- or secrets-deletion stops before the namespace is removed out from under it |
-| `TestOpCtrConfigAllAborts` | same abort-ordering property as the k8s config-all cluster, on the container-side sequence |
-| `TestOpCtrVerifyAllRunsRedundancyLocal` | when this host is the primary/backup (not the monitor), opCtrVerifyAll actually calls RedundancyLocal instead of only ever hitting the skip/reject arms |
-| `TestK8sVerifyAllRedundancyUnhealthy` | verify stops before the SEMP login when the redundancy check itself reports unhealthy, on the existing HA sample under --dry-run |
-| `TestK8sTeardownDomainCertsConfigured` | with a CA actually configured, teardown domain-certs issues a kubectl exec instead of self-skipping (every other test's map is empty, so the conversion was correct only by vacuity) |
+| `TestOpK8sDeployAllAssertsLeaderOnHA` | on an HA config, `deploy all` asserts the config-sync leader as its last step rather than stopping after `DeployBroker`. Unreachable via `runRoot`/`engine.Echo` (Echo's fixed empty output never satisfies Leader's poll), so it drives `opK8sDeployAll` directly over a fake Runner seeded with a healthy `show redundancy` transcript |
+| `TestOpK8sDeployAllAborts` | `opK8sDeployAll`'s four error-return arms (Check, CreateNamespace, CreateSecrets, DeployBroker), each failed in its own sub-test with no later step's command issued afterward. Unlike the retired `opK8sUp`, there is no operator-apply step to abort before: the operator is cluster-scoped and installed on its own via `deploy operator` |
+| `TestOpK8sPrepAllAborts` | same abort-ordering property as `opK8sDeployAll`, on `opK8sPrepAll`'s two error-return arms (CreateNamespace, CreateSecrets). Those two are the whole sequence: the operator is installed by its own command, and node labelling is interactive so it is not in `all` at all |
+| `TestPrepLabelsIsInteractiveOnly` | The one command in the tree that cannot be scripted, and why: the env file names the label each broker role wants, but which MACHINE carries it comes from a prompt with no flag to express it. A non-interactive run is refused up front, touching nothing, rather than failing deep in the node picker on an unreadable stdin -- while an env file with no placement labels stays a no-op even without a terminal, since there is no question to ask |
+| `TestDeployAllNeverLabelsNodes` | Labelling is out of the scripted path entirely. `deploy all` used to run it when placement was configured AND stdin happened to be a terminal, which made the same command interactive or not depending on where it ran |
+| `TestOpK8sRemoveAllAborts` | `opK8sRemoveAll`'s two error-return arms (DeleteBroker, DeleteSecrets): a failed broker- or secrets-deletion stops before `delete-namespace` ever runs, so a real failure cannot leave the namespace removed out from under still-live resources |
+| `TestOpCtrVerifyRedundancyRunsRedundancyLocal` | When this host is the primary (not the monitor), `opCtrVerifyRedundancy` actually calls `RedundancyLocal` instead of only ever hitting the skip/reject arms `TestCtrRoleGuards` already covers -- driven over a fake Runner seeded with an active-but-unhealthy `show redundancy` transcript so the health check fails immediately rather than entering a real poll loop |
+| `TestK8sSmokeRedundancyUnhealthy` | `smoke redundancy` fails on its first check rather than polling: over the echo seam, `engine.Echo`'s empty `show redundancy` output makes `primaryRedundancyUp` false, so `opK8sVerifyRedundancy` returns the redundancy-unhealthy error before any SEMP login |
+| `TestK8sConfigDeleteDomainCertsConfigured` | With a CA actually configured, `config delete domain-certs` issues a kubectl exec instead of self-skipping -- every other test's `domainCerts.files` map is empty, so `domainCANames`'s map-to-slice conversion was correct only by vacuity until this one configures a CA |
 | `TestConvertParseError` | a malformed legacy env file (unterminated array assignment) surfaces the parser's own error through the CLI |
 | `TestConvertWriteError` | an -o path whose parent directory is absent fails with a wrapped write error naming the path |
 | `TestK8sGenSecretsMissingCertFile` | tls.serverSecret configured with an unreadable tls.cert fails loud naming the read failure, instead of only being caught at real deploy time |
+
+### aliases_test.go
+
+Command abbreviations (`internal/cli/aliases.go`): a table keyed by a command's NAME,
+applied by a tree walk, panicking at construction on a sibling collision. What these
+tests protect is not the individual words but the two properties that make them safe
+to hand out -- an alias resolves to exactly the command its long form does, and no
+alias can ever be ambiguous with a sibling -- plus the deliberate absences (`start`/
+`stop` get none, and no verb that owns objects gets a bare-alias shortcut to acting).
+
+| Test | What it covers |
+| --- | --- |
+| `TestAliasesResolveToTheCanonicalCommand` | Pins equivalence by resolution rather than by running anything: cobra's own `Find` -- what dispatch itself uses -- resolves both an alias path (e.g. `rm br`) and its canonical form (`remove broker`) to the same `*cobra.Command`. Covers every verb/noun alias plus the standalone ones (`diag`, `cv`, `ver`, `sh`) |
+| `TestAliasesDoNotCollide` | Walks the real tree and proves no two siblings answer to the same word (name or alias). `applyAliases` already panics on a collision at construction, so this is the second line of defence -- the one that would also catch a collision introduced by a command's own hand-written `Aliases` rather than by the table |
+| `TestEveryAliasEntryIsLive` | Catches the quiet failure mode of a name-keyed table: every key in `commandAliases` must name a command actually present in the tree, so a renamed command's alias cannot silently stop applying while the table still claims to provide it |
+| `TestDangerousVerbsHaveNoBareAlias` | The safety property behind giving the most destructive verb a short form at all: `remove`, `deploy`, `config`, `start`, `stop` and `restart` are all verb GROUPS carrying subcommands, so `rm`/`dp`/`cfg`/`rs` reach something that acts on nothing until it is given a noun -- if one ever became a real command, this fails, which is the moment to reconsider the abbreviation rather than after a typo removes a broker |
+| `TestGroupsRejectAnUnknownNoun` | Why a verb group is runnable at all. Cobra answers a NON-runnable command by printing help and exiting 0 whatever arguments it got, so `remove bogus` would report success having removed nothing and a script would never notice -- the same trap `completion` documents. Bare still prints help and succeeds; an unknown noun fails loudly |
+| `TestStartStopHaveNoAlias` | Pins the one deliberate omission: `start` and `stop` get no two-letter form at all, in the table and on the actual tree commands, because any short spelling would be ambiguous with the other (and with `status`) at the exact place where guessing wrong costs an outage |
 
 ### allowcommand_test.go
 
@@ -312,16 +370,51 @@ executors -- driven through the real command tree.
 
 | Test | What it covers |
 | --- | --- |
-| `TestAllowCommandIsRegisteredOnPlatformTrees` | `--allow-command` is declared on `k8s`/`docker`/`podman` and inherited by their leaves, is NOT a root flag, and is a usage error on `solace-util convert`, which loads no config and runs no platform CLI |
+| `TestAllowCommandIsRegisteredWhereItExecutes` | `--allow-command` is declared on every command that runs something -- the unit the operator is approving a binary for -- and is still NOT a root flag, so it stays a usage error on `solace-util convert`, which loads no config and runs no platform CLI |
 | `TestAllowCommandIsRepeatable` | Both values of a repeated flag are collected in order, so a chain needing two approvals does not force a choice |
 | `TestAllowCommandApprovesAWrappedRuntime` | The accept case end to end: `microk8s kubectl` is refused with a message naming the hatch, and runs -- reaching the echoed command -- once the operator passes `--allow-command microk8s` |
 | `TestAllowCommandRejectsBadValues` | A path, a metacharacter, an empty value, or any privilege-escalation wrapper is a usage error, so the hatch cannot reintroduce what the guard refuses |
 | `TestEscalationIsRefusedEndToEnd` | An env file naming `sudo kubectl` is refused with and without the flag, and the refusal names the supported alternative -- elevate the tool itself, at the moment you run it |
-| `TestAllowCommandRejectedWhereNothingExecutes` | The flag is refused on `gen` and under `--gen-*-only`, so it is never learned as harmless boilerplate that later gets pasted into a run that does execute |
-| `TestHostileRuntimeIsRefusedByEveryVerb` | An unlisted binary stops `check`, `status`, `deploy`, `delete`, `show-all` and `logs` alike -- `status` running `curl` is the same arbitrary execution `deploy` running it would be |
+| `TestAllowCommandRejectedWhereNothingExecutes` | The flag is refused on every leaf under `generate` (broker, operator, secrets, artifact), so it is never learned as harmless boilerplate that later gets pasted into a run that does execute |
+| `TestHostileRuntimeIsRefusedByEveryVerb` | An unlisted binary stops `check`, `status`, `deploy`, `remove`, `status --all` and `logs` alike -- `status` running `curl` is the same arbitrary execution `deploy` running it would be |
 | `TestSmuggledSubcommandIsRefused` | `kubectl delete`, `kubectl delete ns prod` and a literal `--` in the config are all refused: this tool appends its own subcommand, and a word there would run ahead of it |
 | `TestPathRuntimeIsRefused` | The bare-name rule end to end for relative, absolute, and parent-directory forms -- the `./kubectl` shipped beside the env file |
-| `TestGenPathNeverExecutes` | Backs the trust-model promise that rendering an untrusted env file is safe: the `gen` path issues no external command at all |
+| `TestGenPathNeverExecutes` | Backs the trust-model promise that rendering an untrusted env file is safe: `generate broker` issues no external command at all |
+
+### platform_test.go
+
+Platform resolution and the one-tree consequences of it. This is where the CLI's
+central decision is pinned: the platform used to be typed as the first word of every
+command and is now inferred, so what it resolves to, and what happens when a command
+does not apply to it, are the behaviours most worth holding still.
+
+Fixtures: `writePlatformEnv(t, platforms...)` writes a minimal but VALID env declaring
+exactly the given sections (the kubernetes and container schemas need different
+mandatory fields, so it emits both shapes); `runPlatform` runs `status broker` over
+the echo seam, the cheapest command that still goes all the way through resolution
+and config loading.
+The prompt branches are driven through `App.Interactive`/`App.PromptIn`, the same seams
+the destructive-confirmation tests use.
+
+| Test | What it covers |
+| --- | --- |
+| `TestResolvesSinglePlatformSilently` | The everyday case on all three platforms: one declared section is used with nothing said on the command line, proven by which binary the echo seam names |
+| `TestNoPlatformSectionIsRefused` | The marker requirement. A container env file needs no `docker:` keys at all -- they all default -- so without the section it would be indistinguishable from a kubernetes one; the error names all three sections |
+| `TestMultiPlatformNonInteractiveIsRefused` | With no terminal to ask, guessing is the one thing that must not happen: the error names the declared platforms and points at `--platform` |
+| `TestMultiPlatformPromptSelects` | The interactive branch: a numbered answer selects that platform |
+| `TestMultiPlatformPromptRejectsBadAnswer` | Empty, out-of-range, zero, and a platform name typed instead of a number all stop the run rather than falling through to a default |
+| `TestPlatformFlagSilencesThePrompt` | `--platform` is what makes an ambiguous file usable from a script |
+| `TestPlatformFlagAcceptsAbbreviations` | `kube`/`dk`/`pm` survive the whole resolution path, not just the parser |
+| `TestPlatformFlagRejectsUndeclaredSection` | Naming a platform the file does not describe is refused, naming both what was asked for and what the file declares -- the alternative is deploying from defaults nobody wrote down |
+| `TestPlatformFlagRejectsUnknownValue` | Keeps the retired `k8s` spelling and the newer `k8` abbreviation out, along with other near-misses (`swarm`) |
+| `TestUnsupportedCommandFailsLoud` | The other half of the one-tree decision: since the tree shows every command everywhere, the refusal is what tells an operator a command does not apply -- and it names where it does apply, so the message is not a dead end. Covers both directions (kubernetes-only commands on docker, container-only on kubernetes) |
+| `TestScopedFlagFailsLoud` | `--restart`, `--all` and `--pod` are refused where they mean nothing rather than accepted and ignored -- a `--restart` that did nothing would read as "already restarted" |
+| `TestUnusableRoleFailsLoud` | The `[role]` positional means opposite things on the two platform families, and on the family that ignores it a typed role is refused: `logs backup` reading the local broker's logs on a container host is the exact mistake this prevents |
+| `TestPlatformIsAnnouncedInThePreamble` | The platform is now inferred rather than typed, so it is stated in the preamble -- otherwise the one fact the operator no longer supplies is also the one they cannot see |
+| `TestCompletionNeverReadsTheEnvFile` | The invariant that decided where the pre-run hook lives. Cobra runs the NEAREST ancestor's `PersistentPreRunE` and `__complete` is root's own child, so a hook on root would parse an untrusted env file on every TAB press; keeping it per-command prevents that, proven by completing with an env file that does not exist |
+| `TestPlatformFlagIsOnRoot` | `--platform` is a root persistent flag inherited by every command including `convert`, which is what lets one word mean one thing across the whole CLI |
+| `TestScopedCommandsSaySoInHelp` | The tree is one static shape, so help text is the only place to learn a command does not apply before running it; a command that applies everywhere carries no scope tail |
+| `TestPlatformAnnotationsMatchDispatch` | Every applicability annotation in the tree parses, so a malformed one cannot silently widen or empty a command's platform set |
 
 ### commanddoc_test.go
 
@@ -335,8 +428,10 @@ Shell completion end to end. The value tests drive cobra's hidden `__complete`
 endpoint through the real tree -- the same request a loaded completion script makes
 on every TAB press -- via the `runComplete` helper, which cannot reuse `runRoot`
 because that discards cobra's own writer. Nothing here loads an env file: the
-platform `PersistentPreRunE` never runs for `__complete`, which is what keeps a TAB
-press from parsing config or executing anything.
+per-command `PreRunE` never runs for `__complete`, which is what keeps a TAB press
+from parsing config or executing anything. (`TestCompletionNeverReadsTheEnvFile` in
+`platform_test.go` pins that invariant directly, by completing against an env file
+that does not exist.)
 
 | Test | What it covers |
 | --- | --- |
@@ -347,12 +442,12 @@ press from parsing config or executing anything.
 | `TestEnvFlagCompletesEnvFiles` | `-e` is completed from the two directories `config.ResolveEnvPath` searches, by bare name: base dir first, the shadowed `env/` copy of the same name offered once, and a non-YAML file not suggested |
 | `TestEnvFlagPrefixFilters` | A partial name narrows the suggestions instead of returning every env file |
 | `TestEnvFlagWithPathDefersToShell` | A value carrying a directory resolves verbatim, so completion returns the default directive and hands back to the shell rather than offering bare names that would resolve elsewhere |
-| `TestRoleArgsComplete` | Every `[role]` positional offers `primary`/`backup`/`monitor` -- the ones built through `roleLeaf` and the ones assembled inline on both platform trees |
+| `TestRoleArgsComplete` | Every `[role]` positional offers `primary`/`backup`/`monitor` -- the ones built through `roleLeaf`, the ones assembled inline, and `generate broker` on the container platforms, where the artifact is per-host so it takes the same positional |
 | `TestPodFlagCompletesRoles` | `--pod` completes to the same role set as the positionals, not to filenames |
-| `TestPlatformFlagCompletes` | `convert --platform` offers exactly what `convertPlatform` accepts, minus the empty detect value |
-| `TestDirFlagCompletesDirectories` | `--dir` asks the shell to filter to directories, on both platform trees |
-| `TestNoArgsLeafOffersNoFiles` | A command built by `leaf` offers nothing, stopping cobra's filename fallback on the majority of commands in the tree. The list covers the no-arg commands that carry a flag or a `--gen` annotation too (`deploy`, `delete`, `down`, `diagnostics`, `check`, `status`, `show-all`, `up`): each used to hand-roll the literal `leaf` already builds, and so shipped without `NoFileCompletions` -- they now go through `leaf` and attach the extra afterwards |
-| `TestAllowCommandOffersNoFiles` | `--allow-command` offers no files on any platform: the value is a bare binary name, and paths are what its own help text warns against |
+| `TestPlatformFlagCompletes` | The root `--platform` flag, and `convert` inheriting the same one, offer exactly the three canonical platform names. The empty detect value is left out (omitting the flag is how you ask for it); so are `kube`/`dk`/`pm` -- the abbreviations save typing something you already know, which is what a completion does anyway, and offering both would put two names for one platform in front of the user -- and so are the retired `k8s` and `k8` |
+| `TestDirFlagCompletesDirectories` | `--dir` asks the shell to filter to directories |
+| `TestNoArgsLeafOffersNoFiles` | A command built by `leaf` offers nothing, stopping cobra's filename fallback on the majority of commands in the tree. `deploy broker`/`deploy all` are not in the list: both take a `[role]`, so they complete to role names rather than nothing, which `TestRoleArgsComplete` already covers |
+| `TestAllowCommandOffersNoFiles` | `--allow-command` offers no files: the value is a bare binary name, and paths are what its own help text warns against |
 | `TestFlagCompletionsRegistered` | The drift gate: every flag that should have a completion function still has one, since a renamed flag silently reverts to filename completion at a TAB press and no other test would notice |
 
 ---
@@ -366,7 +461,7 @@ mapping, and the YAML emitter. 31 tests.
 
 | Test | What it covers |
 | --- | --- |
-| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as k8s, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `k8s.runtime` argv, and only the two expected advisories. The fixture sets `SOLBK_MSGNODE_CPU`, as every real legacy file does, so the drop is exercised here: it warns, and no `cpu` reaches the YAML |
+| `TestConvertLegacyK8sEnv` | `testdata/legacy-k8s.env` converts end to end and matches `testdata/legacy-k8s.yaml.golden`: platform detected as kubernetes and written as a `kubernetes:` section, `true` -> `yes`, every scalar/array/associative value mapped, `${SOLBK_NS}` expanded, a trailing comment stripped, an explicit `0` kept, an empty PSK omitted, a multi-word `KUBE` preserved as `kubernetes.runtime` argv, and only the two expected advisories. The fixture sets `SOLBK_MSGNODE_CPU`, as every real legacy file does, so the drop is exercised here: it warns, and no `cpu` reaches the YAML |
 | `TestConvertUserPasswordsBecomeAdditionalUsers` | The one legacy variable with no like-for-like successor: `SOLBK_USR_PASS` becomes structured `admin.additionalUsers` entries with the least-privileged `accessLevel: none` plus a warning naming that choice, malformed entries are dropped with a warning naming their POSITION and never their text (a malformed entry is most likely a bare password), and `Convert` re-validating its own output proves the emitted level is a legal one |
 | `TestConvertAdminUserIsContainerOnly` | The one admin field that is not portable: `SOLBK_ADM_USER` is emitted only for docker/podman, and on a k8s target is dropped with a warning naming why (`validateK8s` refuses any non-`admin` value), stays out of the generic unmapped list because it is still read, and leaves a document that validates -- no "will not load as-is". A source that already said `admin` warns about nothing |
 | `TestConvertContainer` | A container env file maps the node table, container block, ulimits, network, and spool scaling |
@@ -375,9 +470,9 @@ mapping, and the YAML emitter. 31 tests.
 | `TestConvertExplicitPlatformWins` | `--platform` overrides detection and suppresses the detection warning |
 | `TestConvertUnmappedVariablesWarn` | Variables with no YAML equivalent are named in the warnings, not dropped silently |
 | `TestConvertBashPlumbingIsSilent` | Bootstrap-only variables (`EXDIR`, `GENONLY`) are dropped without noise |
-| `TestConvertKubeMapsToK8sRuntime` | `KUBE` becomes `k8s.runtime` in every shape it carried: a drop-in (`oc`), a wrapper (`microk8s kubectl`), a `--kubeconfig` profile, and an absolute path -- no warning |
+| `TestConvertKubeMapsToK8sRuntime` | `KUBE` becomes `kubernetes.runtime` in every shape it carried: a drop-in (`oc`), a wrapper (`microk8s kubectl`), a `--kubeconfig` profile, and an absolute path -- no warning |
 | `TestConvertKubeEchoIsDropped` | `KUBE="echo"` was the bash dry-run trick, so it warns pointing at `--dry-run` and emits no `runtime`, rather than becoming a runtime that no-ops every command |
-| `TestConvertKubeSilentOnContainerPlatform` | `KUBE` belongs to the k8s bootstrap: a container conversion consumes it silently and never emits `k8s.runtime` |
+| `TestConvertKubeSilentOnContainerPlatform` | `KUBE` belongs to the Kubernetes bootstrap: a container conversion consumes it silently and never emits `kubernetes.runtime` |
 | `TestConvertRedundancySpellings` | `true`/`yes` and `false`/`no` normalise (any case); anything else copies through with a warning |
 | `TestConvertRedundancyOmitted` | An unset SOLBK_REDUNDANCY emits no key either way, but a container source is warned that its bootstrap defaulted to HA while this CLI defaults to standalone; a k8s source stays silent because the defaults already agree |
 | `TestConvertDockerRunModeWarns` | DOCKER_MODE=run is dropped with the removal reason rather than carried over to fail validation later |
@@ -572,7 +667,7 @@ only its own half.
 ## internal/k8s
 
 Everything driven through `kubectl`: the read-only permission preflight, prep, deploy,
-operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
+operator, day-2 ops, secrets, and the pod transport. 105 tests across 11 files.
 
 ### names_test.go
 
@@ -587,7 +682,7 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 
 | Test | What it covers |
 | --- | --- |
-| `TestClusterHonoursRuntime` | Every `Cluster` helper (`kubectl`, `apply`, `deleteStdin`, `output`, `interactiveExec`) runs argv[0] from `k8s.runtime` and places its leading arguments ahead of the subcommand |
+| `TestClusterHonoursRuntime` | Every `Cluster` helper (`kubectl`, `apply`, `deleteStdin`, `output`, `interactiveExec`) runs argv[0] from `kubernetes.runtime` and places its leading arguments ahead of the subcommand |
 | `TestTransportHonoursRuntime` | The pod transport does the same for `exec`, `exec -i`, the stdin `Upload`, and both `cp` directions |
 | `TestExecutorRefusesUnapprovedRuntime` | The executor half of enforce-twice: a `Cluster` and a transport built straight from a `*config.Config` that never went through `config.Load` still refuse an unapproved `microk8s kubectl`, on all eleven paths that could reach exec -- and hand the runner nothing at all, since refusing after the call would mean the binary already ran |
 | `TestRuntimeDefaultArgvUnchanged` | With the default runtime the argv is exactly what the old hardcoded `kubectl` constant produced -- the regression guard for every existing `+ kubectl ...` assertion |
@@ -608,7 +703,7 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | Test | What it covers |
 | --- | --- |
 | `TestCheckEnvNoSecretLeak` | The config report shows secrets as set/MISSING and never prints their values, and the operator image line carries the `image.registry` prefix the apply adds -- the report named a bare `Operator.Image` the deploy would never pull |
-| `TestCheckOperatorNS` | The line `CheckEnv` cannot print, since discovery needs a live cluster: a configured `k8s.operator.namespace` reports its origin with no cluster call, a scripted deployment row reports `discovered on the cluster`, and both "no operator row" and a refused lookup fall back to the default with wording that does not claim the operator is uninstalled. Under `--dry-run` the line skips instead of reporting an unresolved default |
+| `TestCheckOperatorNS` | The line `CheckEnv` cannot print, since discovery needs a live cluster: a configured `kubernetes.operator.namespace` reports its origin with no cluster call, a scripted deployment row reports `discovered on the cluster`, and both "no operator row" and a refused lookup fall back to the default with wording that does not claim the operator is uninstalled. Under `--dry-run` the line skips instead of reporting an unresolved default |
 | `TestReachable` | The API-server probe argv, and failure when it errors |
 | `TestCheckStorageClass` | A suitable configured class passes with no default lookup; Immediate binding or no expansion is rejected; missing attributes reject; dry-run skips the assertions |
 | `TestResolveStorageClass` | A configured class short-circuits; a single default resolves; multiple defaults error; no default returns empty |
@@ -636,10 +731,10 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | `TestLabelNodesReprompt` | Out-of-range and non-numeric selections re-prompt before the correct node is labelled |
 | `TestLabelNodesRBACDenied` | A failed RBAC precheck aborts and labels nothing |
 | `TestLabelNodesEOFNoSelection` | EOF with no selection errors |
-| `TestCreateSecretsFailsWithoutAdminFields` | CreateSecrets can pass secretPreflight (TLS-only) and still fail loud inside GenSecrets when admin.pass/k8s.adminSecret are unset, with zero applies made |
+| `TestCreateSecretsFailsWithoutAdminFields` | CreateSecrets can pass secretPreflight (TLS-only) and still fail loud inside GenSecrets when admin.pass/kubernetes.adminSecret are unset, with zero applies made |
 | `TestCreateSecretsStopsOnPreflightFailure` | A refused `auth can-i create secrets` stops CreateSecrets before GenSecrets reads the TLS private key off disk -- loading key material for a cluster that will not accept it is work worth not doing |
-| `TestGenSecretsTLSError` | GenSecrets itself (not just via CreateSecrets' preflight) fails when tls.serverSecret is set but the cert files are unreadable, guarding `prep secrets --gen-secrets-only` |
-| `TestDeleteSecretsSkipsUnconfiguredAdminSecret` | DeleteSecrets never issues `kubectl delete secret ""` when k8s.adminSecret was never configured |
+| `TestGenSecretsTLSError` | GenSecrets itself (not just via CreateSecrets' preflight) fails when tls.serverSecret is set but the cert files are unreadable, guarding `generate secrets` |
+| `TestDeleteSecretsSkipsUnconfiguredAdminSecret` | DeleteSecrets never issues `kubectl delete secret ""` when kubernetes.adminSecret was never configured |
 | `TestDeleteSecretsStopsOnError` | A genuine delete failure stops the teardown loop and surfaces instead of silently continuing to the remaining secrets |
 | `TestLabelNodesHAOnlyPrimaryConfigured` | In an HA config with only LabelsPrimary set, backup and monitor are read from their own config fields (not Primary's) and are silently skipped when empty, never prompted |
 | `TestNodeNamesError` | nodeNames fails loud with its own wrap on a genuine query failure instead of returning a misleadingly empty list |
@@ -666,6 +761,7 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | `TestDeleteBrokerPurgeHA` | Purge deletes the CR plus all three role PVCs |
 | `TestDeleteBrokerPurgeStandalone` | Purge on standalone deletes the CR plus the single PVC |
 | `TestDeleteBrokerPurgeSwallowsPVCError` | A failing PVC delete is best-effort: teardown continues and every PVC is still attempted |
+| `TestDeleteBrokerLogsPVCOutcome` | DeleteBroker states which layer survived rather than leaving it to be inferred from the argv: `purge=false` logs "PVCs kept" naming `--delete-data`, with no per-PVC line; `purge=true` logs "deleting PVC \<name\>" for every role plus a final "PVCs deleted" |
 | `TestDeployBrokerKeepYAMLWriteError` | DeployBroker fails loud and never applies the manifest when writing .broker.yaml fails, instead of silently proceeding as if the file were saved |
 | `TestDeployBrokerStopsOnPreflightFailure` | The preflight ordering guarantee: when `auth can-i` answers no, no manifest is written and no call follows the probe -- without this the probe would be decoration |
 | `TestPreflightUnreachableClusterHints` | An unreachable API server is a different failure from an RBAC refusal and gets the hint that helps (`log in first`, `oc login`), carrying kubectl's own error rather than replacing it; still nothing runs after the probe |
@@ -680,7 +776,11 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | `TestGenOperator` | Render-only uses the configured operator namespace, or the fixed default when unset |
 | `TestOperatorApply` | regcred is applied into the operator namespace first, then the bundle, both on stdin |
 | `TestOperatorApplyNoPullSecret` | With no pull secret only the bundle is applied |
-| `TestOperatorDelete` | Teardown deletes the rendered bundle with `--ignore-not-found` |
+| `TestOperatorDelete` | With `deleteCRDs=false`, teardown deletes only the non-CRD documents (Deployment, RBAC, ...) with `--ignore-not-found`, and the piped manifest carries no `kind: CustomResourceDefinition` document at all |
+| `TestOperatorDeleteWithCRDs` | With `deleteCRDs=true`, the CRD document is deleted in a SECOND, separate `kubectl delete` call rather than folded into the first -- the split that stops a routine operator teardown from cascade-deleting every PubSubPlusEventBroker resource in the cluster |
+| `TestSplitOperatorBundle` | The column-0 anchoring behind that split: a ConfigMap with an indented `kind: CustomResourceDefinition` line buried in an example snippet is not misclassified as a CRD, while a real unindented CRD document still is; plus empty input, no-CRD input, and CRD-only input all hand back the nil/populated halves `OperatorDelete` expects |
+| `TestOperatorRestart` | `rollout restart deployment` targets the operator deployment in its resolved namespace, behind the `patch deployments` permission probe |
+| `TestOperatorInstalled` | Reports true only when both the CRD and the controller Deployment gets succeed, stops after the first failing get without probing the second, and its bool-only signature means an absent operator and an unreachable cluster are indistinguishable to the caller |
 | `TestOperatorLogsArgs` | Log passthrough targets the operator deployment |
 | `TestOperatorStatus` | OperatorStatus issues the deployment-wide get then the controller-pods get in order, and stops after the first if it fails |
 | `TestOperatorDescribe` | OperatorDescribe issues `describe deployment/<name> -n <opNS>` against the resolved operator namespace |
@@ -690,8 +790,10 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | Test | What it covers |
 | --- | --- |
 | `TestStatus` | Status queries pods, services, and statefulsets in the broker namespace |
-| `TestShowAll` | Cluster-wide listing keeps broker resources and filters out the operator pod and unrelated resources |
-| `TestShowAllWrapsGetError` | A failing get aborts loudly with per-resource context and preserves the cause |
+| `TestShowAll` | The running picture `--all` reports across every namespace -- the operator everything depends on, the broker resources, and the pods/services/statefulsets behind them -- with unrelated cluster workloads filtered out. The operator's own POD is dropped too: it is reported once, as a deployment, and does not belong in the broker pod list |
+| `TestShowAllDetailAddsStaticArtifacts` | `--detail` appends secrets, configmaps and PVCs -- the artifacts a broker is built from, which the running picture never shows, and where a PVC left behind by a removed broker turns up |
+| `TestSurveyScopesToTheBrokerNamespace` | Without `--all` the same sections are read in the broker's namespace only. That scoping IS the difference between the two, so it is asserted on the argv rather than the output |
+| `TestShowAllReportsAndContinuesOnGetError` | One resource kind that cannot be listed -- an RBAC-restricted secrets read, or a CRD that is not installed -- names itself in place and the survey continues. Aborting would make `--detail` unusable for anyone without cluster-admin |
 | `TestFilterLines` | Empty input, header retention, matching, and the "(none matched)" note |
 | `TestDescribeBroker` | Describe targets the pod for the requested role |
 | `TestDescribeLB` | Describe targets the load-balancer service |
@@ -713,7 +815,7 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 | `TestSecretGoldens` | Rendered admin, TLS, docker-registry, and operator-regcred secrets match their committed goldens |
 | `TestAdminSecretDecodes` | The base64 data round-trips to the expected plaintext passwords |
 | `TestAdminSecretExcludesAdditionalUsers` | The finding that shaped the k8s user path: the operator reads only the admin and monitor keys, so an additional user's name and password (plain and base64) must be absent from this Secret entirely |
-| `TestAdminSecretErrors` | Empty password, empty `k8s.adminSecret`, and an additional user with no name, a bad name, or no password all error |
+| `TestAdminSecretErrors` | Empty password, empty `kubernetes.adminSecret`, and an additional user with no name, a bad name, or no password all error |
 | `TestTLSSecretErrors` | Unset cert, unset secret name, and missing cert/CA/key files all error |
 | `TestDockerRegistrySecretEmptyName` | An empty pull-secret name errors |
 
@@ -732,7 +834,7 @@ operator, day-2 ops, secrets, and the pod transport. 98 tests across 11 files.
 ## internal/container
 
 The host-local Docker/Podman manager, its node-local transport, and the engine
-preflight that precedes every mutating operation. 93 tests across 4 files.
+preflight that precedes every mutating operation. 102 tests across 4 files.
 
 ### runtime_test.go
 
@@ -751,8 +853,9 @@ The read-only engine probe, and the child-environment hygiene it shares with
 
 | Test | What it covers |
 | --- | --- |
-| `TestPreflightRunsBeforeAnything` | The layer-7 ordering guarantee: `<runtime> info` is the FIRST call `Deploy`, `Delete` and `PrepHost` make, on both platforms -- anything before it would be host state left behind by a deploy that then failed on a stopped daemon |
+| `TestPreflightRunsBeforeAnything` | The layer-7 ordering guarantee: `<runtime> info` is the FIRST call `Deploy`, `Delete`, `PrepHost`, `Start`, `Stop` and `Restart` make, on both platforms -- anything before it would be host state left behind by an operation that then failed on a stopped daemon |
 | `TestPreflightFailureStopsTheDeploy` | An unreachable engine stops `Deploy` nonzero, carries the engine's own error, adds the actionable hint, writes no compose file, and issues no call after the probe |
+| `TestPreflightFailureStopsLifecycle` | The same ordering guarantee for `Start`, `Stop` and `Restart`: an unreachable engine fails each one with no call beyond the probe -- these act on an already-deployed broker, so there is no artifact write to check, only that nothing else ran |
 | `TestPreflightHintIsPlatformShaped` | Docker gets the daemon/group hint; rootful podman gets `sudo systemctl start podman.socket`; rootless podman gets the user-session hint and explicitly NOT a sudo suggestion, which would start the engine its deploy is not using. None of them offers to act on the operator's behalf |
 | `TestPreflightIsPreviewableUnderDryRun` | `--dry-run` echoes the probe and skips its assertion, so previewing needs no engine -- which is why there is no skip flag |
 | `TestComposeSecretEnvNamesCannotBeSystemVars` | The config-side half of the child-environment rule: even with `container.name` set to `PATH`, `LD_PRELOAD`, `ld.preload` or `IFS`, every variable name keeps its fixed literal suffix, so no config value can produce a name the child's loader reads |
@@ -782,8 +885,8 @@ The read-only engine probe, and the child-environment hygiene it shares with
 | `TestManagerDockerCheckFailsWhenComposeMissing` | With only the compose probe failing, the error names the `docker.compose` override |
 | `TestManagerDeployDockerPassesSecretsAsEnv` | Deploy writes no secret file at all: `compose up -d` goes through `RunEnv` carrying `SOLACE_ADMIN_PASSWORD`/`SOLACE_REDUNDANCY_PSK`, no value reaches an argv, and the compose file holds the source/target/variable references and the `*filepath` pointer instead of either value |
 | `TestManagerDeployPodmanCreatesSecrets` | Deploy loads both secrets into podman's store with `secret create --replace` under container-scoped names (`sol-pod-*`), values on stdin and never in an argv; the quadlet unit is 0600 |
-| `TestManagerDeployRejectsEmptySecret` | An empty required secret fails the deploy naming the field and the fix (`prep host` for the PSK) rather than starting a broker without one |
-| `TestManagerDeployDockerDryRunMasksSecretEnv` | Dry-run creates nothing, stays previewable before `prep host` has generated the PSK, and echoes the compose environment as `NAME=***` without the password |
+| `TestManagerDeployRejectsEmptySecret` | An empty required secret fails the deploy naming the field and the fix (`prepare host` for the PSK) rather than starting a broker without one |
+| `TestManagerDeployDockerDryRunMasksSecretEnv` | Dry-run creates nothing, stays previewable before `prepare host` has generated the PSK, and echoes the compose environment as `NAME=***` without the password |
 | `TestManagerDeployPodmanDryRunHidesSecretBytes` | The dry-run echo shows the secret-create command and a stdin byte count, never the values |
 | `TestManagerRedeployUnchangedRestartsForRotation` | Docker: `--restart` against an unchanged compose file forces `up -d --force-recreate`, which is the only way a rotated secret reaches the running broker |
 | `TestManagerRedeployPodmanUnchangedRestartsForRotation` | Podman: the same state restarts the service (the store was refreshed, but the running container holds the old values) |
@@ -798,6 +901,14 @@ The read-only engine probe, and the child-environment hygiene it shares with
 | `TestManagerDeleteDockerComposeDownWhenFileExists` | With a compose file present, delete runs `compose down` |
 | `TestManagerDeleteDockerPurgeRemovesDataDir` | Delete runs `compose down` and, with purge, removes the data dir |
 | `TestManagerDeleteDockerComposeNoFileFallsBackToStopRm` | A missing compose file falls back to stop+rm |
+| `TestManagerLifecyclePodmanSystemctl` | `Start`/`Stop`/`Restart` on podman drive `systemctl {start\|stop\|restart} <name>.service` rather than the engine directly, since the quadlet unit owns the container's lifecycle -- covered rootful and rootless, since only rootless prepends `--user` |
+| `TestStatusAllFindsBrokersByImage` | The container answer to `--all`: discovery is by IMAGE, not by the configured container name, so a broker deployed by hand still appears and an unrelated container never does. A config-scoped listing cannot answer "what is actually running on this host", which is the whole reason the flag exists |
+| `TestStatusAllReportsNothingFound` | An empty result says so in words. This is the ordinary case on a host not yet deployed to, where a bare header would read as though the command failed to look |
+| `TestStatusAllWrapsListError` | An engine that cannot be asked (docker not running, podman socket down) fails loud naming the cause, rather than reporting an empty host -- which would be a lie in exactly the situation being diagnosed |
+| `TestStatusAllDetailInspectsEachAndKeepsSecretsOut` | `--detail` inspects every container it found, and the inspect format is deliberately mounts-only. Secrets are files under `/run/secrets`, so mounts name them without reading them -- while docker's compose secrets are environment-sourced, so reading the environment here would put passwords on the terminal and into scrollback (S3) |
+| `TestManagerLifecycleDockerComposeFile` | `Start`/`Stop`/`Restart` on docker drive `compose -f <file> {start\|stop\|restart}` when the compose file is on disk |
+| `TestManagerLifecycleDockerNoComposeFile` | With no compose file on disk, the same three verbs fall back to the plain `<runtime> {start\|stop\|restart} <name>`, mirroring Delete's stop/rm fallback |
+| `TestManagerLifecycleDockerDryRunUsesCompose` | Under `--dry-run` there is no file to probe (Echo never wrote one), so the preview always takes the compose branch |
 | `TestManagerRedeployUnchangedIsNoOp` | Re-deploying an unchanged artifact against a running broker touches nothing on either platform and says there was nothing to do |
 | `TestManagerRedeployChangedNeedsConsent` | A changed artifact against a running broker is written but not applied without consent (warning that the broker is still on the previous one); `--restart` and an accepted prompt both apply it. This is the podman silent no-op fixed: `systemctl start` on an active unit left the old image running while reporting success |
 | `TestManagerDescribe` | `<runtime> inspect` on both platforms, plus the installed unit on podman, with a missing unit tolerated |
@@ -855,7 +966,7 @@ The read-only engine probe, and the child-environment hygiene it shares with
 ## internal/engine
 
 The command runner seam: `Echo` (dry-run) and `Exec` (real subprocess), plus display
-quoting, PATH resolution, and the pre-exec announcement. 25 tests across 2 files.
+quoting, PATH resolution, and the pre-exec announcement. 26 tests across 2 files.
 
 ### runner_test.go
 
@@ -908,14 +1019,14 @@ Manifest and unit-file rendering, guarded by committed goldens. 17 tests.
 
 | Test | What it covers |
 | --- | --- |
-| `TestGolden` | Fourteen renderings from the sample env match their goldens: k8s broker CR (the sample omits `k8s.ports`, `timezone` and both security blocks, so this covers the default ports and the omitted branches), the same CR with an explicit port list (a container port differing from the service port, and an explicit protocol), the same CR with timezone and both security blocks set, podman quadlet, docker compose in HA and standalone (standalone drops the redundancy block and its PSK secret reference), container env pairs for HA (no `timezone`, so no TZ pair) and standalone (`timezone` set, so the TZ pair is present), the container env file, the podman and docker secret scripts (the docker case uses a password holding a quote, a space and a `$`), the quadlet and compose forms of the opt-in health check, the CR with an explicit pullPolicy plus podAnnotations/podLabels, the CR with node and pod affinity alongside the legacy anti-affinity term, and the CR with loadBalancer annotations, node labels and tolerations (values carrying a colon and a URL, which survive only because both halves are quoted) |
+| `TestGolden` | Fourteen renderings from the sample env match their goldens: k8s broker CR (the sample omits `kubernetes.ports`, `timezone` and both security blocks, so this covers the default ports and the omitted branches), the same CR with an explicit port list (a container port differing from the service port, and an explicit protocol), the same CR with timezone and both security blocks set, podman quadlet, docker compose in HA and standalone (standalone drops the redundancy block and its PSK secret reference), container env pairs for HA (no `timezone`, so no TZ pair) and standalone (`timezone` set, so the TZ pair is present), the container env file, the podman and docker secret scripts (the docker case uses a password holding a quote, a space and a `$`), the quadlet and compose forms of the opt-in health check, the CR with an explicit pullPolicy plus podAnnotations/podLabels, the CR with node and pod affinity alongside the legacy anti-affinity term, and the CR with loadBalancer annotations, node labels and tolerations (values carrying a colon and a URL, which survive only because both halves are quoted) |
 | `TestArtifactsCarryNoSecrets` | The externalization guard: with distinctive values in `admin.pass`, `nodes.psk` and an additional user's password, no deployment artifact on any platform (broker CR, quadlet, compose file, env file) contains any of them, while `SecretScript` -- the renderer that supplies them -- contains all three |
 | `TestContainerSecretsRedundancy` | HA lists both secrets in a fixed order with the expected broker settings, `FilePathKey`/`MountPath` derive the file form both engines use (the mount is named after the setting, not the host-side secret), and standalone lists the admin password only (no mate link, so no PSK secret). An encrypted server-certificate key adds a third secret reaching the broker as `tls_servercertificate_passphrasefilepath`, and only when the passphrase is actually set |
 | `TestContainerSecretNamesAreHostScoped` | The de-confliction: the host-side name is `<container.name>-<suffix>` (the default name keeps the historical `solace-admin-password`), the in-container target and path never carry that prefix, and `EnvVar` maps `.`/`-` to `_` and prefixes a leading digit so the name stays exportable |
 | `TestAdditionalUsersReachBothHalves` | An extra user's password becomes a per-host secret named after it (`ConfigKey` naming the env-file key), while its access level and `*filepath` pointer ride the env pairs and the password does not |
 | `TestQuadletHealthCmdEscapesPercent` | systemd expands %-specifiers in every unit assignment, not just the quoted `Environment=` ones, so a percent-encoded character in a probe URL is doubled or the line is dropped and the health check silently disabled. Quotes and backslashes stay untouched there (the value is unquoted and podman splits it itself), and compose keeps the percent literal since it has no specifier expansion |
 | `TestHealthCmdDefaultsToReadiness` | An enabled block with no cmd polls `/health-check/readiness` on 5550, and an explicit cmd wins |
-| `TestSecretPreflight` | The precondition `deploy` and `--gen-secrets-only` share: an empty secret value is refused up front, naming the field and `prep host` for the PSK. Standalone needs no PSK, so an empty one is fine there |
+| `TestSecretPreflight` | The precondition `deploy` and `generate secrets` share: an empty secret value is refused up front, naming the field and `prepare host` for the PSK. Standalone needs no PSK, so an empty one is fine there |
 | `TestShQuote` | Secret-script quoting: a value holding a single quote survives as itself instead of ending the shell string |
 | `TestParsePort` | Port entries across the `name=container`, `container:service`, and `/PROTO` forms |
 | `TestParseToleration` | Toleration Equal (`key=value:effect`) and Exists (`key:effect`) forms |
@@ -965,7 +1076,7 @@ new fake.
 - Tests needing a clean single-broker pass write their own minimal env to a temp file:
   `writeStandaloneEnv` (k8s-shaped) and `writeCtrStandaloneEnv` (container-shaped, needs a
   `nodes:` block) in `internal/cli/cli_test.go`. `writeRuntimeEnv`
-  (`internal/cli/allowcommand_test.go`) is the same idea parameterized by `k8s.runtime`, for
+  (`internal/cli/allowcommand_test.go`) is the same idea parameterized by `kubernetes.runtime`, for
   driving one hostile or wrapped command through the whole CLI.
 - **`guardConfig`** (`internal/config/execguard_test.go`) is a config that validates cleanly
   on every platform with only the command fields left to vary, so a `Validate` failure in the
@@ -1001,7 +1112,7 @@ new fake.
 | internal/container | `assertMode` (manager_test.go) | Permission-bit assertion for the artifacts the manager writes; skipped on Windows, which carries no POSIX mode |
 | internal/cli | `runRoot`, `capture`/`captureStdout`/`captureStderr` (cli_test.go) | Builds a fresh command tree per call and captures a standard stream through a pipe |
 | internal/cli | `runRootWith` (cli_test.go) | `runRoot` with a hook to configure the `App` before `Execute` -- how the confirm-prompt branches are driven deterministically instead of depending on the test process's own stdin. `runRoot` delegates to it with a nil hook, so it is unchanged for every existing test |
-| internal/cli | `opRunner` / `opCall` / `opFailOn` / `opFailOnCount` (cli_test.go) | A fake `engine.Runner` whose failure is targeted by argv substring (or by the Nth matching occurrence, for the repeated identical `apply`/`delete` calls in `up`/`down`/`prep`). Ported from internal/container's `capRunner`/`failOn`; this is what makes the orchestration-abort tests possible -- assert step N fails and step N+1 never ran. `Output` answers the k8s `auth can-i` preflight "yes" unless a test supplies its own `output`/`fail` for that call, so the op-level tests stay about the work they were written for |
+| internal/cli | `opRunner` / `opCall` / `opFailOn` / `opFailOnCount` (cli_test.go) | A fake `engine.Runner` whose failure is targeted by argv substring (or by the Nth matching occurrence, for the repeated identical `apply`/`delete` calls in `deploy all`/`remove all`/`prepare all`). Ported from internal/container's `capRunner`/`failOn`; this is what makes the orchestration-abort tests possible -- assert step N fails and step N+1 never ran. `Output` answers the k8s `auth can-i` preflight "yes" unless a test supplies its own `output`/`fail` for that call, so the op-level tests stay about the work they were written for |
 | internal/cli | `loadDirect`, `healthyShowRD` (cli_test.go) | Loads a config from an inline YAML body for tests that build an `App` directly with a non-Echo runner, and a canned `show redundancy` transcript that satisfies `broker.primaryRedundancyUp` so a poll succeeds on the first read |
 | internal/cli | `bashEnv`, `writeBashEnv` (cli_test.go) | Minimal legacy env file for the convert command tests |
 | internal/convert | `strictDecode` (convert_test.go) | Re-reads generated YAML with `KnownFields(true)`, so an emitted key that is not in the schema fails the test |
@@ -1020,7 +1131,7 @@ Override them on the struct after construction:
 | `Manager.GenPSK` | crypto/rand + base64 | internal/container -- redundancy PSK generation |
 | `Manager.Geteuid` | `os.Geteuid` | internal/container -- the rootless/rootful guard (returns -1 on Windows, which skips it) |
 | `Ops.Hostname` | `os.Hostname` | internal/broker -- node-role detection in `LocalRole` |
-| `App.Interactive` | `isTTY(os.Stdin)` | internal/cli -- whether a run may prompt. Gates `confirmDelete`/`confirmPurge`/`confirmRestart` and the placement-labelling step of `up`, so the prompt branches guarding destructive actions are testable |
+| `App.Interactive` | `isTTY(os.Stdin)` | internal/cli -- whether a run may prompt. Gates `confirmDelete`/`confirmLayer`/`confirmRestart` and the placement-labelling step of `prepare all` (LabelNodes), so the prompt branches guarding destructive actions are testable |
 | `App.PromptIn` | `os.Stdin` | internal/cli -- where a confirmation answer is read from |
 | `engine.Runner` | `engine.Exec` | Everywhere -- swapped for `engine.Echo` (dry-run) or a capturing fake |
 

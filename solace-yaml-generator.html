@@ -160,7 +160,7 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
     <div class="tgl"><input type="checkbox" id="i-ha" onchange="togHA();gen()"><label for="i-ha">High Availability (3-node redundancy)</label></div>
     <div class="fr">
       <div class="f"><label>Pod Restart Strategy</label><select id="i-updatestrategy" onchange="gen()"><option value="automatedRolling" selected>Automated Rolling</option><option value="manualPodRestart">Manual Pod Restart</option></select></div>
-      <div class="f"><label>Timezone</label><input id="i-timezone" placeholder="e.g. Asia/Singapore" oninput="gen()"><div class="h">Optional, applies to k8s, docker and podman. Blank leaves the broker on the image default.</div></div>
+      <div class="f"><label>Timezone</label><input id="i-timezone" placeholder="e.g. Asia/Singapore" oninput="gen()"><div class="h">Optional, applies to kubernetes, docker and podman. Blank leaves the broker on the image default.</div></div>
     </div>
     <div class="fr">
       <div class="f"><label>Kubectl Command</label><input id="i-kubectl" placeholder="kubectl" oninput="gen()"><div class="h">Optional. A whole profile works: oc, microk8s kubectl, or kubectl --kubeconfig /path/.kubeconfig-dev. Blank means kubectl.</div></div>
@@ -317,7 +317,6 @@ body{font-family:'Inter',system-ui,sans-serif;font-size:.88rem;color:var(--tp);b
       </div>
       <div class="f" style="font-size:.72rem;color:var(--ts);margin-bottom:.5rem;margin-top:.75rem;font-weight:600">Docker only</div>
       <div class="fr">
-        <div class="f"><label>Deploy Mode</label><select id="i-dkmode" onchange="gen()"><option value="compose" selected>compose</option><option value="run">run</option></select></div>
         <div class="f"><label>Compose File</label><input id="i-dkcompose" placeholder="docker-compose.yml" oninput="gen()"></div>
         <div class="f"><label>Runtime Binary</label><input id="i-dkruntime" placeholder="docker" oninput="gen()"></div>
       </div>
@@ -985,12 +984,19 @@ function genEnv(){
     if(rb)y+='\n'+blk('replication',rb,'');
   }
 
-  // ── k8s ──
-  y+='\nk8s:\n'+kv('runtime',V('i-kubectl'),'  ')+kv('name',V('i-bkname'),'  ')+kv('namespace',V('i-bkns'),'  ')
+  // ── broker (platform-neutral: cli scripts, diag dir, product keys, domain certs) ──
+  const dfiles=L('i-domfiles');
+  let filesBody='';
+  dfiles.forEach(d=>{const p=d.split('=');if(p.length===2)filesBody+=`      ${yq(p[0].trim())}: ${yq(p[1].trim())}\n`;});
+  const brokerBody=kv('cliScriptsFolder',V('i-clifolder'),'  ')+kv('diagDir',V('i-diagdir'),'  ')
+    +(pkOn?klist('productKeys',L('i-pkeys'),'  '):'')
+    +blk('domainCerts',kv('folder',V('i-domfolder'),'    ')+blk('files',filesBody,'    '),'  ');
+  if(brokerBody)y+='\n'+blk('broker',brokerBody,'');
+
+  // ── kubernetes ──
+  y+='\nkubernetes:\n'+kv('runtime',V('i-kubectl'),'  ')+kv('name',V('i-bkname'),'  ')+kv('namespace',V('i-bkns'),'  ')
     +kv('adminSecret',V('i-admsecret'),'  ')
-    +kv('updateStrategy',V('i-updatestrategy'),'  ')+kv('serviceAccount',V('i-svcaccount'),'  ')
-    +kv('cliScriptsFolder',V('i-clifolder'),'  ')
-    +kv('diagDir',V('i-diagdir'),'  ');
+    +kv('updateStrategy',V('i-updatestrategy'),'  ')+kv('serviceAccount',V('i-svcaccount'),'  ');
   y+=blk('storage',kv('class',V('i-sc'),'    ')+kv('msgNode',V('i-stmsg'),'    ')+kv('monNode',V('i-stmon'),'    '),'  ');
   // No cpu key: it is fixed by the scaling tier, and the loader rejects one.
   y+=blk('msgNode',kv('mem',V('i-bkmem'),'    '),'  ');
@@ -1022,11 +1028,6 @@ function genEnv(){
     return p.name+'='+pp+(p.proto==='TCP'?'':'/'+p.proto);
   });
   y+=klist('ports',ports,'  ');
-  if(pkOn)y+=klist('productKeys',L('i-pkeys'),'  ');
-  const dfiles=L('i-domfiles');
-  let filesBody='';
-  dfiles.forEach(d=>{const p=d.split('=');if(p.length===2)filesBody+=`      ${yq(p[0].trim())}: ${yq(p[1].trim())}\n`;});
-  y+=blk('domainCerts',kv('folder',V('i-domfolder'),'    ')+blk('files',filesBody,'    '),'  ');
 
   // ── docker / podman / nodes ──
   if(ctrOn){
@@ -1036,7 +1037,7 @@ function genEnv(){
         +kv('core',V('i-ctrcore'),'      '),'    ');
     const nblock=kv('mode',V('i-ctrnetmode'),'    ')+klist('ports',L('i-ctrports'),'    ');
 
-    y+='\ndocker:\n'+kv('runtime',V('i-dkruntime'),'  ')+kv('mode',V('i-dkmode'),'  ')
+    y+='\ndocker:\n'+kv('runtime',V('i-dkruntime'),'  ')
       +kv('composeFile',V('i-dkcompose'),'  ')+blk('network',nblock,'  ')+blk('container',cblock,'  ');
     y+='\npodman:\n'+kv('runtime',V('i-pdruntime'),'  ')
       +`  rootless: ${$('i-pdrootless').checked}\n`

@@ -47,7 +47,7 @@ func (c *Cluster) logf(format string, a ...any) {
 // ns is the broker namespace.
 func (c *Cluster) ns() string { return c.Cfg.K8s.Namespace }
 
-// cmd is the configured cluster CLI (k8s.runtime, default `kubectl`): argv[0]
+// cmd is the configured cluster CLI (kubernetes.runtime, default `kubectl`): argv[0]
 // plus any leading arguments that precede every call's own. Ported from the bash
 // KUBE variable, which the scripts expanded unquoted so it could carry a whole
 // profile (`kubectl --kubeconfig <file>`), not just a binary name.
@@ -117,7 +117,7 @@ func (c *Cluster) operatorNS(ctx context.Context) string {
 // so an absent operator and an RBAC denial arrive here identically.
 func (c *Cluster) operatorNSOrigin(ctx context.Context) (ns, origin string) {
 	if ns := c.Cfg.K8s.Operator.Namespace; ns != "" {
-		return ns, "k8s.operator.namespace"
+		return ns, "kubernetes.operator.namespace"
 	}
 	if ns := c.discoverOperatorNS(ctx); ns != "" {
 		return ns, "discovered on the cluster"

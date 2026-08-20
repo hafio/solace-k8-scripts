@@ -53,15 +53,19 @@ func (c *Cluster) DeleteBroker(ctx context.Context, purge bool) error {
 		return err
 	}
 	if !purge {
+		// Stated rather than left to be inferred: which of the two layers survived a
+		// removal is the fact an operator most needs from this command's output.
+		c.logf("PVCs kept -- the broker's persistent data survives (pass --delete-data to remove it)")
 		return nil
 	}
 	for _, role := range HARoles(c.Cfg) {
 		pvc := pvcName(c.Cfg, role)
-		c.logf("purging PVC %s", pvc)
+		c.logf("deleting PVC %s", pvc)
 		if err := c.kubectl(ctx, "delete", "pvc", pvc, "-n", c.ns(), "--ignore-not-found"); err != nil {
 			// Best-effort: a released or already-absent PVC must not abort teardown.
 			c.logf("  [WARN] could not delete PVC %s: %v", pvc, err)
 		}
 	}
+	c.logf("PVCs deleted -- the broker's persistent data is gone")
 	return nil
 }

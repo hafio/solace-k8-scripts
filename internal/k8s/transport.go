@@ -28,7 +28,7 @@ func NewTransport(r engine.Runner, cfg *config.Config) broker.Transport {
 
 func (k *kubectlTransport) ns() string { return k.cfg.K8s.Namespace }
 
-// cmd is the configured cluster CLI (k8s.runtime, default `kubectl`): argv[0]
+// cmd is the configured cluster CLI (kubernetes.runtime, default `kubectl`): argv[0]
 // plus any leading arguments that precede every call's own. Like Cluster.cmd it
 // re-runs the execution guard on every call -- the transport is constructed
 // straight from a *config.Config, so it must not assume Validate ever ran.

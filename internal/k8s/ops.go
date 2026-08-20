@@ -32,15 +32,33 @@ func (c *Cluster) Status(ctx context.Context) error {
 // infix, which excludes the operator's own pod (pubsubplus-eventbroker-operator-*, no
 // leading dash); services match the looser "pubsubplus" so the LB service
 // <name>-pubsubplus (no trailing -role) is included too (show-all-brokers.sh:31,74,90).
-var showAllSections = []struct {
+type surveySection struct {
 	title    string
 	resource string
 	wide     bool
 	filter   string
-}{
+}
+
+// showAllSections is the RUNNING picture: what is deployed and serving. The
+// operator leads because it is what everything else depends on, and it is matched
+// on its own name rather than the -pubsubplus- infix the broker resources carry.
+var showAllSections = []surveySection{
+	{"OPERATOR", "deployments", true, operatorDeployment},
+	{"BROKERS", "pubsubpluseventbrokers", false, ""},
 	{"PODS", "pods", true, "-pubsubplus-"},
 	{"SERVICES", "svc", false, "pubsubplus"},
 	{"STATEFULSETS", "statefulsets", false, "-pubsubplus-"},
+}
+
+// showDetailSections is what --detail adds: the STATIC artifacts a broker is built
+// from, which outlive any particular pod. They are listed separately because they
+// answer a different question -- not "is it running" but "what is it made of", and
+// a PVC left behind by a removed broker is exactly the kind of thing that only
+// shows up when you go looking.
+var showDetailSections = []surveySection{
+	{"SECRETS", "secrets", false, "pubsubplus"},
+	{"CONFIGMAPS", "configmaps", false, "pubsubplus"},
+	{"PERSISTENT VOLUME CLAIMS", "pvc", false, "pubsubplus"},
 }
 
 // ShowAll lists broker pods, services and StatefulSets across every namespace,
@@ -49,18 +67,47 @@ var showAllSections = []struct {
 // kubectl prints, minus the custom AGE/DISK math, which was flagged as a deliberate
 // simplification. Filtering needs the output captured, so under --dry-run (Echo) the
 // get is echoed and the filter finds nothing.
-func (c *Cluster) ShowAll(ctx context.Context) error {
+func (c *Cluster) ShowAll(ctx context.Context, detail bool) error {
+	sections := showAllSections
+	if detail {
+		sections = append(append([]surveySection{}, sections...), showDetailSections...)
+	}
+	return c.survey(ctx, sections, true)
+}
+
+// Survey is ShowAll scoped to this env file's namespace: the same picture, of the
+// one broker the config describes. `--all` is what widens it to the cluster.
+func (c *Cluster) Survey(ctx context.Context, detail bool) error {
+	sections := showAllSections
+	if detail {
+		sections = append(append([]surveySection{}, sections...), showDetailSections...)
+	}
+	return c.survey(ctx, sections, false)
+}
+
+// survey lists each section, either cluster-wide or in the broker's namespace, and
+// filters the rows client-side to the ones belonging to a Solace deployment. A
+// section that fails is reported and skipped rather than aborting the rest: this is
+// a report, and one resource kind the context cannot list (RBAC, or a CRD that is
+// not installed) must not hide the kinds it can.
+func (c *Cluster) survey(ctx context.Context, sections []surveySection, allNamespaces bool) error {
 	w := c.out()
-	for _, s := range showAllSections {
-		args := []string{"get", s.resource, "--all-namespaces"}
+	for _, s := range sections {
+		args := []string{"get", s.resource}
+		if allNamespaces {
+			args = append(args, "--all-namespaces")
+		} else {
+			args = append(args, "-n", c.ns())
+		}
 		if s.wide {
 			args = append(args, "-o", "wide")
 		}
+		fmt.Fprintf(w, "### %s ###\n", s.title)
 		raw, err := c.output(ctx, args...)
 		if err != nil {
-			return fmt.Errorf("listing %s across namespaces: %w", s.resource, err)
+			fmt.Fprintf(w, "  (could not list %s: %v)\n", s.resource, err)
+			continue
 		}
-		fmt.Fprintf(w, "### %s ###\n", s.title)
 		fmt.Fprintln(w, filterLines(string(raw), s.filter))
 	}
 	return nil
@@ -186,7 +233,7 @@ func (c *Cluster) CopyInto(ctx context.Context, role config.Role, files []string
 // wait is bounded by rolloutTimeout instead of an unbounded busy-wait.
 // RestartPod deletes a role's broker pod so the StatefulSet controller recreates it
 // against the pod template the operator has already updated. This is the step
-// k8s.updateStrategy=manualPodRestart requires after `deploy` changes image.tag:
+// kubernetes.updateStrategy=manualPodRestart requires after `deploy` changes image.tag:
 // the operator updates the template and then waits for a human, so without this
 // there was no in-tool way to finish an upgrade. --ignore-not-found makes a repeat
 // call harmless, and the readiness wait is bounded like ReplicasStart's.

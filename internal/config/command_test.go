@@ -29,26 +29,26 @@ func TestCommandUnmarshal(t *testing.T) {
 		doc  string
 		want []string
 	}{
-		{"scalar binary", "k8s:\n  runtime: kubectl\n", []string{"kubectl"}},
-		{"scalar drop-in", "k8s:\n  runtime: oc\n", []string{"oc"}},
-		{"scalar wrapper", "k8s:\n  runtime: microk8s kubectl\n", []string{"microk8s", "kubectl"}},
-		{"scalar profile", "k8s:\n  runtime: kubectl --kubeconfig /tmp/kc\n",
+		{"scalar binary", "kubernetes:\n  runtime: kubectl\n", []string{"kubectl"}},
+		{"scalar drop-in", "kubernetes:\n  runtime: oc\n", []string{"oc"}},
+		{"scalar wrapper", "kubernetes:\n  runtime: microk8s kubectl\n", []string{"microk8s", "kubectl"}},
+		{"scalar profile", "kubernetes:\n  runtime: kubectl --kubeconfig /tmp/kc\n",
 			[]string{"kubectl", "--kubeconfig", "/tmp/kc"}},
 		// Quoting the scalar groups it for YAML, not for the split: bash did not
 		// honour embedded quotes when word splitting either.
-		{"quoted scalar still splits", "k8s:\n  runtime: \"kubectl --context=dev\"\n",
+		{"quoted scalar still splits", "kubernetes:\n  runtime: \"kubectl --context=dev\"\n",
 			[]string{"kubectl", "--context=dev"}},
-		{"whitespace runs collapse", "k8s:\n  runtime: \"  oc   version  \"\n", []string{"oc", "version"}},
-		{"empty scalar", "k8s:\n  runtime: \"\"\n", nil},
-		{"omitted", "k8s:\n  name: dev-broker\n", nil},
-		{"flow sequence", "k8s:\n  runtime: [microk8s, kubectl]\n", []string{"microk8s", "kubectl"}},
-		{"block sequence", "k8s:\n  runtime:\n    - kubectl\n    - --context=dev\n",
+		{"whitespace runs collapse", "kubernetes:\n  runtime: \"  oc   version  \"\n", []string{"oc", "version"}},
+		{"empty scalar", "kubernetes:\n  runtime: \"\"\n", nil},
+		{"omitted", "kubernetes:\n  name: dev-broker\n", nil},
+		{"flow sequence", "kubernetes:\n  runtime: [microk8s, kubectl]\n", []string{"microk8s", "kubectl"}},
+		{"block sequence", "kubernetes:\n  runtime:\n    - kubectl\n    - --context=dev\n",
 			[]string{"kubectl", "--context=dev"}},
 		// The escape hatch the scalar form cannot express.
 		{"sequence keeps embedded spaces",
-			"k8s:\n  runtime:\n    - 'C:\\Program Files\\bin\\kubectl.exe'\n    - --context=dev\n",
+			"kubernetes:\n  runtime:\n    - 'C:\\Program Files\\bin\\kubectl.exe'\n    - --context=dev\n",
 			[]string{`C:\Program Files\bin\kubectl.exe`, "--context=dev"}},
-		{"empty sequence", "k8s:\n  runtime: []\n", nil},
+		{"empty sequence", "kubernetes:\n  runtime: []\n", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestCommandUnmarshal(t *testing.T) {
 // an argv, so it fails loud at decode rather than exec'ing an empty binary.
 func TestCommandUnmarshalRejectsOtherKinds(t *testing.T) {
 	var c Config
-	err := yaml.Unmarshal([]byte("k8s:\n  runtime:\n    bin: kubectl\n"), &c)
+	err := yaml.Unmarshal([]byte("kubernetes:\n  runtime:\n    bin: kubectl\n"), &c)
 	if err == nil {
 		t.Fatal("a mapping should not decode as a command")
 	}
@@ -87,9 +87,9 @@ func TestCommandUnmarshalPropagatesDecodeErrors(t *testing.T) {
 	}{
 		// Any plain scalar decodes into a string, so the one failing case is a
 		// tag that carries its own decoding: !!binary with invalid base64.
-		{"scalar", "k8s:\n  runtime: !!binary \"*not base64*\"\n", "base64"},
+		{"scalar", "kubernetes:\n  runtime: !!binary \"*not base64*\"\n", "base64"},
 		// A sequence element that is not a scalar cannot become an argument.
-		{"sequence element", "k8s:\n  runtime:\n    - [nested]\n", "cannot unmarshal"},
+		{"sequence element", "kubernetes:\n  runtime:\n    - [nested]\n", "cannot unmarshal"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestValidateRejectsBadRuntime(t *testing.T) {
 			name:  "k8s runtime with a newline",
 			p:     K8s,
 			setup: func(c *Config) { c.K8s.Runtime = Command{"kubectl\n--all-namespaces"} },
-			want:  "k8s.runtime[0] contains a control character",
+			want:  "kubernetes.runtime[0] contains a control character",
 		},
 		{
 			name:  "docker runtime with an empty argument",
@@ -281,7 +281,7 @@ func TestRuntimeDefaults(t *testing.T) {
 		{K8s, func(c *Config) Command { return c.K8s.Runtime }, "kubectl"},
 		{Docker, func(c *Config) Command { return c.Docker.Runtime }, "docker"},
 		{Podman, func(c *Config) Command { return c.Podman.Runtime }, "podman"},
-		// k8s.runtime is defaulted on every platform, not just k8s.
+		// kubernetes.runtime is defaulted on every platform, not just k8s.
 		{Docker, func(c *Config) Command { return c.K8s.Runtime }, "kubectl"},
 	}
 	for _, tc := range cases {
@@ -301,7 +301,7 @@ func TestRuntimeExplicitValueSurvivesDefaults(t *testing.T) {
 	c.ApplyDefaults(Docker)
 
 	if got := c.K8s.Runtime.String(); got != "microk8s kubectl" {
-		t.Errorf("k8s.runtime = %q, want the configured value", got)
+		t.Errorf("kubernetes.runtime = %q, want the configured value", got)
 	}
 	if got := c.Docker.Runtime.String(); got != "lima nerdctl" {
 		t.Errorf("docker.runtime = %q, want the configured value", got)

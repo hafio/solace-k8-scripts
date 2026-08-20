@@ -12,7 +12,7 @@ import (
 	"solace/internal/config"
 )
 
-// newCompletionCmd builds `solace-util completion <shell>`. Cobra adds a command by
+// newCompletionCmd builds `solace-util auto-complete <shell>`. Cobra adds a command by
 // this name on its own, but only from inside Execute -- and the command reference
 // is rendered straight from newRootCmd, so a command that shipped and worked was
 // missing from the generated docs. Registering it here makes it a command like any
@@ -21,8 +21,8 @@ import (
 // the reference verbatim, and cobra's stock text carries markdown headings.
 func newCompletionCmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "completion",
-		Short: "Print the shell completion script for solace-util",
+		Use:   "auto-complete",
+		Short: "Print the shell auto-completion script for solace-util",
 		Long: "Print a shell's completion script on stdout. Load it to complete commands and\n" +
 			"flags, plus the values they take: env files for -e/--env, primary|backup|monitor\n" +
 			"for the [role] positionals and --pod, and directories for --base-dir and --dir.\n\n" +
@@ -43,17 +43,17 @@ func newCompletionCmd() *cobra.Command {
 	c.AddCommand(
 		completionShell("bash",
 			"Load into the current shell:\n\n"+
-				"  source <(solace-util completion bash)\n\n"+
+				"  source <(solace-util auto-complete bash)\n\n"+
 				"Load for every session (needs the bash-completion package):\n\n"+
-				"  solace-util completion bash > /etc/bash_completion.d/solace-util",
+				"  solace-util auto-complete bash > /etc/bash_completion.d/solace-util",
 			func(root *cobra.Command, w io.Writer, desc bool) error {
 				return root.GenBashCompletionV2(w, desc)
 			}),
 		completionShell("zsh",
 			"Load into the current shell:\n\n"+
-				"  source <(solace-util completion zsh)\n\n"+
+				"  source <(solace-util auto-complete zsh)\n\n"+
 				"Load for every session (compinit must be enabled in ~/.zshrc):\n\n"+
-				"  solace-util completion zsh > \"${fpath[1]}/_solace-util\"",
+				"  solace-util auto-complete zsh > \"${fpath[1]}/_solace-util\"",
 			func(root *cobra.Command, w io.Writer, desc bool) error {
 				if !desc {
 					return root.GenZshCompletionNoDesc(w)
@@ -62,18 +62,18 @@ func newCompletionCmd() *cobra.Command {
 			}),
 		completionShell("fish",
 			"Load into the current shell:\n\n"+
-				"  solace-util completion fish | source\n\n"+
+				"  solace-util auto-complete fish | source\n\n"+
 				"Load for every session:\n\n"+
-				"  solace-util completion fish > ~/.config/fish/completions/solace-util.fish",
+				"  solace-util auto-complete fish > ~/.config/fish/completions/solace-util.fish",
 			func(root *cobra.Command, w io.Writer, desc bool) error {
 				return root.GenFishCompletion(w, desc)
 			}),
 		completionShell("powershell",
 			"Load into the current shell:\n\n"+
-				"  solace-util completion powershell | Out-String | Invoke-Expression\n\n"+
+				"  solace-util auto-complete powershell | Out-String | Invoke-Expression\n\n"+
 				"Load for every session, by writing the script once and sourcing it from\n"+
 				"your profile:\n\n"+
-				"  solace-util completion powershell > solace-util.ps1",
+				"  solace-util auto-complete powershell > solace-util.ps1",
 			func(root *cobra.Command, w io.Writer, desc bool) error {
 				if !desc {
 					return root.GenPowerShellCompletion(w)
@@ -155,11 +155,17 @@ func completeRoles(_ *cobra.Command, _ []string, toComplete string) ([]string, c
 	return matching(config.RoleNames(), toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
-// completePlatforms completes `convert --platform`, from the same set
-// convertPlatform accepts. The empty value is left out: "detect" is what omitting
-// the flag already gives you.
+// completePlatforms completes --platform. Only the canonical names are offered:
+// the kube/dk/pm abbreviations exist to save typing something you already know,
+// which is precisely what a completion removes the need for, and suggesting both
+// spellings would put two names for one platform in front of the user. The empty
+// value is left out too -- "detect it from the env file" is what omitting the
+// flag already gives you.
 func completePlatforms(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	all := []string{string(config.K8s), string(config.Docker), string(config.Podman)}
+	all := make([]string, 0, len(config.Platforms()))
+	for _, p := range config.Platforms() {
+		all = append(all, string(p))
+	}
 	return matching(all, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 

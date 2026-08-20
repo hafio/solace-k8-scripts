@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"solace/internal/config"
 )
 
 // update regenerates docs/commands.md from the live command tree. The doc is a
@@ -121,8 +123,12 @@ func writeCommand(b *strings.Builder, c *cobra.Command, isRoot bool) {
 	if len(c.Aliases) > 0 {
 		fmt.Fprintf(b, "Also available as: %s\n\n", strings.Join(c.Aliases, ", "))
 	}
-	if c.Annotations[genAnnotation] == "true" {
-		b.WriteString("Honors `--gen-only`, `--gen-secrets-only` and `--gen-env-only`: renders the requested artifact instead of applying it, and changes nothing.\n\n")
+	// The tree is one shape on every platform, so applicability is a fact about a
+	// command rather than something the reader can infer from where it sits. It is
+	// read off the annotation that also drives the refusal, so the reference cannot
+	// promise a platform the command would reject.
+	if v, ok := c.Annotations[platformAnnotation]; ok && v != config.JoinPlatforms(config.Platforms()) {
+		fmt.Fprintf(b, "Applies to: %s. On any other platform this command fails rather than doing nothing.\n\n", v)
 	}
 	if !isRoot {
 		writeFlagTable(b, c.NonInheritedFlags())

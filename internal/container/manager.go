@@ -48,9 +48,11 @@ type Manager struct {
 	// back into it (the analog of 002-host-prep.sh's sed rewrite).
 	EnvPath string
 
-	// Restart pre-approves bouncing an already-running broker when the deploy
-	// artifact changed (the --restart flag).
-	Restart bool
+	// RestartApproved pre-approves bouncing an already-running broker when the
+	// deploy artifact changed (the --restart flag on `deploy broker`). It is an
+	// approval, not an instruction: Restart() is the command that bounces one on
+	// purpose.
+	RestartApproved bool
 	// Confirm asks the operator a yes/no question. nil declines, which is what a
 	// non-interactive run must do: re-deploying should never bounce a running
 	// broker unattended. The CLI wires it to the same prompt style as delete.
@@ -576,10 +578,10 @@ func (m *Manager) writeArtifact(path string, body []byte, what string, dirMode o
 // up a changed artifact. --restart pre-approves it; otherwise the Confirm seam
 // asks. A non-interactive run without --restart declines, so a scripted deploy
 // leaves the new artifact in place and says so rather than dropping messaging
-// traffic on its own. Deliberately not --yes: bouncing a live broker is its own
-// decision, the same separation --purge has from --yes.
+// traffic on its own. Deliberately its own flag: bouncing a live broker is its own
+// decision, the same separation --delete-data has from --no-prompt.
 func (m *Manager) approveRestart(what string) bool {
-	if m.Restart {
+	if m.RestartApproved {
 		return true
 	}
 	if m.Confirm == nil {
@@ -623,7 +625,7 @@ func (m *Manager) deployPodman(ctx context.Context, id config.NodeIdentity) erro
 		// The store secrets were just replaced, but a running container holds the
 		// values it started with, and the unit is byte-identical -- so a rotated
 		// secret needs the same explicit restart docker's does.
-		if m.Restart {
+		if m.RestartApproved {
 			m.logf("[Info] unit unchanged; restarting %s to apply any rotated secret.", svc)
 			return m.systemctl(ctx, "restart", svc)
 		}
@@ -669,7 +671,7 @@ func (m *Manager) deployDocker(ctx context.Context, id config.NodeIdentity) erro
 	// there is no on-disk copy to diff. --restart is therefore the explicit way to
 	// push a rotated password or key into the running broker, and it has to force
 	// the recreate that an unchanged compose file would otherwise skip.
-	if m.Restart {
+	if m.RestartApproved {
 		m.logf("[Info] compose file unchanged; recreating container %s to apply any rotated secret.", m.name())
 		return m.compose(ctx, "-f", file, "up", "-d", "--force-recreate")
 	}
@@ -735,9 +737,13 @@ func (m *Manager) Delete(ctx context.Context, purge bool) error {
 		return err
 	}
 	if purge {
-		return m.purgeData(ctx)
+		if err := m.purgeData(ctx); err != nil {
+			return err
+		}
+		m.logf("[ OK ] data directory %s deleted.", m.Cfg.ContainerBlock(m.P).DataDir)
+		return nil
 	}
-	m.logf("[Info] data directory %s kept (pass --purge to remove it).", m.Cfg.ContainerBlock(m.P).DataDir)
+	m.logf("[Info] data directory %s kept (pass --delete-data to remove it).", m.Cfg.ContainerBlock(m.P).DataDir)
 	return nil
 }
 
@@ -782,7 +788,137 @@ func (m *Manager) purgeData(ctx context.Context) error {
 	return m.R.Run(ctx, "rm", "-rf", dir)
 }
 
+// --- Lifecycle: Start / Stop / Restart ---------------------------------------
+//
+// These act on a broker that is already DEPLOYED: the compose file or quadlet unit
+// stays on disk and the data directory is untouched, so a stopped broker is one
+// `start broker` away from running again. That is the same distinction Kubernetes
+// draws by scaling a StatefulSet to 0 rather than deleting it, which is why the CLI
+// presents one pair of verbs over both platforms.
+//
+// Podman drives systemd rather than the engine directly: the quadlet unit owns the
+// container's lifecycle, so stopping the container behind systemd's back would just
+// invite it to be restarted.
+
+// Start brings the deployed broker back up.
+func (m *Manager) Start(ctx context.Context) error {
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
+	if m.P == config.Podman {
+		return m.systemctl(ctx, "start", m.name()+".service")
+	}
+	if file := m.composeFile(); m.isDryRun() || fileExists(file) {
+		return m.compose(ctx, "-f", file, "start")
+	}
+	return m.run(ctx, "start", m.name())
+}
+
+// Stop shuts the broker down without removing it. The container and its data
+// survive -- `remove broker` is what deletes them.
+func (m *Manager) Stop(ctx context.Context) error {
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
+	if m.P == config.Podman {
+		return m.systemctl(ctx, "stop", m.name()+".service")
+	}
+	if file := m.composeFile(); m.isDryRun() || fileExists(file) {
+		return m.compose(ctx, "-f", file, "stop")
+	}
+	return m.run(ctx, "stop", m.name())
+}
+
+// Restart bounces the broker in place. It applies nothing new: a changed deploy
+// artifact needs `deploy broker --restart`, which rewrites the artifact first.
+func (m *Manager) Restart(ctx context.Context) error {
+	if err := m.Preflight(ctx); err != nil {
+		return err
+	}
+	if m.P == config.Podman {
+		return m.systemctl(ctx, "restart", m.name()+".service")
+	}
+	if file := m.composeFile(); m.isDryRun() || fileExists(file) {
+		return m.compose(ctx, "-f", file, "restart")
+	}
+	return m.run(ctx, "restart", m.name())
+}
+
 // --- Status / Logs / CLI / Shell --------------------------------------------
+
+// solaceImageMarker identifies a Solace broker container by the image it was
+// created from. One substring covers every spelling in circulation --
+// solace-pubsub-standard, solace-pubsub-enterprise, and the pubsubplus- variants --
+// and it is matched against the image column rather than the container name because
+// the name is the operator's to choose (container.name) while the image is not.
+const solaceImageMarker = "solace-pubsub"
+
+// psFormat is the row this tool prints for a discovered container. Explicit rather
+// than the engine's default table, so the columns are the same on docker and podman.
+const psFormat = "{{.Names}}\t{{.Image}}\t{{.Status}}"
+
+// StatusAll lists every Solace broker container on this host, not just the one this
+// env file names -- the container answer to `--all`, which on Kubernetes surveys the
+// cluster. Discovery is by image, so a broker someone deployed by hand, or under a
+// name this config knows nothing about, still shows up. That is the point: the flag
+// exists to answer "what is actually running here", which a config-scoped listing
+// cannot.
+//
+// detail adds each container's mounts and any secrets it carries -- the static
+// makeup behind the running row.
+func (m *Manager) StatusAll(ctx context.Context, detail bool) error {
+	w := m.out()
+	raw, err := m.output(ctx, "ps", "--all", "--format", psFormat)
+	if err != nil {
+		return fmt.Errorf("listing containers: %w", err)
+	}
+	names := solaceRows(w, string(raw))
+	if !detail {
+		return nil
+	}
+	for _, name := range names {
+		fmt.Fprintf(w, "\n### %s ###\n", name)
+		if err := m.run(ctx, "inspect", "--format", detailFormat, name); err != nil {
+			fmt.Fprintf(w, "  (could not inspect %s: %v)\n", name, err)
+		}
+	}
+	return nil
+}
+
+// detailFormat renders the parts of `inspect` worth reading: what the container
+// was built from, whether it is up, and every path mounted into it. The full
+// inspect output is hundreds of lines of engine bookkeeping that buries exactly
+// these.
+//
+// Mounts are also how secrets show up, and deliberately the ONLY way they do: a
+// broker's secrets are files under /run/secrets/<setting>, so listing mounts names
+// them without reading any. The environment is never printed -- on docker the
+// compose secrets are environment-sourced, so dumping it here would put passwords
+// on a terminal, into scrollback, and into whatever ticket the output is pasted
+// into (S3).
+const detailFormat = "image:   {{.Config.Image}}\n" +
+	"state:   {{.State.Status}}\n" +
+	"mounts:{{range .Mounts}}\n  - {{.Source}} -> {{.Destination}}{{end}}"
+
+// solaceRows prints the header plus every row whose image names a Solace broker,
+// and returns the container names it kept so a caller can go deeper on each.
+func solaceRows(w io.Writer, raw string) []string {
+	lines := strings.Split(strings.TrimRight(raw, "\n"), "\n")
+	fmt.Fprintf(w, "%-24s %-48s %s\n", "NAME", "IMAGE", "STATUS")
+	var names []string
+	for _, ln := range lines {
+		cols := strings.Split(ln, "\t")
+		if len(cols) < 3 || !strings.Contains(cols[1], solaceImageMarker) {
+			continue
+		}
+		fmt.Fprintf(w, "%-24s %-48s %s\n", cols[0], cols[1], cols[2])
+		names = append(names, cols[0])
+	}
+	if len(names) == 0 {
+		fmt.Fprintln(w, "  (no Solace broker containers on this host)")
+	}
+	return names
+}
 
 // Status reports the container's state. Podman also shows its systemd unit.
 func (m *Manager) Status(ctx context.Context) error {

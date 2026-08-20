@@ -111,11 +111,11 @@ func resolvePlatform(v *vars, want config.Platform) (config.Platform, []string) 
 		return config.K8s, nil
 	case k8s > 0 && ctr > 0:
 		if ctr > k8s {
-			return config.Docker, []string{"file mixes kubernetes and container variables; wrote the docker section (re-run with --platform k8s or podman to pick another)"}
+			return config.Docker, []string{"file mixes kubernetes and container variables; wrote the docker section (re-run with --platform kubernetes or podman to pick another)"}
 		}
-		return config.K8s, []string{"file mixes kubernetes and container variables; wrote the k8s section (re-run with --platform docker or podman to pick another)"}
+		return config.K8s, []string{"file mixes kubernetes and container variables; wrote the kubernetes section (re-run with --platform docker or podman to pick another)"}
 	}
-	return config.K8s, []string{"no platform-specific variable found; assumed k8s (re-run with --platform docker or podman if that is wrong)"}
+	return config.K8s, []string{"no platform-specific variable found; assumed kubernetes (re-run with --platform docker or podman if that is wrong)"}
 }
 
 func countMarkers(v *vars, names []string) int {
@@ -293,26 +293,35 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 		d.kv("psk", v.s("REPL_PSK"))
 	})
 
+	// The broker section is platform-neutral: every platform applies these over
+	// the broker CLI after deployment, so it is written whatever the target is.
+	d.section("broker", func(d *doc) {
+		d.kv("cliScriptsFolder", v.s("SOLBK_CLISCRIPTS_FOLDER"))
+		d.kv("diagDir", v.s("SOLBK_DIAG_DIR"))
+		d.list("productKeys", v.l("SOLBK_PRODUCTKEYS"))
+		d.block("domainCerts", func(d *doc) {
+			d.kv("folder", v.s("SOLBK_DOMAINCERT_FOLDER"))
+			d.pairs("files", v.m("SOLBK_DOMAINCERT_FILES"))
+		})
+	})
+
+	// KUBE is read on every platform even though only the kubernetes section can
+	// carry it. Reading it is what marks it mapped, so a container env file that
+	// still defines one -- a leftover, harmless -- converts without reporting it as
+	// dropped (TestConvertKubeSilentOnContainerPlatform).
 	kube, kubeWarns := kubeCommand(v)
 	warns = append(warns, kubeWarns...)
 
-	// The k8s section carries the operator deployment plus four fields the
-	// container platforms reuse (diagDir, cliScriptsFolder, domainCerts,
-	// productKeys), so it is written for every platform.
-	d.section("k8s", func(d *doc) {
-		if p == config.K8s {
+	if p == config.K8s {
+		d.sectionMarker("kubernetes", func(d *doc) {
 			d.kv("runtime", kube)
 			d.kv("name", v.s("SOLBK_NAME"))
 			d.kv("namespace", v.s("SOLBK_NS"))
-			// SOLBK_USR_SECRET named the k8s Secret, so it lands in the k8s section
+			// SOLBK_USR_SECRET named the k8s Secret, so it lands in the kubernetes section
 			// rather than under admin (where the old schema kept it).
 			d.kv("adminSecret", v.s("SOLBK_USR_SECRET"))
 			d.kv("updateStrategy", v.s("SOLBK_UPDATE_STRATEGY"))
 			d.kv("serviceAccount", v.s("SOLBK_SVC_ACCOUNT"))
-		}
-		d.kv("cliScriptsFolder", v.s("SOLBK_CLISCRIPTS_FOLDER"))
-		d.kv("diagDir", v.s("SOLBK_DIAG_DIR"))
-		if p == config.K8s {
 			d.block("storage", func(d *doc) {
 				d.kv("class", v.s("SOLBK_STORAGECLASS"))
 				d.kv("msgNode", v.s("SOLBK_STORAGE_MSGNODE"))
@@ -325,7 +334,7 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 				// resurfacing in the unmapped list.
 				if v.s("SOLBK_MSGNODE_CPU") != "" {
 					warns = append(warns, `SOLBK_MSGNODE_CPU is no longer supported: broker CPU is fixed by the scaling `+
-						`tier and derived from scaling.maxConnections, so k8s.msgNode.cpu was omitted. `+
+						`tier and derived from scaling.maxConnections, so kubernetes.msgNode.cpu was omitted. `+
 						`Check that SOLBK_SCALING_MAXCONN names the tier you sized for`)
 				}
 				d.kv("mem", v.s("SOLBK_MSGNODE_MEM"))
@@ -356,25 +365,20 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 			// SOLBK_PORTS means "name=port[/proto]" for k8s and "host:container"
 			// for the container platforms, so it is read under exactly one of them.
 			d.list("ports", v.l("SOLBK_PORTS"))
-		}
-		d.list("productKeys", v.l("SOLBK_PRODUCTKEYS"))
-		d.block("domainCerts", func(d *doc) {
-			d.kv("folder", v.s("SOLBK_DOMAINCERT_FOLDER"))
-			d.pairs("files", v.m("SOLBK_DOMAINCERT_FILES"))
 		})
-	})
+	}
 
 	if p.IsContainer() {
-		d.section(string(p), func(d *doc) {
+		d.sectionMarker(string(p), func(d *doc) {
 			d.kv("runtime", v.s("CONTAINER_RUNTIME"))
 			if p == config.Docker {
-				// run mode was removed, so carrying the value over would only fail
-				// validation later; it is dropped here with the reason named.
+				// docker.mode was removed along with run mode: docker deploys through
+				// compose and nothing else, so there is no key left to carry the value
+				// into. The read still happens so the variable counts as mapped rather
+				// than resurfacing in the unmapped list.
 				if strings.EqualFold(strings.TrimSpace(v.s("DOCKER_MODE")), "run") {
 					warns = append(warns, `DOCKER_MODE="run" is no longer supported: docker deploys through compose only, `+
-						`so docker.mode was omitted (it defaults to compose). Set docker.compose if this host uses the standalone docker-compose binary`)
-				} else {
-					d.kv("mode", v.s("DOCKER_MODE"))
+						`so it was dropped. Set docker.compose if this host uses the standalone docker-compose binary`)
 				}
 				d.kv("composeFile", v.s("DOCKER_COMPOSE_FILE"))
 			} else {
@@ -417,23 +421,25 @@ func emitYAML(v *vars, p config.Platform, source string) (string, []string) {
 	return d.b.String(), warns
 }
 
-// kubeCommand resolves the bash KUBE variable to the k8s.runtime value. KUBE was
+// kubeCommand resolves the bash KUBE variable to the kubernetes.runtime value. KUBE was
 // the cluster CLI, expanded unquoted so it could carry a whole profile
 // (`kubectl --kubeconfig <file>`, bash/env/customer-sample:7) rather than just a
-// binary name -- exactly what k8s.runtime now holds.
+// binary name -- exactly what kubernetes.runtime now holds.
 //
 // It is read unconditionally, even on a container platform, so the variable is
 // consumed silently there instead of being reported unmapped.
 //
-// KUBE="echo" (bash/env/sample:7) was the bash dry-run trick. Carried over
-// literally it would turn every cluster call into a no-op whose stdout the
-// output-parsing steps then misread -- worse than dropping it -- so it yields a
-// warning and no value, the --dry-run flag having replaced it. The match is
+// KUBE="echo" (bash/env/sample:7) was the bash trick for seeing what would run.
+// Carried over literally it would turn every cluster call into a no-op whose
+// stdout the output-parsing steps then misread -- worse than dropping it -- so it
+// yields a warning and no value. The replacement is `generate`, which renders the
+// artifact a command would apply instead of faking the command away. The match is
 // exact: "/bin/echo" or "echo -n" passes through, a deliberate scope limit.
 func kubeCommand(v *vars) (string, []string) {
 	kube := strings.TrimSpace(v.s("KUBE"))
 	if strings.EqualFold(kube, "echo") {
-		return "", []string{`KUBE="echo" was the bash dry-run trick, dropped -- use --dry-run instead`}
+		return "", []string{`KUBE="echo" was the bash trick for previewing commands, dropped -- ` +
+			`use "solace-util generate <target>" to see the artifact a command would apply`}
 	}
 	return kube, nil
 }
@@ -541,6 +547,25 @@ func (d *doc) section(key string, fill func(*doc)) {
 	}
 	if s := d.b.String(); s != "" && !strings.HasSuffix(s, "\n\n") {
 		d.b.WriteString("\n")
+	}
+	d.raw(key + ":")
+	d.b.WriteString(sub.b.String())
+}
+
+// sectionMarker is section for the target platform's own block, which is written
+// even when the source set nothing under it. The platform sections are what
+// config.DetectPlatforms reads to decide which platform an env file describes, so
+// omitting an empty one would convert a working bash file into a YAML file the
+// tool then refuses to load for want of a platform.
+func (d *doc) sectionMarker(key string, fill func(*doc)) {
+	sub := &doc{indent: d.indent + 1}
+	fill(sub)
+	if s := d.b.String(); s != "" && !strings.HasSuffix(s, "\n\n") {
+		d.b.WriteString("\n")
+	}
+	if sub.b.Len() == 0 {
+		d.raw(key + ": {}")
+		return
 	}
 	d.raw(key + ":")
 	d.b.WriteString(sub.b.String())

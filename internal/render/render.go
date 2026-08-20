@@ -2,7 +2,7 @@
 // each platform applies:
 //
 //   - BrokerCR         -- the Kubernetes PubSubPlusEventBroker custom resource
-//   - EnvPairs/EnvFile -- the ordered Solace key=value config both container engines share
+//   - EnvPairs -- the ordered Solace key=value config both container engines share
 //   - Quadlet          -- a podman systemd .container unit
 //   - Compose          -- a docker compose file
 //   - ContainerSecrets -- the secret values both engines externalize, and
@@ -644,16 +644,6 @@ func healthCmd(hc config.HealthCheck) []string {
 	return []string{"curl", "-fs", "http://localhost:" + healthPort + "/health-check/readiness"}
 }
 
-// EnvFile renders EnvPairs as an env-file document (one key=value per line), the
-// form `--gen-env-only` prints. It carries no secret, so the whole broker
-// configuration can be reviewed or diffed without exposing credentials.
-func EnvFile(c *config.Config, id config.NodeIdentity) []byte {
-	var b strings.Builder
-	for _, pair := range EnvPairs(c, id) {
-		fmt.Fprintf(&b, "%s\n", pair.Assignment())
-	}
-	return []byte(b.String())
-}
 
 func groupKey(node, suffix string) string {
 	return "redundancy_group_node_" + node + "_" + suffix
